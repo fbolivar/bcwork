@@ -790,4 +790,226 @@ export const adminRouter = router({
       })
       return { ok: true }
     }),
+
+  // ─── Métricas y KPIs ─────────────────────────────────────────────────────
+
+  getProductivityTrend: adminProcedure
+    .input(
+      z.object({
+        days: z.number().int().min(7).max(90).default(30),
+        userId: z.string().uuid().optional(),
+      }),
+    )
+    .query(async ({ ctx, input }) => {
+      const tenantId = ctx.user!.tid
+      const from = new Date(Date.now() - input.days * 86400000).toISOString().slice(0, 10)
+
+      let query = ctx.db
+        .from('daily_user_metrics')
+        .select(
+          'metric_date, active_seconds, productive_seconds, non_productive_seconds, productivity_ratio, focus_score, overtime_seconds',
+        )
+        .eq('tenant_id', tenantId)
+        .gte('metric_date', from)
+        .order('metric_date', { ascending: true })
+
+      if (input.userId) {
+        query = query.eq('user_id', input.userId)
+      }
+
+      const { data, error } = await query
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+
+      // Si hay múltiples usuarios, agrupar por fecha y sumar
+      if (!input.userId) {
+        const byDate = new Map<
+          string,
+          {
+            active: number
+            productive: number
+            non_productive: number
+            overtime: number
+            count: number
+          }
+        >()
+        for (const row of data ?? []) {
+          const existing = byDate.get(row.metric_date) ?? {
+            active: 0,
+            productive: 0,
+            non_productive: 0,
+            overtime: 0,
+            count: 0,
+          }
+          byDate.set(row.metric_date, {
+            active: existing.active + (row.active_seconds ?? 0),
+            productive: existing.productive + (row.productive_seconds ?? 0),
+            non_productive: existing.non_productive + (row.non_productive_seconds ?? 0),
+            overtime: existing.overtime + (row.overtime_seconds ?? 0),
+            count: existing.count + 1,
+          })
+        }
+        return Array.from(byDate.entries()).map(([date, v]) => ({
+          date,
+          active_seconds: v.active,
+          productive_seconds: v.productive,
+          non_productive_seconds: v.non_productive,
+          productivity_ratio: v.active > 0 ? v.productive / v.active : 0,
+          overtime_seconds: v.overtime,
+          user_count: v.count,
+        }))
+      }
+
+      return (data ?? []).map((row) => ({
+        date: row.metric_date,
+        active_seconds: row.active_seconds ?? 0,
+        productive_seconds: row.productive_seconds ?? 0,
+        non_productive_seconds: row.non_productive_seconds ?? 0,
+        productivity_ratio: Number(row.productivity_ratio ?? 0),
+        focus_score: row.focus_score != null ? Number(row.focus_score) : null,
+        overtime_seconds: row.overtime_seconds ?? 0,
+        user_count: 1,
+      }))
+    }),
+
+  getTopUsers: adminProcedure
+    .input(
+      z.object({
+        days: z.number().int().min(1).max(90).default(7),
+        metric: z
+          .enum(['productivity_ratio', 'active_seconds', 'focus_score'])
+          .default('productivity_ratio'),
+        limit: z.number().int().min(1).max(20).default(10),
+      }),
+    )
+    .query(async ({ ctx, input }) => {
+      const tenantId = ctx.user!.tid
+      const from = new Date(Date.now() - input.days * 86400000).toISOString().slice(0, 10)
+
+      const { data: metrics, error } = await ctx.db
+        .from('daily_user_metrics')
+        .select(
+          'user_id, active_seconds, productive_seconds, non_productive_seconds, focus_score, overtime_seconds',
+        )
+        .eq('tenant_id', tenantId)
+        .gte('metric_date', from)
+
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+
+      // Agregar por usuario
+      const byUser = new Map<
+        string,
+        {
+          active: number
+          productive: number
+          non_productive: number
+          focus: number[]
+          overtime: number
+          days: number
+        }
+      >()
+      for (const row of metrics ?? []) {
+        const u = byUser.get(row.user_id) ?? {
+          active: 0,
+          productive: 0,
+          non_productive: 0,
+          focus: [],
+          overtime: 0,
+          days: 0,
+        }
+        u.active += row.active_seconds ?? 0
+        u.productive += row.productive_seconds ?? 0
+        u.non_productive += row.non_productive_seconds ?? 0
+        u.overtime += row.overtime_seconds ?? 0
+        u.days += 1
+        if (row.focus_score != null) u.focus.push(Number(row.focus_score))
+        byUser.set(row.user_id, u)
+      }
+
+      const userIds = Array.from(byUser.keys())
+      const { data: users } = await ctx.db
+        .from('users')
+        .select('id, full_name, email, department')
+        .in('id', userIds)
+        .eq('tenant_id', tenantId)
+
+      const userMap = new Map((users ?? []).map((u) => [u.id, u]))
+
+      const ranked = Array.from(byUser.entries()).map(([userId, v]) => {
+        const ratio = v.active > 0 ? v.productive / v.active : 0
+        const focusAvg =
+          v.focus.length > 0 ? v.focus.reduce((a, b) => a + b, 0) / v.focus.length : 0
+        const u = userMap.get(userId)
+        return {
+          user_id: userId,
+          full_name: u?.full_name ?? null,
+          email: u?.email ?? '',
+          department: u?.department ?? null,
+          active_seconds: v.active,
+          productive_seconds: v.productive,
+          productivity_ratio: ratio,
+          focus_score: focusAvg,
+          overtime_seconds: v.overtime,
+          days_active: v.days,
+        }
+      })
+
+      ranked.sort((a, b) => {
+        if (input.metric === 'active_seconds') return b.active_seconds - a.active_seconds
+        if (input.metric === 'focus_score') return b.focus_score - a.focus_score
+        return b.productivity_ratio - a.productivity_ratio
+      })
+
+      return ranked.slice(0, input.limit)
+    }),
+
+  getTopDomains: adminProcedure
+    .input(z.object({ days: z.number().int().min(1).max(90).default(7) }))
+    .query(async ({ ctx, input }) => {
+      const tenantId = ctx.user!.tid
+      const from = new Date(Date.now() - input.days * 86400000).toISOString().slice(0, 10)
+
+      const { data, error } = await ctx.db
+        .from('daily_user_metrics')
+        .select('domains_top')
+        .eq('tenant_id', tenantId)
+        .gte('metric_date', from)
+
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+
+      const domainTotals = new Map<string, number>()
+      for (const row of data ?? []) {
+        const domains = row.domains_top as Array<{ domain: string; secs: number }> | null
+        for (const d of domains ?? []) {
+          domainTotals.set(d.domain, (domainTotals.get(d.domain) ?? 0) + d.secs)
+        }
+      }
+
+      return Array.from(domainTotals.entries())
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 15)
+        .map(([domain, secs]) => ({ domain, secs }))
+    }),
+
+  triggerAggregation: adminProcedure
+    .input(
+      z.object({
+        date: z
+          .string()
+          .regex(/^\d{4}-\d{2}-\d{2}$/)
+          .optional(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const tenantId = ctx.user!.tid
+      const date = input.date ?? new Date(Date.now() - 86400000).toISOString().slice(0, 10)
+
+      const { data, error } = await ctx.db.rpc('aggregate_daily_user_metrics', {
+        p_date: date,
+        p_tenant_id: tenantId,
+      })
+
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      const result = data as Array<{ rows_upserted: number }>
+      return { ok: true, date, rows: result[0]?.rows_upserted ?? 0 }
+    }),
 })

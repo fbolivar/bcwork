@@ -10,6 +10,7 @@ import {
   AppWindow,
   Network,
   Monitor,
+  BarChart2,
   Settings,
   LogOut,
 } from 'lucide-react'
@@ -24,6 +25,7 @@ const NAV = [
   { href: '/admin/apps', label: 'Aplicaciones', icon: AppWindow },
   { href: '/admin/ips', label: 'IPs Corporativas', icon: Network },
   { href: '/admin/devices', label: 'Dispositivos', icon: Monitor },
+  { href: '/admin/metrics', label: 'Métricas', icon: BarChart2 },
   { href: '/admin/settings', label: 'Configuración', icon: Settings },
 ]
 
