@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { trpc } from '@/lib/trpc-client'
+import { Download } from 'lucide-react'
 import { TrendChart } from './charts/TrendChart'
 import { BarChart } from './charts/BarChart'
 import { TopUsersTable } from './TopUsersTable'
@@ -75,17 +76,27 @@ export function MetricsDashboard() {
             </button>
           ))}
         </div>
-        <button
-          type="button"
-          onClick={() => {
-            setRefreshing(true)
-            trigger.mutate({})
-          }}
-          disabled={refreshing}
-          className="rounded-md border border-gray-200 bg-white px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50 disabled:opacity-50"
-        >
-          {refreshing ? 'Calculando...' : 'Recalcular métricas'}
-        </button>
+        <div className="flex items-center gap-2">
+          <a
+            href={`/api/reports/metrics?days=${period}`}
+            download
+            className="flex items-center gap-1.5 rounded-md border border-gray-200 bg-white px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50"
+          >
+            <Download className="h-4 w-4" />
+            Exportar CSV
+          </a>
+          <button
+            type="button"
+            onClick={() => {
+              setRefreshing(true)
+              trigger.mutate({})
+            }}
+            disabled={refreshing}
+            className="rounded-md border border-gray-200 bg-white px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50 disabled:opacity-50"
+          >
+            {refreshing ? 'Calculando...' : 'Recalcular métricas'}
+          </button>
+        </div>
       </div>
 
       {/* KPI Cards */}

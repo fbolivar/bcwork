@@ -11,11 +11,13 @@ import {
   Network,
   Monitor,
   BarChart2,
+  Bell,
   Settings,
   LogOut,
 } from 'lucide-react'
 import { trpc } from '@/lib/trpc-client'
 import { useRouter } from 'next/navigation'
+import { NotificationBell } from '@/features/shared/components/NotificationBell'
 
 const NAV = [
   { href: '/admin/dashboard', label: 'Resumen', icon: LayoutDashboard },
@@ -26,6 +28,7 @@ const NAV = [
   { href: '/admin/ips', label: 'IPs Corporativas', icon: Network },
   { href: '/admin/devices', label: 'Dispositivos', icon: Monitor },
   { href: '/admin/metrics', label: 'Métricas', icon: BarChart2 },
+  { href: '/admin/alerts', label: 'Alertas', icon: Bell },
   { href: '/admin/settings', label: 'Configuración', icon: Settings },
 ]
 
@@ -38,9 +41,12 @@ export function AdminNav() {
 
   return (
     <aside className="flex w-56 flex-col border-r border-gray-200 bg-white">
-      <div className="border-b border-gray-100 px-5 py-4">
-        <span className="text-sm font-bold tracking-tight text-blue-600">BCWork</span>
-        <p className="mt-0.5 text-xs text-gray-400">Panel de administración</p>
+      <div className="flex items-center justify-between border-b border-gray-100 px-5 py-4">
+        <div>
+          <span className="text-sm font-bold tracking-tight text-blue-600">BCWork</span>
+          <p className="mt-0.5 text-xs text-gray-400">Panel de administración</p>
+        </div>
+        <NotificationBell />
       </div>
 
       <nav className="flex-1 space-y-0.5 p-2">

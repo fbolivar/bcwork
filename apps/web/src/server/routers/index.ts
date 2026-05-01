@@ -4,6 +4,7 @@ import { platformRouter } from './platform'
 import { adminRouter } from './admin'
 import { managerRouter } from './manager'
 import { employeeRouter } from './employee'
+import { notificationsRouter } from './notifications'
 
 export const appRouter = router({
   auth: authRouter,
@@ -11,6 +12,7 @@ export const appRouter = router({
   admin: adminRouter,
   manager: managerRouter,
   employee: employeeRouter,
+  notifications: notificationsRouter,
 })
 
 export type AppRouter = typeof appRouter

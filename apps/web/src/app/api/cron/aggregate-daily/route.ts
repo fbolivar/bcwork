@@ -8,7 +8,7 @@ export async function GET(req: NextRequest) {
   }
 
   const dateParam = req.nextUrl.searchParams.get('date')
-  const date = dateParam ?? new Date(Date.now() - 86400000).toISOString().slice(0, 10) // ayer
+  const date = dateParam ?? new Date(Date.now() - 86400000).toISOString().slice(0, 10)
 
   const db = getDb()
 
@@ -23,8 +23,19 @@ export async function GET(req: NextRequest) {
   }
 
   const result = data as Array<{ rows_upserted: number }>
-  const total = result.reduce((s, r) => s + (r.rows_upserted ?? 0), 0)
+  const rows = result.reduce((s, r) => s + (r.rows_upserted ?? 0), 0)
+  console.log(`[cron] aggregated ${rows} user-day records for ${date}`)
 
-  console.log(`[cron] aggregated ${total} user-day records for ${date}`)
-  return NextResponse.json({ ok: true, date, rows: total })
+  const { data: alertData, error: alertError } = await db.rpc('evaluate_alerts', {
+    p_date: date,
+    p_tenant_id: null,
+  })
+
+  if (alertError) {
+    console.error('[cron] evaluate_alerts failed:', alertError.message)
+  } else {
+    console.log(`[cron] evaluate_alerts created ${alertData as number} notifications`)
+  }
+
+  return NextResponse.json({ ok: true, date, rows, notifications: alertData ?? 0 })
 }
