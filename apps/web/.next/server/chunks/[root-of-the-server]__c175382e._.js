@@ -38,6 +38,8 @@ module.exports = mod;
 __turbopack_context__.s([
     "adminProcedure",
     ()=>adminProcedure,
+    "managerProcedure",
+    ()=>managerProcedure,
     "platformAdminProcedure",
     ()=>platformAdminProcedure,
     "protectedProcedure",
@@ -47,7 +49,9 @@ __turbopack_context__.s([
     "requireRole",
     ()=>requireRole,
     "router",
-    ()=>router
+    ()=>router,
+    "tenantAdminProcedure",
+    ()=>tenantAdminProcedure
 ]);
 var __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f2e$pnpm$2f40$trpc$2b$server$40$11$2e$17$2e$0_typescript$40$5$2e$9$2e$3$2f$node_modules$2f40$trpc$2f$server$2f$dist$2f$initTRPC$2d$BRf4imah$2e$mjs__$5b$app$2d$route$5d$__$28$ecmascript$29$__ = __turbopack_context__.i("[project]/node_modules/.pnpm/@trpc+server@11.17.0_typescript@5.9.3/node_modules/@trpc/server/dist/initTRPC-BRf4imah.mjs [app-route] (ecmascript)");
 var __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f2e$pnpm$2f40$trpc$2b$server$40$11$2e$17$2e$0_typescript$40$5$2e$9$2e$3$2f$node_modules$2f40$trpc$2f$server$2f$dist$2f$tracked$2d$DWInO6EQ$2e$mjs__$5b$app$2d$route$5d$__$28$ecmascript$29$__ = __turbopack_context__.i("[project]/node_modules/.pnpm/@trpc+server@11.17.0_typescript@5.9.3/node_modules/@trpc/server/dist/tracked-DWInO6EQ.mjs [app-route] (ecmascript)");
@@ -99,8 +103,10 @@ function requireRole(...roles) {
         });
     });
 }
-const adminProcedure = t.procedure.use(enforceAuth).use(requireRole('platform_admin', 'tenant_admin'));
+const adminProcedure = t.procedure.use(enforceAuth).use(requireRole('tenant_admin', 'manager'));
 const platformAdminProcedure = t.procedure.use(enforceAuth).use(requireRole('platform_admin'));
+const tenantAdminProcedure = t.procedure.use(enforceAuth).use(requireRole('tenant_admin'));
+const managerProcedure = t.procedure.use(enforceAuth).use(requireRole('tenant_admin', 'manager'));
 }),
 "[externals]/node:buffer [external] (node:buffer, cjs)", ((__turbopack_context__, module, exports) => {
 

@@ -37,10 +37,19 @@ export function requireRole(...roles: string[]) {
   })
 }
 
+// tenant_admin y manager acceden al panel /admin
 export const adminProcedure = t.procedure
   .use(enforceAuth)
-  .use(requireRole('platform_admin', 'tenant_admin'))
+  .use(requireRole('tenant_admin', 'manager'))
 
 export const platformAdminProcedure = t.procedure
   .use(enforceAuth)
   .use(requireRole('platform_admin'))
+
+// Solo tenant_admin (no manager)
+export const tenantAdminProcedure = t.procedure.use(enforceAuth).use(requireRole('tenant_admin'))
+
+// Manager dentro del panel /admin
+export const managerProcedure = t.procedure
+  .use(enforceAuth)
+  .use(requireRole('tenant_admin', 'manager'))
