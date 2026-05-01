@@ -990,6 +990,67 @@ export const adminRouter = router({
         .map(([domain, secs]) => ({ domain, secs }))
     }),
 
+  // ─── Audit log ────────────────────────────────────────────────────────────
+
+  getAuditLogs: adminProcedure
+    .input(
+      z.object({
+        page: z.number().int().min(1).default(1),
+        pageSize: z.number().int().min(1).max(100).default(50),
+        userId: z.string().uuid().optional(),
+        action: z.string().optional(),
+        from: z
+          .string()
+          .regex(/^\d{4}-\d{2}-\d{2}$/)
+          .optional(),
+        to: z
+          .string()
+          .regex(/^\d{4}-\d{2}-\d{2}$/)
+          .optional(),
+      }),
+    )
+    .query(async ({ ctx, input }) => {
+      const from = (input.page - 1) * input.pageSize
+      const to = from + input.pageSize - 1
+
+      let query = ctx.db
+        .from('audit_logs')
+        .select(
+          'id, action, actor_id, actor_email, target_id, target_type, ip_address, metadata, created_at, users!audit_logs_actor_id_fkey(full_name)',
+          { count: 'exact' },
+        )
+        .eq('tenant_id', ctx.user!.tid)
+        .order('created_at', { ascending: false })
+        .range(from, to)
+
+      if (input.userId) query = query.eq('actor_id', input.userId)
+      if (input.action) query = query.eq('action', input.action)
+      if (input.from) query = query.gte('created_at', input.from)
+      if (input.to) query = query.lte('created_at', `${input.to}T23:59:59Z`)
+
+      const { data, count, error } = await query
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+
+      return {
+        logs: (data ?? []).map((l) => ({
+          id: l.id,
+          action: l.action,
+          actor_id: l.actor_id,
+          actor_email: l.actor_email,
+          actor_name:
+            (l.users as unknown as { full_name: string | null } | null)?.full_name ?? null,
+          target_id: l.target_id,
+          target_type: l.target_type,
+          ip_address: l.ip_address,
+          metadata: l.metadata,
+          created_at: l.created_at,
+        })),
+        total: count ?? 0,
+        page: input.page,
+        pageSize: input.pageSize,
+      }
+    }),
+
   triggerAggregation: adminProcedure
     .input(
       z.object({

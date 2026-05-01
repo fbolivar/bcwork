@@ -13,6 +13,7 @@ import {
   BarChart2,
   Bell,
   Plug,
+  Shield,
   Settings,
   LogOut,
 } from 'lucide-react'
@@ -31,6 +32,7 @@ const NAV = [
   { href: '/admin/metrics', label: 'Métricas', icon: BarChart2 },
   { href: '/admin/alerts', label: 'Alertas', icon: Bell },
   { href: '/admin/api', label: 'Integraciones', icon: Plug },
+  { href: '/admin/audit', label: 'Auditoría', icon: Shield },
   { href: '/admin/settings', label: 'Configuración', icon: Settings },
 ]
 

@@ -1,39 +1,59 @@
 import type { NextConfig } from 'next'
 
+const isDev = process.env.NODE_ENV === 'development'
+
 const nextConfig: NextConfig = {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   experimental: { mcpServer: true } as any,
 
-  // Transpile workspace packages
   transpilePackages: ['@bcwork/shared', '@bcwork/db', '@bcwork/ui'],
 
-  // Security headers
   async headers() {
+    const csp = [
+      "default-src 'self'",
+      // unsafe-eval solo en desarrollo (Next.js HMR lo necesita)
+      isDev ? "script-src 'self' 'unsafe-eval'" : "script-src 'self'",
+      "style-src 'self' 'unsafe-inline'",
+      "img-src 'self' data: blob:",
+      "font-src 'self'",
+      "connect-src 'self' https://*.supabase.co wss://*.supabase.co",
+      "frame-ancestors 'none'",
+      "base-uri 'self'",
+      "form-action 'self'",
+      "object-src 'none'",
+    ].join('; ')
+
+    const securityHeaders = [
+      { key: 'X-Frame-Options', value: 'DENY' },
+      { key: 'X-Content-Type-Options', value: 'nosniff' },
+      { key: 'X-DNS-Prefetch-Control', value: 'off' },
+      { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
+      { key: 'Permissions-Policy', value: 'camera=(), microphone=(), geolocation=(), payment=()' },
+      { key: 'Cross-Origin-Opener-Policy', value: 'same-origin' },
+      { key: 'Cross-Origin-Resource-Policy', value: 'same-origin' },
+      {
+        key: 'Strict-Transport-Security',
+        value: 'max-age=63072000; includeSubDomains; preload',
+      },
+      { key: 'Content-Security-Policy', value: csp },
+    ]
+
     return [
+      // Cabeceras de seguridad en todas las rutas
       {
         source: '/(.*)',
+        headers: securityHeaders,
+      },
+      // CORS para la API pública v1 (consumida por sistemas externos)
+      {
+        source: '/api/v1/(.*)',
         headers: [
-          { key: 'X-Frame-Options', value: 'DENY' },
-          { key: 'X-Content-Type-Options', value: 'nosniff' },
-          { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
-          { key: 'Permissions-Policy', value: 'camera=(), microphone=(), geolocation=()' },
-          {
-            key: 'Strict-Transport-Security',
-            value: 'max-age=63072000; includeSubDomains; preload',
-          },
-          // CSP — se refina en Fase 10 con nonces
-          {
-            key: 'Content-Security-Policy',
-            value: [
-              "default-src 'self'",
-              "script-src 'self' 'unsafe-eval'", // unsafe-eval para Next.js dev; se elimina en prod
-              "style-src 'self' 'unsafe-inline'",
-              "img-src 'self' data: blob:",
-              "font-src 'self'",
-              "connect-src 'self' https://*.supabase.co wss://*.supabase.co",
-              "frame-ancestors 'none'",
-            ].join('; '),
-          },
+          { key: 'Access-Control-Allow-Origin', value: '*' },
+          { key: 'Access-Control-Allow-Methods', value: 'GET, OPTIONS' },
+          { key: 'Access-Control-Allow-Headers', value: 'Authorization, Content-Type' },
+          { key: 'Access-Control-Max-Age', value: '86400' },
+          // La API v1 es solo-lectura — no necesita CORP restrictivo
+          { key: 'Cross-Origin-Resource-Policy', value: 'cross-origin' },
         ],
       },
     ]
