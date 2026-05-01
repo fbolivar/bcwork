@@ -1,19 +1,18 @@
 import type { Metadata } from 'next'
 import './globals.css'
+import { TrpcProvider } from '@/lib/trpc-provider'
 
 export const metadata: Metadata = {
-  title: 'SaaS Factory App',
-  description: 'Built with SaaS Factory',
+  title: 'BCWork — Control de Teletrabajo',
+  description: 'Plataforma SaaS de monitoreo de teletrabajo conforme a la ley colombiana',
 }
 
-export default function RootLayout({
-  children,
-}: {
-  children: React.ReactNode
-}) {
+export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en">
-      <body>{children}</body>
+    <html lang="es-CO">
+      <body>
+        <TrpcProvider>{children}</TrpcProvider>
+      </body>
     </html>
   )
 }

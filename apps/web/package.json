@@ -30,6 +30,8 @@
     "pino": "^9.6.0",
     "pino-pretty": "^13.0.0",
     "@sentry/nextjs": "^8.45.0",
+    "otpauth": "^9.3.0",
+    "qrcode": "^1.5.4",
     "@bcwork/shared": "workspace:*",
     "@bcwork/db": "workspace:*",
     "@bcwork/ui": "workspace:*"
@@ -39,6 +41,7 @@
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "@types/bcryptjs": "^2.4.6",
+    "@types/qrcode": "^1.5.5",
     "tailwindcss": "^3.4.0",
     "postcss": "^8.4.0",
     "autoprefixer": "^10.4.0",

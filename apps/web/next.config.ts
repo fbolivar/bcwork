@@ -1,10 +1,8 @@
 import type { NextConfig } from 'next'
 
 const nextConfig: NextConfig = {
-  experimental: {
-    // Next.js DevTools MCP (disponible en /_next/mcp)
-    mcpServer: true,
-  },
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  experimental: { mcpServer: true } as any,
 
   // Transpile workspace packages
   transpilePackages: ['@bcwork/shared', '@bcwork/db', '@bcwork/ui'],
