@@ -660,6 +660,26 @@ export const adminRouter = router({
     return { ok: true }
   }),
 
+  // ─── Reglas de dominio (extensión) ───────────────────────────────────────
+
+  getDomainRules: adminProcedure.query(async ({ ctx }) => {
+    const { data, error } = await ctx.db
+      .from('app_rules')
+      .select('identifier, productivity, rule_type')
+      .eq('tenant_id', ctx.user!.tid)
+      .eq('rule_type', 'domain')
+      .order('created_at', { ascending: false })
+
+    if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+
+    // Devolver mapa domain → productivity para facilitar uso en extensión
+    const rules: Record<string, string> = {}
+    for (const row of data ?? []) {
+      rules[row.identifier] = row.productivity
+    }
+    return rules
+  }),
+
   // ─── Agent Devices ────────────────────────────────────────────────────────
 
   generateEnrollmentCode: adminProcedure
