@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getDb } from '@/lib/db'
+import { dispatchWebhook } from '@/lib/webhooks'
 
 export async function GET(req: NextRequest) {
   const secret = req.headers.get('authorization')
@@ -31,11 +32,23 @@ export async function GET(req: NextRequest) {
     p_tenant_id: null,
   })
 
+  let notifications = 0
   if (alertError) {
     console.error('[cron] evaluate_alerts failed:', alertError.message)
   } else {
-    console.log(`[cron] evaluate_alerts created ${alertData as number} notifications`)
+    notifications = alertData as number
+    console.log(`[cron] evaluate_alerts created ${notifications} notifications`)
+
+    // Disparar webhooks de alerta si se generaron notificaciones
+    if (notifications > 0) {
+      const { data: tenants } = await db.from('tenants').select('id').eq('status', 'active')
+      await Promise.allSettled(
+        (tenants ?? []).map((t) =>
+          dispatchWebhook(t.id, 'alert.fired', { date, notifications_count: notifications }),
+        ),
+      )
+    }
   }
 
-  return NextResponse.json({ ok: true, date, rows, notifications: alertData ?? 0 })
+  return NextResponse.json({ ok: true, date, rows, notifications })
 }
