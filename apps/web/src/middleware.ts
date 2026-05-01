@@ -17,7 +17,7 @@ const PLATFORM_ADMIN_PATHS = ['/super-admin']
 
 // Rutas por rol de tenant
 const ROLE_PATHS: Record<string, string[]> = {
-  tenant_admin: ['/admin'],
+  tenant_admin: ['/admin', '/onboarding'],
   manager: ['/manager'],
   employee: ['/me'],
 }

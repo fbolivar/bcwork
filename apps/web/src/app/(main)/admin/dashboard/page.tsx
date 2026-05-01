@@ -1,8 +1,12 @@
-export default function AdminDashboard() {
+import { DashboardStats } from '@/features/admin/components/DashboardStats'
+
+export const metadata = { title: 'Dashboard — BCWork Admin' }
+
+export default function DashboardPage() {
   return (
-    <div className="p-8">
-      <h1 className="text-2xl font-bold">Dashboard — Administrador</h1>
-      <p className="mt-2 text-gray-500">Fase 3 — pendiente de implementación</p>
+    <div>
+      <h1 className="mb-6 text-xl font-bold text-gray-900">Resumen</h1>
+      <DashboardStats />
     </div>
   )
 }

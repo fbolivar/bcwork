@@ -1,0 +1,664 @@
+import { z } from 'zod'
+import { TRPCError } from '@trpc/server'
+import { router, adminProcedure, protectedProcedure } from '../trpc'
+import { hashPassword, generateRandomPassword } from '@/lib/auth/password'
+import { logAudit } from '@/lib/auth/audit'
+
+export const adminRouter = router({
+  // ─── Dashboard ────────────────────────────────────────────────────────────
+
+  getStats: protectedProcedure.query(async ({ ctx }) => {
+    const tenantId = ctx.user!.tid
+
+    const [usersRes, teamsRes, schedulesRes, licenseRes, sessionsRes, tenantRes] =
+      await Promise.all([
+        ctx.db
+          .from('users')
+          .select('id, status')
+          .eq('tenant_id', tenantId)
+          .neq('status', 'deleted'),
+        ctx.db.from('teams').select('id', { count: 'exact', head: true }).eq('tenant_id', tenantId),
+        ctx.db
+          .from('work_schedules')
+          .select('id', { count: 'exact', head: true })
+          .eq('tenant_id', tenantId),
+        ctx.db
+          .from('licenses')
+          .select('seats_total, status')
+          .eq('tenant_id', tenantId)
+          .in('status', ['active', 'trial'])
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle(),
+        ctx.db
+          .from('work_sessions')
+          .select('id', { count: 'exact', head: true })
+          .eq('tenant_id', tenantId)
+          .is('ended_at', null),
+        ctx.db.from('tenants').select('onboarding_complete').eq('id', tenantId).single(),
+      ])
+
+    const users = usersRes.data ?? []
+    return {
+      totalUsers: users.length,
+      activeUsers: users.filter((u) => u.status === 'active').length,
+      teamsCount: teamsRes.count ?? 0,
+      schedulesCount: schedulesRes.count ?? 0,
+      licenseSeats: licenseRes.data?.seats_total ?? 0,
+      licenseStatus: licenseRes.data?.status ?? 'none',
+      activeSessions: sessionsRes.count ?? 0,
+      onboardingComplete: tenantRes.data?.onboarding_complete ?? false,
+    }
+  }),
+
+  // ─── Usuarios ─────────────────────────────────────────────────────────────
+
+  listUsers: adminProcedure
+    .input(
+      z.object({
+        search: z.string().optional(),
+        role: z.enum(['tenant_admin', 'manager', 'employee', 'all']).default('all'),
+        status: z.enum(['active', 'disabled', 'all']).default('all'),
+        page: z.number().int().positive().default(1),
+        pageSize: z.number().int().positive().max(100).default(20),
+      }),
+    )
+    .query(async ({ ctx, input }) => {
+      const tenantId = ctx.user!.tid
+      const from = (input.page - 1) * input.pageSize
+
+      let query = ctx.db
+        .from('users')
+        .select(
+          'id, email, full_name, role, status, department, position, mfa_enabled, last_login_at, created_at, must_change_password',
+          { count: 'exact' },
+        )
+        .eq('tenant_id', tenantId)
+        .neq('status', 'deleted')
+        .order('created_at', { ascending: false })
+
+      if (input.search) {
+        query = query.or(`email.ilike.%${input.search}%,full_name.ilike.%${input.search}%`)
+      }
+      if (input.role !== 'all') query = query.eq('role', input.role)
+      if (input.status !== 'all') query = query.eq('status', input.status)
+
+      const { data, count, error } = await query.range(from, from + input.pageSize - 1)
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+
+      return { data: data ?? [], total: count ?? 0, page: input.page, pageSize: input.pageSize }
+    }),
+
+  inviteUser: adminProcedure
+    .input(
+      z.object({
+        email: z.string().email(),
+        full_name: z.string().min(2).max(100),
+        role: z.enum(['manager', 'employee']),
+        department: z.string().max(100).optional(),
+        position: z.string().max(100).optional(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const tenantId = ctx.user!.tid
+
+      const { data: existing } = await ctx.db
+        .from('users')
+        .select('id')
+        .eq('email', input.email.toLowerCase())
+        .neq('status', 'deleted')
+        .limit(1)
+        .maybeSingle()
+
+      if (existing) throw new TRPCError({ code: 'CONFLICT', message: 'Email ya registrado' })
+
+      const { data: license } = await ctx.db
+        .from('licenses')
+        .select('seats_total')
+        .eq('tenant_id', tenantId)
+        .in('status', ['active', 'trial'])
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+
+      const { count: currentCount } = await ctx.db
+        .from('users')
+        .select('id', { count: 'exact', head: true })
+        .eq('tenant_id', tenantId)
+        .eq('status', 'active')
+
+      if (license && (currentCount ?? 0) >= license.seats_total) {
+        throw new TRPCError({ code: 'FORBIDDEN', message: 'Límite de seats alcanzado' })
+      }
+
+      const tempPassword = generateRandomPassword()
+      const passwordHash = await hashPassword(tempPassword)
+
+      const insertData: Record<string, unknown> = {
+        tenant_id: tenantId,
+        email: input.email.toLowerCase(),
+        full_name: input.full_name,
+        role: input.role,
+        password_hash: passwordHash,
+        must_change_password: true,
+        status: 'active',
+      }
+      if (input.department) insertData['department'] = input.department
+      if (input.position) insertData['position'] = input.position
+
+      const { data: newUser, error } = await ctx.db
+        .from('users')
+        .insert(insertData)
+        .select('id, email')
+        .single()
+
+      if (error ?? !newUser)
+        throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Error creando usuario' })
+
+      await ctx.db
+        .from('password_history')
+        .insert({ user_id: newUser.id, tenant_id: tenantId, password_hash: passwordHash })
+
+      await logAudit(ctx.db, {
+        tenantId: tenantId,
+        actorUserId: ctx.user!.sub,
+        action: 'user.invited',
+        entityType: 'user',
+        entityId: newUser.id,
+        ipInet: ctx.ip,
+        userAgent: ctx.userAgent,
+        after: { email: input.email, role: input.role },
+      })
+
+      return { id: newUser.id, email: newUser.email, tempPassword }
+    }),
+
+  updateUser: adminProcedure
+    .input(
+      z.object({
+        id: z.string().uuid(),
+        full_name: z.string().min(2).max(100).optional(),
+        role: z.enum(['manager', 'employee']).optional(),
+        status: z.enum(['active', 'disabled']).optional(),
+        department: z.string().max(100).optional(),
+        position: z.string().max(100).optional(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { id, ...rest } = input
+      const tenantId = ctx.user!.tid
+      const updates = Object.fromEntries(Object.entries(rest).filter(([, v]) => v !== undefined))
+
+      const { error } = await ctx.db
+        .from('users')
+        .update({ ...updates, updated_at: new Date().toISOString() })
+        .eq('id', id)
+        .eq('tenant_id', tenantId)
+        .neq('role', 'platform_admin')
+
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+
+      await logAudit(ctx.db, {
+        tenantId: tenantId,
+        actorUserId: ctx.user!.sub,
+        action: 'user.updated',
+        entityType: 'user',
+        entityId: id,
+        ipInet: ctx.ip,
+        userAgent: ctx.userAgent,
+        after: updates,
+      })
+
+      return { ok: true }
+    }),
+
+  // ─── Equipos ──────────────────────────────────────────────────────────────
+
+  listTeams: protectedProcedure
+    .input(
+      z.object({
+        page: z.number().int().positive().default(1),
+        pageSize: z.number().int().positive().max(100).default(20),
+      }),
+    )
+    .query(async ({ ctx, input }) => {
+      const tenantId = ctx.user!.tid
+      const from = (input.page - 1) * input.pageSize
+
+      const { data, count, error } = await ctx.db
+        .from('teams')
+        .select('id, name, description, created_at', { count: 'exact' })
+        .eq('tenant_id', tenantId)
+        .order('name', { ascending: true })
+        .range(from, from + input.pageSize - 1)
+
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      return { data: data ?? [], total: count ?? 0, page: input.page, pageSize: input.pageSize }
+    }),
+
+  createTeam: adminProcedure
+    .input(
+      z.object({ name: z.string().min(1).max(100), description: z.string().max(500).optional() }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const tenantId = ctx.user!.tid
+      const insertData: Record<string, unknown> = { tenant_id: tenantId, name: input.name }
+      if (input.description) insertData['description'] = input.description
+
+      const { data, error } = await ctx.db
+        .from('teams')
+        .insert(insertData)
+        .select('id, name')
+        .single()
+
+      if (error ?? !data)
+        throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error?.message ?? 'Error' })
+
+      await logAudit(ctx.db, {
+        tenantId: tenantId,
+        actorUserId: ctx.user!.sub,
+        action: 'team.created',
+        entityType: 'team',
+        entityId: data.id,
+        ipInet: ctx.ip,
+        userAgent: ctx.userAgent,
+        after: { name: input.name },
+      })
+
+      return data
+    }),
+
+  updateTeam: adminProcedure
+    .input(
+      z.object({
+        id: z.string().uuid(),
+        name: z.string().min(1).max(100).optional(),
+        description: z.string().max(500).optional(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { id, ...rest } = input
+      const updates = Object.fromEntries(Object.entries(rest).filter(([, v]) => v !== undefined))
+      const { error } = await ctx.db
+        .from('teams')
+        .update({ ...updates, updated_at: new Date().toISOString() })
+        .eq('id', id)
+        .eq('tenant_id', ctx.user!.tid)
+
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      return { ok: true }
+    }),
+
+  deleteTeam: adminProcedure
+    .input(z.object({ id: z.string().uuid() }))
+    .mutation(async ({ ctx, input }) => {
+      const tenantId = ctx.user!.tid
+      await ctx.db.from('team_members').delete().eq('team_id', input.id).eq('tenant_id', tenantId)
+      const { error } = await ctx.db
+        .from('teams')
+        .delete()
+        .eq('id', input.id)
+        .eq('tenant_id', tenantId)
+
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+
+      await logAudit(ctx.db, {
+        tenantId: tenantId,
+        actorUserId: ctx.user!.sub,
+        action: 'team.deleted',
+        entityType: 'team',
+        entityId: input.id,
+        ipInet: ctx.ip,
+        userAgent: ctx.userAgent,
+      })
+
+      return { ok: true }
+    }),
+
+  listTeamMembers: protectedProcedure
+    .input(z.object({ teamId: z.string().uuid() }))
+    .query(async ({ ctx, input }) => {
+      const { data, error } = await ctx.db
+        .from('team_members')
+        .select('user_id, role, joined_at, users(id, email, full_name, role, department, position)')
+        .eq('team_id', input.teamId)
+        .eq('tenant_id', ctx.user!.tid)
+
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      return data ?? []
+    }),
+
+  addTeamMember: adminProcedure
+    .input(
+      z.object({
+        teamId: z.string().uuid(),
+        userId: z.string().uuid(),
+        role: z.enum(['lead', 'member']).default('member'),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { error } = await ctx.db
+        .from('team_members')
+        .upsert(
+          {
+            team_id: input.teamId,
+            user_id: input.userId,
+            tenant_id: ctx.user!.tid,
+            role: input.role,
+          },
+          { onConflict: 'team_id,user_id' },
+        )
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      return { ok: true }
+    }),
+
+  removeTeamMember: adminProcedure
+    .input(z.object({ teamId: z.string().uuid(), userId: z.string().uuid() }))
+    .mutation(async ({ ctx, input }) => {
+      const { error } = await ctx.db
+        .from('team_members')
+        .delete()
+        .eq('team_id', input.teamId)
+        .eq('user_id', input.userId)
+        .eq('tenant_id', ctx.user!.tid)
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      return { ok: true }
+    }),
+
+  // ─── Horarios ─────────────────────────────────────────────────────────────
+
+  listSchedules: protectedProcedure.query(async ({ ctx }) => {
+    const { data, error } = await ctx.db
+      .from('work_schedules')
+      .select(
+        'id, name, timezone, days_of_week, start_time, end_time, disconnection_grace_minutes, created_at',
+      )
+      .eq('tenant_id', ctx.user!.tid)
+      .order('name', { ascending: true })
+
+    if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+    return data ?? []
+  }),
+
+  createSchedule: adminProcedure
+    .input(
+      z.object({
+        name: z.string().min(1).max(100),
+        timezone: z.string(),
+        days_of_week: z.array(z.number().int().min(0).max(6)),
+        start_time: z.string().regex(/^\d{2}:\d{2}$/),
+        end_time: z.string().regex(/^\d{2}:\d{2}$/),
+        disconnection_grace_minutes: z.number().int().min(0).max(120).default(30),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { data, error } = await ctx.db
+        .from('work_schedules')
+        .insert({ ...input, tenant_id: ctx.user!.tid })
+        .select('id, name')
+        .single()
+
+      if (error ?? !data)
+        throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error?.message ?? 'Error' })
+      return data
+    }),
+
+  updateSchedule: adminProcedure
+    .input(
+      z.object({
+        id: z.string().uuid(),
+        name: z.string().min(1).max(100).optional(),
+        timezone: z.string().optional(),
+        days_of_week: z.array(z.number().int().min(0).max(6)).optional(),
+        start_time: z
+          .string()
+          .regex(/^\d{2}:\d{2}$/)
+          .optional(),
+        end_time: z
+          .string()
+          .regex(/^\d{2}:\d{2}$/)
+          .optional(),
+        disconnection_grace_minutes: z.number().int().min(0).max(120).optional(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { id, ...rest } = input
+      const updates = Object.fromEntries(Object.entries(rest).filter(([, v]) => v !== undefined))
+      const { error } = await ctx.db
+        .from('work_schedules')
+        .update({ ...updates, updated_at: new Date().toISOString() })
+        .eq('id', id)
+        .eq('tenant_id', ctx.user!.tid)
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      return { ok: true }
+    }),
+
+  deleteSchedule: adminProcedure
+    .input(z.object({ id: z.string().uuid() }))
+    .mutation(async ({ ctx, input }) => {
+      const tenantId = ctx.user!.tid
+      await ctx.db
+        .from('user_schedules')
+        .delete()
+        .eq('schedule_id', input.id)
+        .eq('tenant_id', tenantId)
+      const { error } = await ctx.db
+        .from('work_schedules')
+        .delete()
+        .eq('id', input.id)
+        .eq('tenant_id', tenantId)
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      return { ok: true }
+    }),
+
+  assignSchedule: adminProcedure
+    .input(z.object({ userId: z.string().uuid(), scheduleId: z.string().uuid().nullable() }))
+    .mutation(async ({ ctx, input }) => {
+      const tenantId = ctx.user!.tid
+      const today = new Date().toISOString().split('T')[0]!
+
+      await ctx.db
+        .from('user_schedules')
+        .update({ effective_to: today })
+        .eq('user_id', input.userId)
+        .eq('tenant_id', tenantId)
+        .is('effective_to', null)
+
+      if (input.scheduleId) {
+        await ctx.db.from('user_schedules').insert({
+          user_id: input.userId,
+          tenant_id: tenantId,
+          schedule_id: input.scheduleId,
+          effective_from: today,
+        })
+      }
+      return { ok: true }
+    }),
+
+  // ─── Catálogo de apps ─────────────────────────────────────────────────────
+
+  listAppRules: adminProcedure.query(async ({ ctx }) => {
+    const tenantId = ctx.user!.tid
+    const { data, error } = await ctx.db
+      .from('app_catalog')
+      .select('id, name, process_name, category, rule, tenant_id, created_at')
+      .or(`tenant_id.eq.${tenantId},tenant_id.is.null`)
+      .order('category', { ascending: true })
+      .order('name', { ascending: true })
+
+    if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+    return data ?? []
+  }),
+
+  upsertAppRule: adminProcedure
+    .input(
+      z.object({
+        id: z.string().uuid().optional(),
+        name: z.string().min(1).max(100),
+        process_name: z.string().max(200).optional(),
+        category: z.string().max(50),
+        rule: z.enum(['allow', 'block', 'monitor']),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const tenantId = ctx.user!.tid
+      const { id, ...rest } = input
+      const payload = Object.fromEntries(Object.entries(rest).filter(([, v]) => v !== undefined))
+
+      if (id) {
+        const { error } = await ctx.db
+          .from('app_catalog')
+          .update(payload)
+          .eq('id', id)
+          .eq('tenant_id', tenantId)
+        if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      } else {
+        const { error } = await ctx.db
+          .from('app_catalog')
+          .insert({ ...payload, tenant_id: tenantId })
+        if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      }
+      return { ok: true }
+    }),
+
+  deleteAppRule: adminProcedure
+    .input(z.object({ id: z.string().uuid() }))
+    .mutation(async ({ ctx, input }) => {
+      const { error } = await ctx.db
+        .from('app_catalog')
+        .delete()
+        .eq('id', input.id)
+        .eq('tenant_id', ctx.user!.tid)
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      return { ok: true }
+    }),
+
+  // ─── Rangos IP corporativos ────────────────────────────────────────────────
+
+  listIpRanges: adminProcedure.query(async ({ ctx }) => {
+    const { data, error } = await ctx.db
+      .from('corporate_ip_ranges')
+      .select('id, cidr, label, created_at')
+      .eq('tenant_id', ctx.user!.tid)
+      .order('created_at', { ascending: false })
+
+    if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+    return data ?? []
+  }),
+
+  addIpRange: adminProcedure
+    .input(
+      z.object({
+        cidr: z
+          .string()
+          .regex(/^(\d{1,3}\.){3}\d{1,3}\/\d{1,2}$/, 'CIDR inválido (ej: 192.168.1.0/24)'),
+        label: z.string().min(1).max(100),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const tenantId = ctx.user!.tid
+      const { data, error } = await ctx.db
+        .from('corporate_ip_ranges')
+        .insert({ tenant_id: tenantId, cidr: input.cidr, label: input.label })
+        .select('id')
+        .single()
+
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+
+      await logAudit(ctx.db, {
+        tenantId: tenantId,
+        actorUserId: ctx.user!.sub,
+        action: 'ip_range.added',
+        entityType: 'ip_range',
+        entityId: data?.id ?? '',
+        ipInet: ctx.ip,
+        userAgent: ctx.userAgent,
+        after: { cidr: input.cidr, label: input.label },
+      })
+      return { ok: true }
+    }),
+
+  removeIpRange: adminProcedure
+    .input(z.object({ id: z.string().uuid() }))
+    .mutation(async ({ ctx, input }) => {
+      const { error } = await ctx.db
+        .from('corporate_ip_ranges')
+        .delete()
+        .eq('id', input.id)
+        .eq('tenant_id', ctx.user!.tid)
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      return { ok: true }
+    }),
+
+  // ─── Configuración del tenant ─────────────────────────────────────────────
+
+  getSettings: adminProcedure.query(async ({ ctx }) => {
+    const { data, error } = await ctx.db
+      .from('tenants')
+      .select(
+        'legal_name, trade_name, nit, contact_email, contact_phone, timezone, data_retention_months, data_protection_officer, onboarding_complete',
+      )
+      .eq('id', ctx.user!.tid)
+      .single()
+
+    if (error ?? !data) throw new TRPCError({ code: 'NOT_FOUND', message: 'Empresa no encontrada' })
+    return data
+  }),
+
+  updateSettings: adminProcedure
+    .input(
+      z.object({
+        trade_name: z.string().max(200).optional(),
+        contact_email: z.string().email().optional(),
+        contact_phone: z.string().max(20).optional(),
+        timezone: z.string().optional(),
+        data_retention_months: z.number().int().min(12).max(84).optional(),
+        data_protection_officer: z.string().max(200).optional(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const tenantId = ctx.user!.tid
+      const updates = Object.fromEntries(Object.entries(input).filter(([, v]) => v !== undefined))
+
+      const { error } = await ctx.db
+        .from('tenants')
+        .update({ ...updates, updated_at: new Date().toISOString() })
+        .eq('id', tenantId)
+
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+
+      await logAudit(ctx.db, {
+        tenantId: tenantId,
+        actorUserId: ctx.user!.sub,
+        action: 'tenant.settings_updated',
+        entityType: 'tenant',
+        entityId: tenantId,
+        ipInet: ctx.ip,
+        userAgent: ctx.userAgent,
+        after: updates,
+      })
+      return { ok: true }
+    }),
+
+  completeOnboarding: adminProcedure.mutation(async ({ ctx }) => {
+    const tenantId = ctx.user!.tid
+
+    const { error } = await ctx.db
+      .from('tenants')
+      .update({ onboarding_complete: true, updated_at: new Date().toISOString() })
+      .eq('id', tenantId)
+
+    if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+
+    await logAudit(ctx.db, {
+      tenantId: tenantId,
+      actorUserId: ctx.user!.sub,
+      action: 'tenant.onboarding_completed',
+      entityType: 'tenant',
+      entityId: tenantId,
+      ipInet: ctx.ip,
+      userAgent: ctx.userAgent,
+    })
+    return { ok: true }
+  }),
+})
