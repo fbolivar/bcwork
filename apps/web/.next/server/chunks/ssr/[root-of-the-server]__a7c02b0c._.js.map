@@ -1,0 +1,7 @@
+{
+  "version": 3,
+  "sources": [],
+  "sections": [
+    {"offset": {"line": 3, "column": 0}, "map": {"version":3,"sources":[],"names":[],"mappings":"","debugId":null}},
+    {"offset": {"line": 11, "column": 0}, "map": {"version":3,"sources":["file:///C:/bc-security/PROYECTOS/EMPRENDIMIENTO/BC%20FABRIC%20SAS/APP/bcwork/apps/web/src/app/page.tsx"],"sourcesContent":["export default function Home() {\r\n  return (\r\n    <main className=\"min-h-screen p-8\">\r\n      <h1 className=\"text-2xl font-bold\">SaaS Factory</h1>\r\n      <p className=\"mt-2 text-gray-600\">Tu app está lista. Empieza a construir.</p>\r\n    </main>\r\n  )\r\n}\r\n"],"names":[],"mappings":";;;;;;AAAe,SAAS;IACtB,qBACE,oVAAC;QAAK,WAAU;;0BACd,oVAAC;gBAAG,WAAU;0BAAqB;;;;;;0BACnC,oVAAC;gBAAE,WAAU;0BAAqB;;;;;;;;;;;;AAGxC","debugId":null}}]
+}

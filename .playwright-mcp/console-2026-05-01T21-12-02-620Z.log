@@ -1,0 +1,4 @@
+[     123ms] [LOG] [Fast Refresh] rebuilding @ http://localhost:3003/_next/static/chunks/dc3ff_next_dist_client_489f86a8._.js:5949
+[     437ms] [LOG] [Fast Refresh] done in 417ms @ http://localhost:3003/_next/static/chunks/dc3ff_next_dist_client_489f86a8._.js:5809
+[     679ms] [LOG] %c Console Ninja extension is connected to Next.js browser, background: rgb(30,30,30); color: rgb(255,213,92) see https://tinyurl.com/2vt8jxzw for more info. @ :0
+[     683ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://localhost:3003/_next/static/chunks/dc3ff_next_dist_compiled_react-dom_8ca58cb4._.js:14537

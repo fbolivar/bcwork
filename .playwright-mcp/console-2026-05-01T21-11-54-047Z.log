@@ -1,0 +1,13 @@
+[       4ms] [ERROR] Connecting to 'ws://127.0.0.1:49939/' violates the following Content Security Policy directive: "connect-src 'self' https://*.supabase.co wss://*.supabase.co". The action has been blocked. @ :0
+[       4ms] [ERROR] Connecting to 'ws://127.0.0.1:49939/' violates the following Content Security Policy directive: "connect-src 'self' https://*.supabase.co wss://*.supabase.co". The action has been blocked. @ :0
+[     514ms] [ERROR] Connecting to 'ws://127.0.0.1:49939/' violates the following Content Security Policy directive: "connect-src 'self' https://*.supabase.co wss://*.supabase.co". The action has been blocked. @ :0
+[     514ms] [ERROR] Connecting to 'ws://127.0.0.1:49939/' violates the following Content Security Policy directive: "connect-src 'self' https://*.supabase.co wss://*.supabase.co". The action has been blocked. @ :0
+[    1022ms] [ERROR] Connecting to 'ws://127.0.0.1:49939/' violates the following Content Security Policy directive: "connect-src 'self' https://*.supabase.co wss://*.supabase.co". The action has been blocked. @ :0
+[    1022ms] [ERROR] Connecting to 'ws://127.0.0.1:49939/' violates the following Content Security Policy directive: "connect-src 'self' https://*.supabase.co wss://*.supabase.co". The action has been blocked. @ :0
+[    1532ms] [ERROR] Connecting to 'ws://127.0.0.1:49939/' violates the following Content Security Policy directive: "connect-src 'self' https://*.supabase.co wss://*.supabase.co". The action has been blocked. @ :0
+[    1532ms] [ERROR] Connecting to 'ws://127.0.0.1:49939/' violates the following Content Security Policy directive: "connect-src 'self' https://*.supabase.co wss://*.supabase.co". The action has been blocked. @ :0
+[    2047ms] [ERROR] Connecting to 'ws://127.0.0.1:49939/' violates the following Content Security Policy directive: "connect-src 'self' https://*.supabase.co wss://*.supabase.co". The action has been blocked. @ :0
+[    2048ms] [ERROR] Connecting to 'ws://127.0.0.1:49939/' violates the following Content Security Policy directive: "connect-src 'self' https://*.supabase.co wss://*.supabase.co". The action has been blocked. @ :0
+[    2386ms] [LOG] %c Console Ninja extension is connected to Next.js browser, background: rgb(30,30,30); color: rgb(255,213,92) see https://tinyurl.com/2vt8jxzw for more info. @ :0
+[    2400ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://localhost:3003/_next/static/chunks/dc3ff_next_dist_compiled_react-dom_8ca58cb4._.js:14537
+[    2475ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://localhost:3003/favicon.ico:0

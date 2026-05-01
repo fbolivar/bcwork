@@ -12,6 +12,7 @@ const PUBLIC_PATHS = new Set([
   '/api/trpc/auth.login',
   '/api/trpc/auth.signupTenant',
   '/api/trpc/auth.refresh',
+  '/api/auth/set-session',
 ])
 
 // Rutas públicas por prefijo

@@ -1,0 +1,6 @@
+{
+  "version": 3,
+  "sources": [],
+  "sections": [
+    {"offset": {"line": 4, "column": 0}, "map": {"version":3,"sources":["file:///C:/bc-security/PROYECTOS/EMPRENDIMIENTO/BC%20FABRIC%20SAS/APP/bcwork/apps/web/src/app/%28main%29/layout.tsx"],"sourcesContent":["export default function MainLayout({\r\n  children,\r\n}: {\r\n  children: React.ReactNode\r\n}) {\r\n  return (\r\n    <div className=\"min-h-screen\">\r\n      {/* Nav, Sidebar, etc. */}\r\n      <main>{children}</main>\r\n    </div>\r\n  )\r\n}\r\n"],"names":[],"mappings":";;;;;;AAAe,SAAS,WAAW,EACjC,QAAQ,EAGT;IACC,qBACE,oVAAC;QAAI,WAAU;kBAEb,cAAA,oVAAC;sBAAM;;;;;;;;;;;AAGb","debugId":null}}]
+}

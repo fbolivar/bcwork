@@ -16,13 +16,17 @@ export function LoginForm() {
   const [error, setError] = useState<string | null>(null)
 
   const loginMutation = trpc.auth.login.useMutation({
-    onSuccess: (data) => {
+    onSuccess: async (data) => {
+      // Establecer cookies httpOnly vía route handler (el middleware las necesita)
+      await fetch('/api/auth/set-session', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          accessToken: data.accessToken,
+          refreshToken: data.refreshToken,
+        }),
+      })
       setUser(data.user)
-      // Almacenar tokens en localStorage (nota: en producción usar cookie httpOnly via server action)
-      if (typeof window !== 'undefined') {
-        localStorage.setItem('bcw_at', data.accessToken)
-        localStorage.setItem('bcw_rt', data.refreshToken)
-      }
       if (data.mustChangePassword) {
         router.push('/change-password')
       } else {

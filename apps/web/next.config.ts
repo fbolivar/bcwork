@@ -11,12 +11,16 @@ const nextConfig: NextConfig = {
   async headers() {
     const csp = [
       "default-src 'self'",
-      // unsafe-eval solo en desarrollo (Next.js HMR lo necesita)
-      isDev ? "script-src 'self' 'unsafe-eval'" : "script-src 'self'",
+      // Next.js (Turbopack) requiere unsafe-inline + unsafe-eval en dev para HMR
+      isDev
+        ? "script-src 'self' 'unsafe-eval' 'unsafe-inline'"
+        : "script-src 'self' 'unsafe-inline'",
       "style-src 'self' 'unsafe-inline'",
       "img-src 'self' data: blob:",
       "font-src 'self'",
-      "connect-src 'self' https://*.supabase.co wss://*.supabase.co",
+      isDev
+        ? "connect-src 'self' https://*.supabase.co wss://*.supabase.co ws://localhost:* ws://127.0.0.1:*"
+        : "connect-src 'self' https://*.supabase.co wss://*.supabase.co",
       "frame-ancestors 'none'",
       "base-uri 'self'",
       "form-action 'self'",

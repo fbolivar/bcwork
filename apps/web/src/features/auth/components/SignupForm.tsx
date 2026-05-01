@@ -23,7 +23,19 @@ export function SignupForm() {
     onSuccess: () => {
       router.push('/login?registered=1')
     },
-    onError: (err) => setError(err.message),
+    onError: (err) => {
+      // Extraer el primer mensaje legible del zodError si existe
+      const zodIssues = err.data?.zodError?.fieldErrors
+      if (zodIssues) {
+        const firstField = Object.keys(zodIssues)[0]
+        const firstMsg = firstField ? zodIssues[firstField]?.[0] : null
+        if (firstMsg) {
+          setError(`${firstField}: ${firstMsg}`)
+          return
+        }
+      }
+      setError(err.message)
+    },
   })
 
   function set(field: keyof typeof form) {
@@ -74,7 +86,10 @@ export function SignupForm() {
           type="text"
           value={form.nit}
           onChange={set('nit')}
-          placeholder="123456789-0"
+          placeholder="900123456-7"
+          pattern="\d{9,10}-\d"
+          title="Formato: 9 o 10 dígitos, guión, dígito de verificación (ej: 900123456-7)"
+          hint="Formato: 900123456-7 (sin puntos, con dígito de verificación)"
           required
         />
         <Field

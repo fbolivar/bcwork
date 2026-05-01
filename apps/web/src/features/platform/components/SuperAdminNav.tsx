@@ -1,9 +1,10 @@
 'use client'
 
 import Link from 'next/link'
-import { usePathname } from 'next/navigation'
-import { LayoutDashboard, Building2, CreditCard, ScrollText, Settings } from 'lucide-react'
+import { usePathname, useRouter } from 'next/navigation'
+import { LayoutDashboard, Building2, CreditCard, ScrollText, LogOut } from 'lucide-react'
 import { cn } from '@bcwork/ui'
+import { trpc } from '@/lib/trpc-client'
 
 const NAV = [
   { href: '/super-admin/metrics', label: 'Métricas', icon: LayoutDashboard },
@@ -14,6 +15,10 @@ const NAV = [
 
 export function SuperAdminNav() {
   const pathname = usePathname()
+  const router = useRouter()
+  const logout = trpc.auth.logout.useMutation({
+    onSuccess: () => router.push('/login'),
+  })
 
   return (
     <aside className="flex w-56 flex-col border-r border-gray-200 bg-white">
@@ -42,8 +47,17 @@ export function SuperAdminNav() {
         ))}
       </nav>
 
-      <div className="border-t border-gray-200 p-3">
-        <p className="text-xs text-gray-400">Platform Admin</p>
+      <div className="space-y-2 border-t border-gray-200 p-3">
+        <p className="px-1 text-xs text-gray-400">Platform Admin</p>
+        <button
+          type="button"
+          onClick={() => logout.mutate({})}
+          disabled={logout.isPending}
+          className="flex w-full items-center gap-2.5 rounded-md px-3 py-2 text-sm text-gray-500 hover:bg-gray-100 hover:text-gray-700 disabled:opacity-50"
+        >
+          <LogOut className="h-4 w-4 shrink-0" />
+          Cerrar sesión
+        </button>
       </div>
     </aside>
   )

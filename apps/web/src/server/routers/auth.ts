@@ -158,7 +158,6 @@ export const authRouter = router({
         'id, tenant_id, email, password_hash, role, status, failed_login_attempts, locked_until, mfa_enabled, mfa_secret_encrypted, must_change_password, password_changed_at',
       )
       .eq('email', input.email.toLowerCase())
-      .neq('role', 'platform_admin') // platform_admin usa endpoint separado
       .maybeSingle()
 
     // Respuesta genérica para no filtrar si el email existe

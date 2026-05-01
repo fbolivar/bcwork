@@ -53,6 +53,118 @@ export const platformRouter = router({
     }
   }),
 
+  // ─── CREAR TENANT ────────────────────────────────────────────────────────
+  createTenant: platformAdminProcedure
+    .input(
+      z.object({
+        legal_name: z.string().min(2).max(200),
+        trade_name: z.string().max(200).optional(),
+        nit: z.string().regex(/^\d{9,10}-\d$/, 'NIT inválido (formato: 900123456-7)'),
+        contact_email: z.string().email(),
+        contact_phone: z.string().max(20).optional(),
+        timezone: z.string().default('America/Bogota'),
+        admin_full_name: z.string().min(2).max(200),
+        admin_password: z.string().min(12),
+        plan_code: z.enum(['basic', 'pro', 'enterprise']).default('pro'),
+        seats: z.number().int().min(1).max(5000).default(10),
+        status: z.enum(['trial', 'active']).default('trial'),
+        trial_days: z.number().int().min(1).max(365).default(14),
+      }),
+    )
+    .mutation(async ({ input, ctx }) => {
+      const db = ctx.db
+
+      const { hashPassword, validatePasswordPolicy } = await import('@/lib/auth/password')
+      const { ROLES } = await import('@bcwork/shared')
+      const { getDb } = await import('@/lib/db')
+      const adminDb = getDb()
+
+      const policyError = validatePasswordPolicy(input.admin_password)
+      if (policyError) throw new TRPCError({ code: 'BAD_REQUEST', message: policyError })
+
+      // Verificar email no duplicado
+      const { data: existing } = await adminDb
+        .from('users')
+        .select('id')
+        .eq('email', input.contact_email)
+        .maybeSingle()
+      if (existing) throw new TRPCError({ code: 'CONFLICT', message: 'Email ya registrado' })
+
+      const { data: plan } = await adminDb
+        .from('plans')
+        .select('id')
+        .eq('code', input.plan_code)
+        .single()
+      if (!plan) throw new TRPCError({ code: 'NOT_FOUND', message: 'Plan no encontrado' })
+
+      const passwordHash = await hashPassword(input.admin_password)
+
+      const { data: tenant, error: tenantError } = await adminDb
+        .from('tenants')
+        .insert({
+          legal_name: input.legal_name,
+          trade_name: input.trade_name ?? null,
+          nit: input.nit,
+          timezone: input.timezone,
+          contact_email: input.contact_email,
+          contact_phone: input.contact_phone ?? null,
+          status: input.status,
+        })
+        .select('id')
+        .single()
+
+      if (tenantError) {
+        if (tenantError.code === '23505')
+          throw new TRPCError({ code: 'CONFLICT', message: 'NIT ya registrado' })
+        throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: tenantError.message })
+      }
+
+      const trialEnd = new Date()
+      trialEnd.setDate(trialEnd.getDate() + input.trial_days)
+
+      await adminDb.from('licenses').insert({
+        tenant_id: tenant.id,
+        plan_id: plan.id,
+        seats_total: input.seats,
+        status: input.status,
+        starts_at: new Date().toISOString(),
+        ends_at: trialEnd.toISOString(),
+        trial_ends_at: input.status === 'trial' ? trialEnd.toISOString() : null,
+      })
+
+      const { data: user, error: userError } = await adminDb
+        .from('users')
+        .insert({
+          tenant_id: tenant.id,
+          email: input.contact_email,
+          password_hash: passwordHash,
+          full_name: input.admin_full_name,
+          role: ROLES.TENANT_ADMIN,
+          status: 'active',
+        })
+        .select('id')
+        .single()
+
+      if (userError)
+        throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: userError.message })
+
+      await adminDb.from('password_history').insert({
+        user_id: user.id,
+        tenant_id: tenant.id,
+        password_hash: passwordHash,
+      })
+
+      await db.from('audit_logs').insert({
+        actor_user_id: ctx.user.sub,
+        action: 'tenant.created',
+        entity_type: 'tenant',
+        entity_id: tenant.id,
+        after_state: { legal_name: input.legal_name, plan: input.plan_code, seats: input.seats },
+      })
+
+      return { tenantId: tenant.id, adminUserId: user.id }
+    }),
+
   // ─── TENANTS ──────────────────────────────────────────────────────────────
   listTenants: platformAdminProcedure
     .input(
