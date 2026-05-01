@@ -337,17 +337,15 @@ export const adminRouter = router({
       }),
     )
     .mutation(async ({ ctx, input }) => {
-      const { error } = await ctx.db
-        .from('team_members')
-        .upsert(
-          {
-            team_id: input.teamId,
-            user_id: input.userId,
-            tenant_id: ctx.user!.tid,
-            role: input.role,
-          },
-          { onConflict: 'team_id,user_id' },
-        )
+      const { error } = await ctx.db.from('team_members').upsert(
+        {
+          team_id: input.teamId,
+          user_id: input.userId,
+          tenant_id: ctx.user!.tid,
+          role: input.role,
+        },
+        { onConflict: 'team_id,user_id' },
+      )
       if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
       return { ok: true }
     }),
@@ -661,4 +659,115 @@ export const adminRouter = router({
     })
     return { ok: true }
   }),
+
+  // ─── Agent Devices ────────────────────────────────────────────────────────
+
+  generateEnrollmentCode: adminProcedure
+    .input(z.object({ userId: z.string().uuid() }))
+    .mutation(async ({ ctx, input }) => {
+      const tenantId = ctx.user!.tid
+      const expiresAt = new Date(Date.now() + 15 * 60 * 1000) // 15 min
+
+      // Invalidar códigos anteriores del usuario
+      await ctx.db
+        .from('enrollment_codes')
+        .update({ used_at: new Date().toISOString() })
+        .eq('tenant_id', tenantId)
+        .eq('user_id', input.userId)
+        .is('used_at', null)
+
+      // Código de 8 chars alfanumérico mayúsculas
+      const { randomBytes } = await import('crypto')
+      const code = randomBytes(5).toString('base64url').toUpperCase().slice(0, 8)
+
+      const { data, error } = await ctx.db
+        .from('enrollment_codes')
+        .insert({
+          tenant_id: tenantId,
+          user_id: input.userId,
+          code,
+          expires_at: expiresAt.toISOString(),
+        })
+        .select('id, code, expires_at')
+        .single()
+
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+
+      return { code: data.code, expiresAt: data.expires_at }
+    }),
+
+  listDevices: adminProcedure
+    .input(
+      z.object({
+        userId: z.string().uuid().optional(),
+        page: z.number().int().min(1).default(1),
+        pageSize: z.number().int().min(1).max(50).default(20),
+      }),
+    )
+    .query(async ({ ctx, input }) => {
+      const tenantId = ctx.user!.tid
+      const offset = (input.page - 1) * input.pageSize
+
+      let query = ctx.db
+        .from('agent_devices')
+        .select('id, user_id, name, platform, hostname, enrolled_at, last_seen_at, revoked_at', {
+          count: 'exact',
+        })
+        .eq('tenant_id', tenantId)
+        .order('enrolled_at', { ascending: false })
+        .range(offset, offset + input.pageSize - 1)
+
+      if (input.userId) {
+        query = query.eq('user_id', input.userId)
+      }
+
+      const { data, error, count } = await query
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+
+      return { data: data ?? [], total: count ?? 0, page: input.page, pageSize: input.pageSize }
+    }),
+
+  revokeDevice: adminProcedure
+    .input(z.object({ deviceId: z.string().uuid() }))
+    .mutation(async ({ ctx, input }) => {
+      const tenantId = ctx.user!.tid
+
+      const { data: device, error: fetchErr } = await ctx.db
+        .from('agent_devices')
+        .select('id, user_id')
+        .eq('id', input.deviceId)
+        .eq('tenant_id', tenantId)
+        .is('revoked_at', null)
+        .single()
+
+      if (fetchErr || !device)
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Dispositivo no encontrado' })
+
+      const { error } = await ctx.db
+        .from('agent_devices')
+        .update({ revoked_at: new Date().toISOString() })
+        .eq('id', input.deviceId)
+
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+
+      // Revocar api_keys asociadas al dispositivo
+      await ctx.db
+        .from('api_keys')
+        .update({ revoked_at: new Date().toISOString() })
+        .eq('tenant_id', tenantId)
+        .eq('user_id', device.user_id)
+        .eq('name', `agent:${input.deviceId}`)
+        .is('revoked_at', null)
+
+      await logAudit(ctx.db, {
+        tenantId: tenantId,
+        actorUserId: ctx.user!.sub,
+        action: 'device.revoked',
+        entityType: 'agent_device',
+        entityId: input.deviceId,
+        ipInet: ctx.ip,
+        userAgent: ctx.userAgent,
+      })
+      return { ok: true }
+    }),
 })

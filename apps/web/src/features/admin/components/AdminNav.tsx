@@ -9,6 +9,7 @@ import {
   Clock,
   AppWindow,
   Network,
+  Monitor,
   Settings,
   LogOut,
 } from 'lucide-react'
@@ -22,6 +23,7 @@ const NAV = [
   { href: '/admin/schedules', label: 'Horarios', icon: Clock },
   { href: '/admin/apps', label: 'Aplicaciones', icon: AppWindow },
   { href: '/admin/ips', label: 'IPs Corporativas', icon: Network },
+  { href: '/admin/devices', label: 'Dispositivos', icon: Monitor },
   { href: '/admin/settings', label: 'Configuración', icon: Settings },
 ]
 
