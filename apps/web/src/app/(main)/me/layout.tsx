@@ -20,7 +20,7 @@ export default async function MeLayout({ children }: { children: React.ReactNode
       .select('id')
       .eq('user_id', userId)
       .eq('tenant_id', tenantId)
-      .eq('consent_type', 'monitoring')
+      .eq('consent_type', 'monitoring_basic')
       .eq('granted', true)
       .is('revoked_at', null)
       .maybeSingle()

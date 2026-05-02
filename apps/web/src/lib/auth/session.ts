@@ -1,5 +1,5 @@
 import { type NextResponse, type NextRequest } from 'next/server'
-import { REFRESH_TOKEN_EXPIRY_DAYS } from '@bcwork/shared'
+import { JWT_EXPIRY_SECONDS, REFRESH_TOKEN_EXPIRY_DAYS } from '@bcwork/shared'
 
 const REFRESH_COOKIE = 'bcw_rt'
 const ACCESS_COOKIE = 'bcw_at'
@@ -14,7 +14,7 @@ const COOKIE_BASE = {
 export function setAuthCookies(res: NextResponse, accessToken: string, refreshToken: string) {
   res.cookies.set(ACCESS_COOKIE, accessToken, {
     ...COOKIE_BASE,
-    maxAge: 15 * 60, // 15 min
+    maxAge: JWT_EXPIRY_SECONDS,
   })
   res.cookies.set(REFRESH_COOKIE, refreshToken, {
     ...COOKIE_BASE,

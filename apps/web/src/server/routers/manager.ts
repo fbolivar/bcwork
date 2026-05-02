@@ -11,7 +11,6 @@ export const managerRouter = router({
     const tenantId = ctx.user!.tid
     const userId = ctx.user!.sub
 
-    // Un manager ve sus equipos asignados; tenant_admin ve todos
     if (ctx.user!.role === 'tenant_admin') {
       const { data, error } = await ctx.db
         .from('teams')
@@ -22,12 +21,12 @@ export const managerRouter = router({
       return data ?? []
     }
 
+    // Manager sees all teams they belong to (any role)
     const { data, error } = await ctx.db
       .from('team_members')
       .select('teams(id, name, description, created_at)')
       .eq('tenant_id', tenantId)
       .eq('user_id', userId)
-      .eq('role', 'manager')
     if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
 
     return (data ?? []).map((r) => r.teams).filter(Boolean) as unknown as Array<{
@@ -94,6 +93,7 @@ export const managerRouter = router({
         )
         .eq('tenant_id', tenantId)
         .is('ended_at', null)
+        .gte('started_at', new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString())
         .order('started_at', { ascending: false })
 
       if (memberIds) {
@@ -113,7 +113,7 @@ export const managerRouter = router({
         elapsed_seconds: Math.round((now - new Date(s.started_at).getTime()) / 1000),
         active_seconds: s.active_seconds ?? 0,
         idle_seconds: s.idle_seconds ?? 0,
-        location_type: s.location_type ?? 'remote',
+        location_type: (s.location_type as string | null) ?? 'remote',
       }))
     }),
 
@@ -168,7 +168,14 @@ export const managerRouter = router({
 
       const byUser = new Map<
         string,
-        { active: number; productive: number; overtime: number; days: number; ratios: number[] }
+        {
+          active: number
+          productive: number
+          overtime: number
+          days: number
+          ratios: number[]
+          focusScores: number[]
+        }
       >()
       for (const m of metrics ?? []) {
         const u = byUser.get(m.user_id) ?? {
@@ -177,12 +184,14 @@ export const managerRouter = router({
           overtime: 0,
           days: 0,
           ratios: [],
+          focusScores: [],
         }
         u.active += m.active_seconds ?? 0
         u.productive += m.productive_seconds ?? 0
         u.overtime += m.overtime_seconds ?? 0
         u.days += 1
         if (m.productivity_ratio != null) u.ratios.push(Number(m.productivity_ratio))
+        if (m.focus_score != null) u.focusScores.push(Number(m.focus_score))
         byUser.set(m.user_id, u)
       }
 
@@ -191,6 +200,10 @@ export const managerRouter = router({
           const info = userMap.get(uid)
           const avgRatio =
             v.ratios.length > 0 ? v.ratios.reduce((a, b) => a + b, 0) / v.ratios.length : 0
+          const avgFocus =
+            v.focusScores.length > 0
+              ? v.focusScores.reduce((a, b) => a + b, 0) / v.focusScores.length
+              : null
           return {
             user_id: uid,
             full_name: info?.full_name ?? null,
@@ -201,6 +214,7 @@ export const managerRouter = router({
             productivity_ratio: avgRatio,
             overtime_seconds: v.overtime,
             days_active: v.days,
+            focus_score: avgFocus,
           }
         })
         .sort((a, b) => b.active_seconds - a.active_seconds)
@@ -242,7 +256,7 @@ export const managerRouter = router({
         ctx.db
           .from('daily_user_metrics')
           .select(
-            'metric_date, active_seconds, productive_seconds, non_productive_seconds, productivity_ratio, focus_score, overtime_seconds, apps_top, domains_top, location_type',
+            'metric_date, active_seconds, productive_seconds, non_productive_seconds, productivity_ratio, focus_score, overtime_seconds, apps_top, domains_top',
           )
           .eq('tenant_id', tenantId)
           .eq('user_id', input.userId)

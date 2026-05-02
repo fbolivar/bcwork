@@ -16,7 +16,6 @@ import {
   generateQrDataUrl,
 } from '@/lib/auth/mfa'
 import { logAudit } from '@/lib/auth/audit'
-import { getDb, setTenantContext } from '@/lib/db'
 import {
   loginSchema,
   signupTenantSchema,
@@ -37,7 +36,7 @@ function isLocked(lockedUntil: string | null): boolean {
 export const authRouter = router({
   // ─── SIGNUP TENANT ─────────────────────────────────────────────────────────
   signupTenant: publicProcedure.input(signupTenantSchema).mutation(async ({ input, ctx }) => {
-    const db = getDb()
+    const db = ctx.db
 
     // Verificar email no duplicado
     const { data: existing } = await db
@@ -149,7 +148,7 @@ export const authRouter = router({
 
   // ─── LOGIN ──────────────────────────────────────────────────────────────────
   login: publicProcedure.input(loginSchema).mutation(async ({ input, ctx }) => {
-    const db = getDb()
+    const db = ctx.db
 
     // Buscar usuario por email (sin RLS — no hay contexto aún)
     const { data: user } = await db
@@ -265,7 +264,7 @@ export const authRouter = router({
     const refreshHash = createHash('sha256').update(refreshToken).digest('hex')
 
     const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
-    await db.from('auth_sessions').insert({
+    const { error: sessionErr } = await db.from('auth_sessions').insert({
       id: sessionId,
       user_id: user.id,
       tenant_id: user.tenant_id,
@@ -274,6 +273,9 @@ export const authRouter = router({
       user_agent: ctx.userAgent,
       expires_at: expiresAt.toISOString(),
     })
+    if (sessionErr) {
+      throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Error al crear sesión' })
+    }
 
     const accessToken = await signAccessToken({
       sub: user.id,
@@ -308,7 +310,7 @@ export const authRouter = router({
   refresh: publicProcedure
     .input(z.object({ refreshToken: z.string() }))
     .mutation(async ({ input, ctx }) => {
-      const db = getDb()
+      const db = ctx.db
 
       let sessionId: string
       let userId: string
@@ -380,7 +382,7 @@ export const authRouter = router({
   logout: protectedProcedure
     .input(z.object({ refreshToken: z.string().optional() }))
     .mutation(async ({ input, ctx }) => {
-      const db = getDb()
+      const db = ctx.db
 
       if (input.refreshToken) {
         const { createHash } = await import('crypto')

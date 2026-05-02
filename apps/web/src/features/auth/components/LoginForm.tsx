@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import { trpc } from '@/lib/trpc-client'
 import { useAuthStore } from '../store/authStore'
 
-export function LoginForm() {
+export function LoginForm({ expired = false }: { expired?: boolean }) {
   const router = useRouter()
   const { setUser } = useAuthStore()
 
@@ -17,15 +17,15 @@ export function LoginForm() {
 
   const loginMutation = trpc.auth.login.useMutation({
     onSuccess: async (data) => {
-      // Establecer cookies httpOnly vía route handler (el middleware las necesita)
-      await fetch('/api/auth/set-session', {
+      const res = await fetch('/api/auth/set-session', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          accessToken: data.accessToken,
-          refreshToken: data.refreshToken,
-        }),
+        body: JSON.stringify({ accessToken: data.accessToken, refreshToken: data.refreshToken }),
       })
+      if (!res.ok) {
+        setError('Error al establecer la sesión. Intenta de nuevo.')
+        return
+      }
       setUser(data.user)
       if (data.mustChangePassword) {
         router.push('/change-password')
@@ -35,8 +35,8 @@ export function LoginForm() {
     },
     onError: (err) => {
       const msg = err.message
-      if (msg.includes('MFA')) setShowMfa(true)
-      setError(msg)
+      if (msg.includes('MFA') || msg.includes('mfa')) setShowMfa(true)
+      setError(msg || 'Error al iniciar sesión. Intenta de nuevo.')
     },
   })
 
@@ -52,6 +52,12 @@ export function LoginForm() {
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
+      {expired && (
+        <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+          Tu sesión expiró. Inicia sesión nuevamente.
+        </div>
+      )}
+
       <div>
         <label className="mb-1 block text-sm font-medium text-gray-700">Correo electrónico</label>
         <input
@@ -60,6 +66,7 @@ export function LoginForm() {
           onChange={(e) => setEmail(e.target.value)}
           required
           autoComplete="email"
+          placeholder="usuario@empresa.com"
           className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
         />
       </div>
@@ -72,6 +79,7 @@ export function LoginForm() {
           onChange={(e) => setPassword(e.target.value)}
           required
           autoComplete="current-password"
+          placeholder="••••••••"
           className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
         />
       </div>

@@ -2,10 +2,9 @@ import { z } from 'zod'
 import { createHash } from 'crypto'
 import { TRPCError } from '@trpc/server'
 import { router, protectedProcedure } from '../trpc'
-import { getDb } from '@/lib/db'
 
 const POLICY_VERSION = '1.0'
-const CONSENT_TYPE = 'monitoring'
+const CONSENT_TYPE = 'monitoring_basic'
 
 export const employeeRouter = router({
   // ─── Mi perfil ────────────────────────────────────────────────────────────
@@ -176,8 +175,7 @@ export const employeeRouter = router({
   // ─── Consentimiento informado (Ley 1581/2012) ────────────────────────────
 
   hasConsented: protectedProcedure.query(async ({ ctx }) => {
-    const db = getDb()
-    const { data } = await db
+    const { data } = await ctx.db
       .from('consents')
       .select('id')
       .eq('user_id', ctx.user!.sub)
@@ -192,12 +190,11 @@ export const employeeRouter = router({
   grantConsent: protectedProcedure
     .input(z.object({ userAgent: z.string().max(500) }))
     .mutation(async ({ ctx, input }) => {
-      const db = getDb()
       const grantedAt = new Date().toISOString()
       const evidenceRaw = `${ctx.user!.sub}:${CONSENT_TYPE}:${POLICY_VERSION}:${grantedAt}`
       const evidenceHash = createHash('sha256').update(evidenceRaw).digest('hex')
 
-      const { error } = await db.from('consents').insert({
+      const { error } = await ctx.db.from('consents').insert({
         tenant_id: ctx.user!.tid,
         user_id: ctx.user!.sub,
         policy_version: POLICY_VERSION,
@@ -210,15 +207,18 @@ export const employeeRouter = router({
 
       if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
 
-      await db
+      // Fire-and-forget — un fallo de auditoría no debe bloquear el consentimiento
+      ctx.db
         .from('audit_logs')
         .insert({
           tenant_id: ctx.user!.tid,
-          actor_id: ctx.user!.sub,
+          actor_user_id: ctx.user!.sub,
           action: 'consent.granted',
-          target_type: 'consent',
+          entity_type: 'consent',
         })
-        .throwOnError()
+        .then(({ error: auditErr }) => {
+          if (auditErr) console.error('[audit] consent.granted:', auditErr.message)
+        })
 
       return { ok: true }
     }),

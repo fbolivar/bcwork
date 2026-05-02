@@ -34,7 +34,8 @@ export const adminRouter = router({
           .from('work_sessions')
           .select('id', { count: 'exact', head: true })
           .eq('tenant_id', tenantId)
-          .is('ended_at', null),
+          .is('ended_at', null)
+          .gte('started_at', new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()),
         ctx.db.from('tenants').select('onboarding_complete').eq('id', tenantId).single(),
       ])
 
@@ -479,10 +480,12 @@ export const adminRouter = router({
     const tenantId = ctx.user!.tid
     const { data, error } = await ctx.db
       .from('app_catalog')
-      .select('id, name, process_name, category, rule, tenant_id, created_at')
+      .select(
+        'id, identifier, identifier_type, display_name, category, productivity, tenant_id, created_at',
+      )
       .or(`tenant_id.eq.${tenantId},tenant_id.is.null`)
       .order('category', { ascending: true })
-      .order('name', { ascending: true })
+      .order('display_name', { ascending: true })
 
     if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
     return data ?? []
@@ -492,28 +495,33 @@ export const adminRouter = router({
     .input(
       z.object({
         id: z.string().uuid().optional(),
-        name: z.string().min(1).max(100),
-        process_name: z.string().max(200).optional(),
-        category: z.string().max(50),
-        rule: z.enum(['allow', 'block', 'monitor']),
+        display_name: z.string().min(1).max(100),
+        identifier: z.string().min(1).max(200),
+        identifier_type: z.enum(['process', 'domain']),
+        category: z.enum([
+          'communication',
+          'development',
+          'browsing',
+          'entertainment',
+          'productivity',
+          'other',
+        ]),
+        productivity: z.enum(['productive', 'neutral', 'non_productive']),
       }),
     )
     .mutation(async ({ ctx, input }) => {
       const tenantId = ctx.user!.tid
       const { id, ...rest } = input
-      const payload = Object.fromEntries(Object.entries(rest).filter(([, v]) => v !== undefined))
 
       if (id) {
         const { error } = await ctx.db
           .from('app_catalog')
-          .update(payload)
+          .update(rest)
           .eq('id', id)
           .eq('tenant_id', tenantId)
         if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
       } else {
-        const { error } = await ctx.db
-          .from('app_catalog')
-          .insert({ ...payload, tenant_id: tenantId })
+        const { error } = await ctx.db.from('app_catalog').insert({ ...rest, tenant_id: tenantId })
         if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
       }
       return { ok: true }
@@ -1094,6 +1102,186 @@ export const adminRouter = router({
         .sort((a, b) => b[1] - a[1])
         .slice(0, 15)
         .map(([domain, secs]) => ({ domain, secs }))
+    }),
+
+  // Snapshot en vivo: cuántos dispositivos están activos/en pausa/offline ahora
+  getTeamSnapshot: adminProcedure.query(async ({ ctx }) => {
+    const tenantId = ctx.user!.tid
+    const now = new Date()
+    const twoMinAgo = new Date(now.getTime() - 2 * 60 * 1000).toISOString()
+    const tenMinAgo = new Date(now.getTime() - 10 * 60 * 1000).toISOString()
+    const today = now.toISOString().slice(0, 10)
+
+    const { data: devices } = await ctx.db
+      .from('agent_devices')
+      .select('id, last_seen_at')
+      .eq('tenant_id', tenantId)
+      .is('revoked_at', null)
+
+    const devs = devices ?? []
+    const active = devs.filter((d) => d.last_seen_at && d.last_seen_at >= twoMinAgo).length
+    const passive = devs.filter(
+      (d) => d.last_seen_at && d.last_seen_at >= tenMinAgo && d.last_seen_at < twoMinAgo,
+    ).length
+    const offline = devs.length - active - passive
+
+    const { data: todayMetrics } = await ctx.db
+      .from('daily_user_metrics')
+      .select('productivity_ratio, productive_seconds, active_seconds')
+      .eq('tenant_id', tenantId)
+      .eq('metric_date', today)
+
+    const metrics = todayMetrics ?? []
+    const avgProductivity =
+      metrics.length > 0
+        ? metrics.reduce((s, r) => s + Number(r.productivity_ratio ?? 0), 0) / metrics.length
+        : 0
+    const totalProductiveSecs = metrics.reduce((s, r) => s + (r.productive_seconds ?? 0), 0)
+    const totalActiveSecs = metrics.reduce((s, r) => s + (r.active_seconds ?? 0), 0)
+
+    return {
+      active,
+      passive,
+      offline,
+      total: devs.length,
+      avgProductivity: Math.round(avgProductivity * 100),
+      totalProductiveSecs,
+      totalActiveSecs,
+      usersWithData: metrics.length,
+    }
+  }),
+
+  // KPIs agregados del período (sesiones, horas, focus)
+  getTodayKpis: adminProcedure
+    .input(z.object({ days: z.number().int().min(1).max(30).default(7) }))
+    .query(async ({ ctx, input }) => {
+      const tenantId = ctx.user!.tid
+      const from = new Date(Date.now() - input.days * 86400000).toISOString().slice(0, 10)
+
+      const { data: metrics } = await ctx.db
+        .from('daily_user_metrics')
+        .select('metric_date, user_id, active_seconds, productive_seconds, focus_score')
+        .eq('tenant_id', tenantId)
+        .gte('metric_date', from)
+
+      const rows = metrics ?? []
+      if (rows.length === 0) {
+        return {
+          productiveHrsPerDay: 0,
+          focusScore: 0,
+          productiveMinPerSession: 0,
+          activeHrsPerDay: 0,
+        }
+      }
+
+      const totalProductive = rows.reduce((s, r) => s + (r.productive_seconds ?? 0), 0)
+      const totalActive = rows.reduce((s, r) => s + (r.active_seconds ?? 0), 0)
+      const focusScores = rows
+        .filter((r) => r.focus_score != null)
+        .map((r) => Number(r.focus_score))
+      const avgFocus =
+        focusScores.length > 0 ? focusScores.reduce((a, b) => a + b) / focusScores.length : 0
+
+      const { data: sessions } = await ctx.db
+        .from('work_sessions')
+        .select('active_seconds')
+        .eq('tenant_id', tenantId)
+        .gte('started_at', from + 'T00:00:00Z')
+
+      const sessionCount = (sessions ?? []).length
+      const avgProductiveSecsPerSession = sessionCount > 0 ? totalProductive / sessionCount : 0
+
+      return {
+        productiveHrsPerDay: Math.round((totalProductive / rows.length / 3600) * 10) / 10,
+        activeHrsPerDay: Math.round((totalActive / rows.length / 3600) * 10) / 10,
+        focusScore: Math.round(avgFocus),
+        productiveMinPerSession: Math.round(avgProductiveSecsPerSession / 60),
+      }
+    }),
+
+  // Categorías de apps más usadas en el período
+  getTopCategories: adminProcedure
+    .input(z.object({ days: z.number().int().min(1).max(30).default(7) }))
+    .query(async ({ ctx, input }) => {
+      const tenantId = ctx.user!.tid
+      const from = new Date(Date.now() - input.days * 86400000).toISOString().slice(0, 10)
+
+      const { data } = await ctx.db
+        .from('daily_user_metrics')
+        .select('apps_top')
+        .eq('tenant_id', tenantId)
+        .gte('metric_date', from)
+
+      const appTotals = new Map<string, number>()
+      for (const row of data ?? []) {
+        const apps = row.apps_top as Array<{ identifier: string; secs: number }> | null
+        for (const app of apps ?? []) {
+          appTotals.set(app.identifier, (appTotals.get(app.identifier) ?? 0) + app.secs)
+        }
+      }
+
+      if (appTotals.size === 0) return []
+
+      const identifiers = Array.from(appTotals.keys())
+      const { data: catalog } = await ctx.db
+        .from('app_catalog')
+        .select('identifier, category, productivity')
+        .eq('tenant_id', tenantId)
+        .in('identifier', identifiers)
+
+      const catalogMap = new Map((catalog ?? []).map((c) => [c.identifier, c]))
+      const catTotals = new Map<string, number>()
+      for (const [identifier, secs] of appTotals.entries()) {
+        const cat = catalogMap.get(identifier)
+        const category = cat?.category ?? 'other'
+        catTotals.set(category, (catTotals.get(category) ?? 0) + secs)
+      }
+
+      const total = Array.from(catTotals.values()).reduce((a, b) => a + b, 0)
+      return Array.from(catTotals.entries())
+        .sort((a, b) => b[1] - a[1])
+        .map(([category, secs]) => ({
+          category,
+          secs,
+          pct: total > 0 ? Math.round((secs / total) * 100) : 0,
+        }))
+    }),
+
+  // Tendencia de carga (apilado por día: productivo / neutral / no productivo)
+  getWorkloadTrend: adminProcedure
+    .input(z.object({ days: z.number().int().min(7).max(30).default(7) }))
+    .query(async ({ ctx, input }) => {
+      const tenantId = ctx.user!.tid
+      const from = new Date(Date.now() - input.days * 86400000).toISOString().slice(0, 10)
+
+      const { data } = await ctx.db
+        .from('daily_user_metrics')
+        .select('metric_date, active_seconds, productive_seconds, non_productive_seconds')
+        .eq('tenant_id', tenantId)
+        .gte('metric_date', from)
+        .order('metric_date', { ascending: true })
+
+      const byDate = new Map<
+        string,
+        { productive: number; neutral: number; non_productive: number }
+      >()
+      for (const row of data ?? []) {
+        const d = byDate.get(row.metric_date) ?? { productive: 0, neutral: 0, non_productive: 0 }
+        const p = row.productive_seconds ?? 0
+        const np = row.non_productive_seconds ?? 0
+        const a = row.active_seconds ?? 0
+        d.productive += p
+        d.non_productive += np
+        d.neutral += Math.max(0, a - p - np)
+        byDate.set(row.metric_date, d)
+      }
+
+      return Array.from(byDate.entries()).map(([date, v]) => ({
+        date,
+        productive_hours: Math.round((v.productive / 3600) * 10) / 10,
+        neutral_hours: Math.round((v.neutral / 3600) * 10) / 10,
+        non_productive_hours: Math.round((v.non_productive / 3600) * 10) / 10,
+      }))
     }),
 
   // ─── Audit log ────────────────────────────────────────────────────────────

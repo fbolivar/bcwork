@@ -45,7 +45,7 @@ export const IDLE_THRESHOLD_MINUTES = 5
 export const AGENT_BATCH_INTERVAL_SECONDS = 300 // 5 min
 
 // Auth
-export const JWT_EXPIRY_SECONDS = 15 * 60 // 15 min
+export const JWT_EXPIRY_SECONDS = 8 * 60 * 60 // 8 h
 export const REFRESH_TOKEN_EXPIRY_DAYS = 7
 export const MAX_FAILED_LOGIN_ATTEMPTS = 5
 export const LOCKOUT_MINUTES = 15
