@@ -5,19 +5,19 @@ import { getDb } from '@/lib/db'
 
 const AgentEventSchema = z.object({
   event_type: z.string().min(1).max(50),
-  app_identifier: z.string().max(255).optional(),
-  domain: z.string().max(255).optional(),
-  window_title: z.string().max(500).optional(),
-  productivity: z.enum(['productive', 'unproductive', 'neutral', 'idle']).optional(),
-  started_at: z.string().datetime(),
+  app_identifier: z.string().max(255).nullish(),
+  domain: z.string().max(255).nullish(),
+  window_title: z.string().max(500).nullish(),
+  productivity: z.enum(['productive', 'unproductive', 'neutral', 'idle']).nullish(),
+  started_at: z.string().datetime({ offset: true }),
   duration_seconds: z.number().int().min(0).max(86400),
-  metadata: z.record(z.unknown()).optional(),
+  metadata: z.record(z.unknown()).nullish(),
 })
 
 const SessionStateSchema = z.object({
-  session_id: z.string().optional(),
-  started_at: z.string().datetime(),
-  ip: z.string().optional(),
+  session_id: z.string().nullish(),
+  started_at: z.string().datetime({ offset: true }),
+  ip: z.string().nullish(),
   is_active: z.boolean(),
   active_seconds: z.number().int().min(0),
   idle_seconds: z.number().int().min(0),
@@ -37,7 +37,7 @@ async function resolveApiKey(
 
   const { data } = await db
     .from('api_keys')
-    .select('id, tenant_id, user_id, name, scopes, expires_at, revoked_at')
+    .select('id, tenant_id, created_by, name, scopes, expires_at, revoked_at')
     .eq('key_hash', keyHash)
     .is('revoked_at', null)
     .single()
@@ -52,7 +52,7 @@ async function resolveApiKey(
 
   await db.from('api_keys').update({ last_used_at: new Date().toISOString() }).eq('id', data.id)
 
-  return { tenantId: data.tenant_id, userId: data.user_id, deviceId }
+  return { tenantId: data.tenant_id, userId: data.created_by, deviceId }
 }
 
 export async function POST(req: NextRequest) {

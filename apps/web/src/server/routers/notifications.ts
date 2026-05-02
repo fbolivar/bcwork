@@ -13,6 +13,8 @@ export const notificationsRouter = router({
       }),
     )
     .query(async ({ ctx, input }) => {
+      if (!ctx.user!.tid) return []
+
       let query = ctx.db
         .from('alert_notifications')
         .select(
@@ -43,6 +45,8 @@ export const notificationsRouter = router({
     }),
 
   getUnreadCount: protectedProcedure.query(async ({ ctx }) => {
+    if (!ctx.user!.tid) return { count: 0 }
+
     const { count, error } = await ctx.db
       .from('alert_notifications')
       .select('*', { count: 'exact', head: true })

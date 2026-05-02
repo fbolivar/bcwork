@@ -30,7 +30,7 @@ export const employeeRouter = router({
     const { data, error } = await ctx.db
       .from('user_schedules')
       .select(
-        'effective_from, effective_to, work_schedules(name, weekly_hours, start_time, end_time, workdays, break_minutes, disconnection_grace_minutes)',
+        'effective_from, effective_to, work_schedules(name, weekly_hours, start_time, end_time, days_of_week, break_minutes, disconnection_grace_minutes)',
       )
       .eq('user_id', ctx.user!.sub)
       .lte('effective_from', today)
@@ -47,7 +47,7 @@ export const employeeRouter = router({
       weekly_hours: number
       start_time: string
       end_time: string
-      workdays: number[]
+      days_of_week: number[]
       break_minutes: number
       disconnection_grace_minutes: number
     } | null

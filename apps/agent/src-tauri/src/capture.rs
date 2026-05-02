@@ -1,7 +1,7 @@
 use std::sync::Mutex;
 use std::time::Duration;
 use chrono::Utc;
-use tauri::AppHandle;
+use tauri::{AppHandle, Manager};
 use crate::state::AgentState;
 use crate::db::{self, BufferedEvent};
 
@@ -56,7 +56,7 @@ pub async fn run_capture_loop(app: AppHandle) {
             };
 
             let db_path = app
-                .path_resolver()
+                .path()
                 .app_data_dir()
                 .expect("no app data dir")
                 .join("buffer.db");
@@ -71,7 +71,6 @@ pub async fn run_capture_loop(app: AppHandle) {
 #[cfg(target_os = "windows")]
 fn get_idle_seconds() -> u64 {
     use windows::Win32::UI::Input::KeyboardAndMouse::{GetLastInputInfo, LASTINPUTINFO};
-    use windows::Win32::System::Threading::GetTickCount;
 
     let mut lii = LASTINPUTINFO {
         cbSize: std::mem::size_of::<LASTINPUTINFO>() as u32,
@@ -79,7 +78,8 @@ fn get_idle_seconds() -> u64 {
     };
     unsafe {
         GetLastInputInfo(&mut lii);
-        let tick = GetTickCount();
+        // dwTime is ms since system start; GetTickCount() returns the same epoch
+        let tick = windows::Win32::System::SystemInformation::GetTickCount();
         ((tick - lii.dwTime) / 1000) as u64
     }
 }
@@ -119,7 +119,7 @@ fn get_active_window() -> (Option<String>, Option<String>) {
 
     unsafe {
         let hwnd = GetForegroundWindow();
-        if hwnd.0 == 0 { return (None, None); }
+        if hwnd.0 == std::ptr::null_mut() { return (None, None); }
 
         let mut title_buf = [0u16; 512];
         let title_len = GetWindowTextW(hwnd, &mut title_buf);

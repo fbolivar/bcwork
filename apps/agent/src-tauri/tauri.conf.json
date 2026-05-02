@@ -40,9 +40,5 @@
       "icons/icon.ico"
     ]
   },
-  "plugins": {
-    "store": {},
-    "autostart": { "args": false, "macos": "background" },
-    "notification": {}
-  }
+  "plugins": {}
 }

@@ -14,6 +14,16 @@ const FEATURE_KEYS = [
   'extended_retention',
 ] as const
 
+const FEATURE_LABELS: Record<string, string> = {
+  office_vs_remote: 'Oficina vs remoto',
+  productivity_map: 'Mapa de productividad',
+  scheduled_reports: 'Informes programados',
+  api_access: 'Acceso a API',
+  payroll_export: 'Exportar nómina',
+  sso: 'Inicio de sesión único (SSO)',
+  extended_retention: 'Retención extendida',
+}
+
 type Plan = {
   id: string
   code: string
@@ -106,7 +116,7 @@ export function PlanEditor() {
                         onChange={() => toggleFeature(key)}
                         className="rounded"
                       />
-                      {key.replace(/_/g, ' ')}
+                      {FEATURE_LABELS[key] ?? key.replace(/_/g, ' ')}
                     </label>
                   ))}
                 </div>
@@ -137,7 +147,9 @@ export function PlanEditor() {
               <>
                 <p className="text-xl font-bold text-gray-900">{p.name}</p>
                 <p className="mb-3 text-sm text-gray-500">
-                  {formatCOP(p.monthly_price_per_seat_cop)}/seat/mes
+                  {p.monthly_price_per_seat_cop === 0
+                    ? 'Precio personalizado · Licencia perpetua'
+                    : `${formatCOP(p.monthly_price_per_seat_cop)}/seat/mes`}
                 </p>
                 <ul className="mb-4 space-y-1">
                   {FEATURE_KEYS.map((key) => {
@@ -148,12 +160,13 @@ export function PlanEditor() {
                         className={`flex items-center gap-1.5 text-xs ${active ? 'text-gray-700' : 'text-gray-300'}`}
                       >
                         <span>{active ? '✓' : '✗'}</span>
-                        {key.replace(/_/g, ' ')}
+                        {FEATURE_LABELS[key] ?? key.replace(/_/g, ' ')}
                       </li>
                     )
                   })}
                 </ul>
                 <button
+                  type="button"
                   onClick={() => startEdit(p)}
                   className="w-full rounded border border-gray-200 px-3 py-1.5 text-xs hover:bg-gray-50"
                 >

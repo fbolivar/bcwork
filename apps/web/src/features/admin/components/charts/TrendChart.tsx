@@ -76,8 +76,8 @@ export function TrendChart({ data }: Props) {
         style={{ height: H + PAD.top + PAD.bottom }}
       >
         {/* Grid */}
-        {yLabels.map((l) => (
-          <g key={l.label}>
+        {yLabels.map((l, i) => (
+          <g key={i}>
             <line
               x1={PAD.left * 6}
               y1={l.y}

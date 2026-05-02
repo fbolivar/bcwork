@@ -2,12 +2,12 @@ use std::path::PathBuf;
 use std::sync::Mutex;
 use std::time::Duration;
 use chrono::Utc;
-use tauri::AppHandle;
+use tauri::{AppHandle, Manager};
 use uuid::Uuid;
 use crate::state::AgentState;
 use crate::db;
 
-const BATCH_INTERVAL_SECS: u64 = 300; // 5 minutes
+const BATCH_INTERVAL_SECS: u64 = 60; // 1 minute (dev: was 300)
 const BATCH_SIZE: usize = 500;
 
 pub async fn run_sender_loop(app: AppHandle, db_path: PathBuf) {

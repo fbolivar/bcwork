@@ -2,10 +2,11 @@
 
 import { useState } from 'react'
 import { trpc } from '@/lib/trpc-client'
-import { Download } from 'lucide-react'
+import { Download, Printer } from 'lucide-react'
 import { TrendChart } from './charts/TrendChart'
 import { BarChart } from './charts/BarChart'
 import { TopUsersTable } from './TopUsersTable'
+import { ReportHeader, ReportFooter } from '@/features/shared/components/ReportHeader'
 
 type Period = 7 | 14 | 30 | 90
 
@@ -30,6 +31,7 @@ export function MetricsDashboard() {
   const [period, setPeriod] = useState<Period>(14)
   const [refreshing, setRefreshing] = useState(false)
 
+  const settings = trpc.admin.getSettings.useQuery()
   const trend = trpc.admin.getProductivityTrend.useQuery({ days: period })
   const topUsers = trpc.admin.getTopUsers.useQuery({
     days: period,
@@ -58,10 +60,23 @@ export function MetricsDashboard() {
       : 0
   const totalOvertime = trendData.reduce((s, d) => s + d.overtime_seconds, 0)
 
+  const companyName = settings.data?.trade_name ?? settings.data?.legal_name ?? 'Mi empresa'
+
   return (
     <div className="space-y-6">
-      {/* Controles */}
-      <div className="flex flex-wrap items-center justify-between gap-3">
+      {/* Header visible solo en impresión */}
+      <div className="hidden print:block">
+        <ReportHeader
+          logoUrl={settings.data?.logo_url}
+          companyName={companyName}
+          nit={settings.data?.nit}
+          title="Reporte de Métricas y Productividad"
+          period={`Últimos ${PERIOD_LABELS[period]}`}
+        />
+      </div>
+
+      {/* Controles — ocultos en impresión */}
+      <div className="flex flex-wrap items-center justify-between gap-3 print:hidden">
         <div className="flex gap-1 rounded-lg border border-gray-200 bg-white p-1">
           {([7, 14, 30, 90] as Period[]).map((p) => (
             <button
@@ -85,6 +100,14 @@ export function MetricsDashboard() {
             <Download className="h-4 w-4" />
             Exportar CSV
           </a>
+          <button
+            type="button"
+            onClick={() => window.print()}
+            className="flex items-center gap-1.5 rounded-md border border-gray-200 bg-white px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50"
+          >
+            <Printer className="h-4 w-4" />
+            Exportar PDF
+          </button>
           <button
             type="button"
             onClick={() => {
@@ -167,6 +190,11 @@ export function MetricsDashboard() {
             <TopUsersTable users={topUsers.data ?? []} />
           )}
         </div>
+      </div>
+
+      {/* Footer visible solo en impresión */}
+      <div className="hidden print:block">
+        <ReportFooter companyName={companyName} />
       </div>
     </div>
   )

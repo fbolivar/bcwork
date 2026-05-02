@@ -5,7 +5,7 @@ interface Props {
   onEnrolled: () => void
 }
 
-const DEFAULT_SERVER = 'https://app.bcwork.co'
+const DEFAULT_SERVER = import.meta.env.DEV ? 'http://localhost:3003' : 'https://app.bcwork.co'
 
 export function EnrollScreen({ onEnrolled }: Props) {
   const [serverUrl, setServerUrl] = useState(DEFAULT_SERVER)

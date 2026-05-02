@@ -47,36 +47,48 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'code_expired' }, { status: 401 })
   }
 
+  // Generar API key antes de insertar device (necesitamos el hash para device_token_hash)
+  const rawKey = randomBytes(32).toString('hex')
+  const keyHash = createHash('sha256').update(rawKey).digest('hex')
+
   const { data: device, error: deviceErr } = await db
     .from('agent_devices')
     .insert({
       tenant_id: enrollment.tenant_id,
       user_id: enrollment.user_id,
       name: device_name,
-      platform,
+      os: platform,
       hostname,
+      agent_version: '0.1.0',
+      device_token_hash: keyHash,
       enrolled_at: new Date().toISOString(),
     })
     .select('id')
     .single()
 
   if (deviceErr || !device) {
-    return NextResponse.json({ error: 'device_create_failed' }, { status: 500 })
+    console.error('device_create_failed:', deviceErr)
+    return NextResponse.json(
+      { error: 'device_create_failed', detail: deviceErr?.message },
+      { status: 500 },
+    )
   }
-
-  const rawKey = randomBytes(32).toString('hex')
-  const keyHash = createHash('sha256').update(rawKey).digest('hex')
 
   const { error: keyErr } = await db.from('api_keys').insert({
     tenant_id: enrollment.tenant_id,
-    user_id: enrollment.user_id,
     name: `agent:${device.id}`,
+    key_prefix: rawKey.slice(0, 8),
     key_hash: keyHash,
     scopes: ['ingest:activity'],
+    created_by: enrollment.user_id,
   })
 
   if (keyErr) {
-    return NextResponse.json({ error: 'api_key_create_failed' }, { status: 500 })
+    console.error('api_key_create_failed:', keyErr)
+    return NextResponse.json(
+      { error: 'api_key_create_failed', detail: keyErr.message },
+      { status: 500 },
+    )
   }
 
   await db

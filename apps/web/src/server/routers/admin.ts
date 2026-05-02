@@ -594,7 +594,7 @@ export const adminRouter = router({
     const { data, error } = await ctx.db
       .from('tenants')
       .select(
-        'legal_name, trade_name, nit, contact_email, contact_phone, timezone, data_retention_months, data_protection_officer, onboarding_complete',
+        'legal_name, trade_name, nit, contact_email, contact_phone, timezone, data_retention_months, data_protection_officer, onboarding_complete, logo_url',
       )
       .eq('id', ctx.user!.tid)
       .single()
@@ -612,6 +612,7 @@ export const adminRouter = router({
         timezone: z.string().optional(),
         data_retention_months: z.number().int().min(12).max(84).optional(),
         data_protection_officer: z.string().max(200).optional(),
+        logo_url: z.string().url().optional(),
       }),
     )
     .mutation(async ({ ctx, input }) => {
@@ -636,6 +637,44 @@ export const adminRouter = router({
         after: updates,
       })
       return { ok: true }
+    }),
+
+  uploadLogo: adminProcedure
+    .input(
+      z.object({
+        base64: z.string(),
+        mimeType: z.enum(['image/png', 'image/jpeg', 'image/webp', 'image/svg+xml']),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { createClient } = await import('@supabase/supabase-js')
+      const adminClient = createClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL!,
+        process.env.SUPABASE_SERVICE_ROLE_KEY!,
+        { auth: { persistSession: false } },
+      )
+
+      const ext = input.mimeType.split('/')[1]!.replace('jpeg', 'jpg')
+      const path = `${ctx.user!.tid}/logo.${ext}`
+
+      const buffer = Buffer.from(input.base64, 'base64')
+      const { error } = await adminClient.storage.from('tenant-logos').upload(path, buffer, {
+        contentType: input.mimeType,
+        upsert: true,
+      })
+
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+
+      const { data: urlData } = adminClient.storage.from('tenant-logos').getPublicUrl(path)
+
+      const publicUrl = `${urlData.publicUrl}?v=${Date.now()}`
+
+      await ctx.db
+        .from('tenants')
+        .update({ logo_url: publicUrl, updated_at: new Date().toISOString() })
+        .eq('id', ctx.user!.tid)
+
+      return { url: publicUrl }
     }),
 
   completeOnboarding: adminProcedure.mutation(async ({ ctx }) => {
@@ -696,16 +735,19 @@ export const adminRouter = router({
         .eq('user_id', input.userId)
         .is('used_at', null)
 
-      // Código de 8 chars alfanumérico mayúsculas
-      const { randomBytes } = await import('crypto')
-      const code = randomBytes(5).toString('base64url').toUpperCase().slice(0, 8)
+      // Código de 8 chars alfanumérico mayúsculas (6 bytes base64url = exactamente 8 chars)
+      const { randomBytes, createHash } = await import('crypto')
+      const code = randomBytes(6).toString('base64url').toUpperCase().slice(0, 8)
+      const codeHash = createHash('sha256').update(code).digest('hex')
 
       const { data, error } = await ctx.db
         .from('enrollment_codes')
         .insert({
           tenant_id: tenantId,
           user_id: input.userId,
+          created_by: ctx.user!.sub,
           code,
+          code_hash: codeHash,
           expires_at: expiresAt.toISOString(),
         })
         .select('id, code, expires_at')
@@ -713,7 +755,7 @@ export const adminRouter = router({
 
       if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
 
-      return { code: data.code, expiresAt: data.expires_at }
+      return { code: data.code as string, expiresAt: data.expires_at as string }
     }),
 
   listDevices: adminProcedure
@@ -770,12 +812,11 @@ export const adminRouter = router({
 
       if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
 
-      // Revocar api_keys asociadas al dispositivo
+      // Revocar api_keys asociadas al dispositivo (filtro por nombre, sin user_id que no existe en api_keys)
       await ctx.db
         .from('api_keys')
         .update({ revoked_at: new Date().toISOString() })
         .eq('tenant_id', tenantId)
-        .eq('user_id', device.user_id)
         .eq('name', `agent:${input.deviceId}`)
         .is('revoked_at', null)
 
@@ -783,6 +824,51 @@ export const adminRouter = router({
         tenantId: tenantId,
         actorUserId: ctx.user!.sub,
         action: 'device.revoked',
+        entityType: 'agent_device',
+        entityId: input.deviceId,
+        ipInet: ctx.ip,
+        userAgent: ctx.userAgent,
+      })
+      return { ok: true }
+    }),
+
+  deleteDevice: adminProcedure
+    .input(z.object({ deviceId: z.string().uuid() }))
+    .mutation(async ({ ctx, input }) => {
+      const tenantId = ctx.user!.tid
+
+      const { data: device, error: fetchErr } = await ctx.db
+        .from('agent_devices')
+        .select('id')
+        .eq('id', input.deviceId)
+        .eq('tenant_id', tenantId)
+        .not('revoked_at', 'is', null)
+        .single()
+
+      if (fetchErr || !device)
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Dispositivo no encontrado o no está revocado',
+        })
+
+      await ctx.db
+        .from('api_keys')
+        .delete()
+        .eq('tenant_id', tenantId)
+        .eq('name', `agent:${input.deviceId}`)
+
+      const { error } = await ctx.db
+        .from('agent_devices')
+        .delete()
+        .eq('id', input.deviceId)
+        .eq('tenant_id', tenantId)
+
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+
+      await logAudit(ctx.db, {
+        tenantId,
+        actorUserId: ctx.user!.sub,
+        action: 'device.deleted',
         entityType: 'agent_device',
         entityId: input.deviceId,
         ipInet: ctx.ip,
@@ -1010,41 +1096,50 @@ export const adminRouter = router({
       }),
     )
     .query(async ({ ctx, input }) => {
-      const from = (input.page - 1) * input.pageSize
-      const to = from + input.pageSize - 1
+      const rangeFrom = (input.page - 1) * input.pageSize
+      const rangeTo = rangeFrom + input.pageSize - 1
 
       let query = ctx.db
         .from('audit_logs')
         .select(
-          'id, action, actor_id, actor_email, target_id, target_type, ip_address, metadata, created_at, users!audit_logs_actor_id_fkey(full_name)',
+          'id, action, actor_user_id, entity_id, entity_type, ip_inet, after_state, occurred_at',
           { count: 'exact' },
         )
         .eq('tenant_id', ctx.user!.tid)
-        .order('created_at', { ascending: false })
-        .range(from, to)
+        .order('occurred_at', { ascending: false })
+        .range(rangeFrom, rangeTo)
 
-      if (input.userId) query = query.eq('actor_id', input.userId)
-      if (input.action) query = query.eq('action', input.action)
-      if (input.from) query = query.gte('created_at', input.from)
-      if (input.to) query = query.lte('created_at', `${input.to}T23:59:59Z`)
+      if (input.userId) query = query.eq('actor_user_id', input.userId)
+      if (input.action) query = query.ilike('action', `%${input.action}%`)
+      if (input.from) query = query.gte('occurred_at', input.from)
+      if (input.to) query = query.lte('occurred_at', `${input.to}T23:59:59Z`)
 
       const { data, count, error } = await query
       if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
 
+      // Enriquecer con datos del actor en una segunda query
+      const actorIds = [...new Set((data ?? []).map((l) => l.actor_user_id).filter(Boolean))]
+      const { data: actors } = actorIds.length
+        ? await ctx.db.from('users').select('id, full_name, email').in('id', actorIds)
+        : { data: [] }
+      const actorMap = new Map((actors ?? []).map((u) => [u.id, u]))
+
       return {
-        logs: (data ?? []).map((l) => ({
-          id: l.id,
-          action: l.action,
-          actor_id: l.actor_id,
-          actor_email: l.actor_email,
-          actor_name:
-            (l.users as unknown as { full_name: string | null } | null)?.full_name ?? null,
-          target_id: l.target_id,
-          target_type: l.target_type,
-          ip_address: l.ip_address,
-          metadata: l.metadata,
-          created_at: l.created_at,
-        })),
+        logs: (data ?? []).map((l) => {
+          const actor = l.actor_user_id ? actorMap.get(l.actor_user_id) : null
+          return {
+            id: l.id,
+            action: l.action,
+            actor_id: l.actor_user_id,
+            actor_email: actor?.email ?? null,
+            actor_name: actor?.full_name ?? null,
+            target_id: l.entity_id,
+            target_type: l.entity_type,
+            ip_address: l.ip_inet,
+            metadata: l.after_state,
+            created_at: l.occurred_at,
+          }
+        }),
         total: count ?? 0,
         page: input.page,
         pageSize: input.pageSize,
@@ -1062,15 +1157,23 @@ export const adminRouter = router({
     )
     .mutation(async ({ ctx, input }) => {
       const tenantId = ctx.user!.tid
-      const date = input.date ?? new Date(Date.now() - 86400000).toISOString().slice(0, 10)
+      const today = new Date().toISOString().slice(0, 10)
+      const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10)
+      const date = input.date ?? today
 
-      const { data, error } = await ctx.db.rpc('aggregate_daily_user_metrics', {
-        p_date: date,
-        p_tenant_id: tenantId,
-      })
+      // Siempre agrega hoy; si no se especificó fecha también agrega ayer
+      const dates = date === today ? [yesterday, today] : [date]
+      let totalRows = 0
+      for (const d of dates) {
+        const { data, error } = await ctx.db.rpc('aggregate_daily_user_metrics', {
+          p_date: d,
+          p_tenant_id: tenantId,
+        })
+        if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+        const result = data as Array<{ rows_upserted: number }>
+        totalRows += result[0]?.rows_upserted ?? 0
+      }
 
-      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
-      const result = data as Array<{ rows_upserted: number }>
-      return { ok: true, date, rows: result[0]?.rows_upserted ?? 0 }
+      return { ok: true, date, rows: totalRows }
     }),
 })

@@ -4,12 +4,80 @@ import { useState } from 'react'
 import { keepPreviousData } from '@tanstack/react-query'
 import { trpc } from '@/lib/trpc-client'
 import { formatDate } from '@/lib/format'
-import { Monitor, Shield, ShieldOff, Copy, Check } from 'lucide-react'
+import { Monitor, ShieldOff, Copy, Check, Trash2 } from 'lucide-react'
 
 const PLATFORM_LABELS: Record<string, string> = {
   windows: 'Windows',
   macos: 'macOS',
   linux: 'Linux',
+}
+
+function getOnlineStatus(lastSeenAt: string | null, revokedAt: string | null) {
+  if (revokedAt) return 'revoked'
+  if (!lastSeenAt) return 'never'
+  const diffMs = Date.now() - new Date(lastSeenAt).getTime()
+  const diffMin = diffMs / 60000
+  if (diffMin < 2) return 'online'
+  if (diffMin < 10) return 'recent'
+  return 'offline'
+}
+
+function relativeTime(iso: string | null): string {
+  if (!iso) return 'Nunca'
+  const diffMs = Date.now() - new Date(iso).getTime()
+  const s = Math.floor(diffMs / 1000)
+  if (s < 60) return `hace ${s}s`
+  const m = Math.floor(s / 60)
+  if (m < 60) return `hace ${m}m`
+  const h = Math.floor(m / 60)
+  if (h < 24) return `hace ${h}h`
+  return `hace ${Math.floor(h / 24)}d`
+}
+
+function OnlineBadge({
+  lastSeenAt,
+  revokedAt,
+}: {
+  lastSeenAt: string | null
+  revokedAt: string | null
+}) {
+  const status = getOnlineStatus(lastSeenAt, revokedAt)
+  if (status === 'revoked')
+    return (
+      <span className="flex items-center gap-1.5 text-xs text-red-500">
+        <ShieldOff className="h-3.5 w-3.5" /> Revocado
+      </span>
+    )
+  if (status === 'online')
+    return (
+      <span className="flex items-center gap-1.5 text-xs font-medium text-green-600">
+        <span className="relative flex h-2.5 w-2.5">
+          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-green-400 opacity-75" />
+          <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-green-500" />
+        </span>
+        Online
+      </span>
+    )
+  if (status === 'recent')
+    return (
+      <span className="flex items-center gap-1.5 text-xs font-medium text-yellow-600">
+        <span className="h-2.5 w-2.5 rounded-full bg-yellow-400" />
+        Reciente
+      </span>
+    )
+  if (status === 'never')
+    return (
+      <span className="flex items-center gap-1.5 text-xs text-gray-400">
+        <span className="h-2.5 w-2.5 rounded-full bg-gray-300" />
+        Sin conexión
+      </span>
+    )
+  return (
+    <span className="flex items-center gap-1.5 text-xs text-gray-400">
+      <span className="h-2.5 w-2.5 rounded-full bg-gray-300" />
+      Offline
+    </span>
+  )
 }
 
 export function DeviceManager() {
@@ -23,7 +91,7 @@ export function DeviceManager() {
   const utils = trpc.useUtils()
   const { data, isLoading } = trpc.admin.listDevices.useQuery(
     { userId: selectedUserId, page, pageSize: 20 },
-    { placeholderData: keepPreviousData },
+    { placeholderData: keepPreviousData, refetchInterval: 30000 },
   )
   const { data: users } = trpc.admin.listUsers.useQuery({
     role: 'all',
@@ -33,6 +101,9 @@ export function DeviceManager() {
   })
 
   const revoke = trpc.admin.revokeDevice.useMutation({
+    onSuccess: () => utils.admin.listDevices.invalidate(),
+  })
+  const deleteDevice = trpc.admin.deleteDevice.useMutation({
     onSuccess: () => utils.admin.listDevices.invalidate(),
   })
   const genCode = trpc.admin.generateEnrollmentCode.useMutation()
@@ -147,38 +218,52 @@ export function DeviceManager() {
                     </span>
                   </td>
                   <td className="px-4 py-3 text-xs text-gray-500">
-                    {device.last_seen_at ? formatDate(device.last_seen_at) : 'Nunca'}
+                    <span title={device.last_seen_at ? formatDate(device.last_seen_at) : 'Nunca'}>
+                      {relativeTime(device.last_seen_at)}
+                    </span>
                   </td>
                   <td className="px-4 py-3">
-                    {isRevoked ? (
-                      <span className="flex items-center gap-1 text-xs text-red-500">
-                        <ShieldOff className="h-3.5 w-3.5" /> Revocado
-                      </span>
-                    ) : (
-                      <span className="flex items-center gap-1 text-xs text-green-600">
-                        <Shield className="h-3.5 w-3.5" /> Activo
-                      </span>
-                    )}
+                    <OnlineBadge lastSeenAt={device.last_seen_at} revokedAt={device.revoked_at} />
                   </td>
                   <td className="px-4 py-3">
-                    {!isRevoked && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          if (
-                            confirm(
-                              `¿Revocar dispositivo "${device.name}"? El agente dejará de enviar datos.`,
-                            )
-                          ) {
-                            revoke.mutate({ deviceId: device.id })
-                          }
-                        }}
-                        disabled={revoke.isPending}
-                        className="rounded bg-red-50 px-2 py-1 text-xs font-medium text-red-700 hover:bg-red-100 disabled:opacity-50"
-                      >
-                        Revocar
-                      </button>
-                    )}
+                    <div className="flex items-center gap-2">
+                      {!isRevoked && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (
+                              confirm(
+                                `¿Revocar dispositivo "${device.name}"? El agente dejará de enviar datos.`,
+                              )
+                            ) {
+                              revoke.mutate({ deviceId: device.id })
+                            }
+                          }}
+                          disabled={revoke.isPending}
+                          className="rounded bg-red-50 px-2 py-1 text-xs font-medium text-red-700 hover:bg-red-100 disabled:opacity-50"
+                        >
+                          Revocar
+                        </button>
+                      )}
+                      {isRevoked && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (
+                              confirm(
+                                `¿Eliminar permanentemente "${device.name}"? Esta acción no se puede deshacer.`,
+                              )
+                            ) {
+                              deleteDevice.mutate({ deviceId: device.id })
+                            }
+                          }}
+                          disabled={deleteDevice.isPending}
+                          className="flex items-center gap-1 rounded bg-gray-100 px-2 py-1 text-xs font-medium text-gray-600 hover:bg-gray-200 disabled:opacity-50"
+                        >
+                          <Trash2 className="h-3 w-3" /> Eliminar
+                        </button>
+                      )}
+                    </div>
                   </td>
                 </tr>
               )

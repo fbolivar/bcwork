@@ -34,7 +34,7 @@ export function MyDayPanel() {
     : 0
 
   const workdayLabels = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb']
-  const workdays = (schedule?.workdays ?? []) as number[]
+  const workdays = (schedule?.days_of_week ?? []) as number[]
 
   const productiveSecs = today?.productiveSeconds ?? 0
   const totalSecs = today?.totalActiveSeconds ?? 0

@@ -65,7 +65,7 @@ export const platformRouter = router({
         timezone: z.string().default('America/Bogota'),
         admin_full_name: z.string().min(2).max(200),
         admin_password: z.string().min(12),
-        plan_code: z.enum(['basic', 'pro', 'enterprise']).default('pro'),
+        plan_code: z.enum(['basic', 'pro', 'enterprise', 'custom']).default('pro'),
         seats: z.number().int().min(1).max(5000).default(10),
         status: z.enum(['trial', 'active']).default('trial'),
         trial_days: z.number().int().min(1).max(365).default(14),
@@ -119,6 +119,7 @@ export const platformRouter = router({
         throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: tenantError.message })
       }
 
+      const isPerpetual = input.plan_code === 'custom'
       const trialEnd = new Date()
       trialEnd.setDate(trialEnd.getDate() + input.trial_days)
 
@@ -126,10 +127,10 @@ export const platformRouter = router({
         tenant_id: tenant.id,
         plan_id: plan.id,
         seats_total: input.seats,
-        status: input.status,
+        status: isPerpetual ? 'active' : input.status,
         starts_at: new Date().toISOString(),
-        ends_at: trialEnd.toISOString(),
-        trial_ends_at: input.status === 'trial' ? trialEnd.toISOString() : null,
+        ends_at: isPerpetual ? null : trialEnd.toISOString(),
+        trial_ends_at: !isPerpetual && input.status === 'trial' ? trialEnd.toISOString() : null,
       })
 
       const { data: user, error: userError } = await adminDb
@@ -231,21 +232,33 @@ export const platformRouter = router({
     .input(
       z.object({
         id: z.string().uuid(),
+        trade_name: z.string().max(200).optional(),
+        contact_email: z.string().email().optional(),
+        contact_phone: z.string().max(20).optional(),
+        timezone: z.string().optional(),
         data_retention_months: z.number().int().min(1).max(120).optional(),
         data_protection_officer: z.string().optional(),
-        status: z.enum(['active', 'suspended', 'cancelled']).optional(),
+        status: z.enum(['active', 'suspended', 'cancelled', 'trial']).optional(),
       }),
     )
     .mutation(async ({ input, ctx }) => {
       const db = ctx.db
-      const { id, ...updates } = input
+      const { id, ...rawUpdates } = input
+      // Strip undefined so Supabase doesn't overwrite existing values with null
+      const updates = Object.fromEntries(
+        Object.entries(rawUpdates).filter(([, v]) => v !== undefined),
+      )
 
       const { error } = await db
         .from('tenants')
         .update({ ...updates, updated_at: new Date().toISOString() })
         .eq('id', id)
+        .select('id')
 
-      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      if (error) {
+        console.error('[platform] updateTenant error:', error)
+        throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      }
 
       await ctx.db.from('audit_logs').insert({
         actor_user_id: ctx.user.sub,
@@ -266,13 +279,16 @@ export const platformRouter = router({
         status: z.enum(['active', 'suspended', 'cancelled']).optional(),
         seats_total: z.number().int().min(1).optional(),
         plan_id: z.string().uuid().optional(),
-        ends_at: z.string().datetime().optional(),
+        ends_at: z.string().datetime().nullable().optional(),
         feature_overrides: z.record(z.boolean()).optional(),
       }),
     )
     .mutation(async ({ input, ctx }) => {
       const db = ctx.db
-      const { licenseId, ...updates } = input
+      const { licenseId, ...rawUpdates } = input
+      const updates = Object.fromEntries(
+        Object.entries(rawUpdates).filter(([, v]) => v !== undefined),
+      )
 
       const { data: before } = await db.from('licenses').select('*').eq('id', licenseId).single()
 
@@ -280,8 +296,12 @@ export const platformRouter = router({
         .from('licenses')
         .update({ ...updates, updated_at: new Date().toISOString() })
         .eq('id', licenseId)
+        .select('id')
 
-      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      if (error) {
+        console.error('[platform] updateLicense error:', error)
+        throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      }
 
       await db.from('audit_logs').insert({
         tenant_id: before?.tenant_id,

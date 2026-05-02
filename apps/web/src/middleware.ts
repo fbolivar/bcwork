@@ -17,7 +17,7 @@ const PUBLIC_PATHS = new Set([
 
 // Rutas públicas por prefijo
 const PUBLIC_PREFIXES = [
-  '/api/trpc/auth.',
+  '/api/trpc/', // tRPC maneja su propia auth (enforceAuth middleware)
   '/api/v1/', // autenticadas por API token propio
   '/api/ingest/', // autenticadas por API key propio
   '/legal/',

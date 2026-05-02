@@ -1,16 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { headers as nextHeaders } from 'next/headers'
 import { getDb } from '@/lib/db'
-import { verifyAccessToken } from '@/lib/auth/jwt'
 
 function toCsv(rows: Record<string, unknown>[]): string {
   if (rows.length === 0) return ''
-  const headers = Object.keys(rows[0]!)
+  const cols = Object.keys(rows[0]!)
   const lines = [
-    headers.join(','),
+    cols.join(','),
     ...rows.map((r) =>
-      headers
-        .map((h) => {
-          const v = r[h]
+      cols
+        .map((c) => {
+          const v = r[c]
           if (v == null) return ''
           const s = String(v)
           return s.includes(',') || s.includes('"') || s.includes('\n')
@@ -24,19 +24,13 @@ function toCsv(rows: Record<string, unknown>[]): string {
 }
 
 export async function GET(req: NextRequest) {
-  // Autenticación por cookie (mismo mecanismo que el middleware)
-  const token = req.cookies.get('bcwork_access')?.value
-  if (!token) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
+  // El middleware ya validó el JWT y seteó estos headers
+  const h = await nextHeaders()
+  const tenantId = h.get('x-tenant-id')
+  const role = h.get('x-user-role')
 
-  let payload: { sub: string; tid: string; role: string }
-  try {
-    payload = (await verifyAccessToken(token)) as typeof payload
-  } catch {
-    return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
-  }
-
-  if (!['tenant_admin', 'platform_admin', 'manager'].includes(payload.role)) {
-    return NextResponse.json({ error: 'forbidden' }, { status: 403 })
+  if (!tenantId || !['tenant_admin', 'manager'].includes(role ?? '')) {
+    return NextResponse.json({ error: 'No autorizado' }, { status: 401 })
   }
 
   const { searchParams } = req.nextUrl
@@ -51,7 +45,7 @@ export async function GET(req: NextRequest) {
     .select(
       'metric_date, user_id, active_seconds, productive_seconds, non_productive_seconds, productivity_ratio, focus_score, overtime_seconds, location_type',
     )
-    .eq('tenant_id', payload.tid)
+    .eq('tenant_id', tenantId)
     .gte('metric_date', from)
     .order('metric_date', { ascending: true })
     .order('user_id')
@@ -67,7 +61,7 @@ export async function GET(req: NextRequest) {
     .from('users')
     .select('id, full_name, email')
     .in('id', userIds)
-    .eq('tenant_id', payload.tid)
+    .eq('tenant_id', tenantId)
 
   const userMap = new Map((users ?? []).map((u) => [u.id, u]))
 

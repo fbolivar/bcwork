@@ -6,20 +6,12 @@ mod sender;
 mod state;
 
 use std::sync::Mutex;
-use tauri::{Manager, SystemTray, SystemTrayMenu, CustomMenuItem, SystemTrayEvent};
+use tauri::{
+    menu::{Menu, MenuItem, PredefinedMenuItem},
+    tray::{MouseButton, TrayIconBuilder, TrayIconEvent},
+    Manager,
+};
 use state::AgentState;
-
-fn build_tray() -> SystemTray {
-    let show = CustomMenuItem::new("show", "Abrir BCWork");
-    let pause = CustomMenuItem::new("pause", "Pausar monitoreo");
-    let quit = CustomMenuItem::new("quit", "Salir");
-    let menu = SystemTrayMenu::new()
-        .add_item(show)
-        .add_item(pause)
-        .add_native_item(tauri::SystemTrayMenuItem::Separator)
-        .add_item(quit);
-    SystemTray::new().with_menu(menu)
-}
 
 fn main() {
     env_logger::init();
@@ -32,31 +24,6 @@ fn main() {
         ))
         .plugin(tauri_plugin_notification::init())
         .manage(Mutex::new(AgentState::default()))
-        .system_tray(build_tray())
-        .on_system_tray_event(|app, event| match event {
-            SystemTrayEvent::MenuItemClick { id, .. } => match id.as_str() {
-                "show" => {
-                    if let Some(w) = app.get_window("main") {
-                        let _ = w.show();
-                        let _ = w.set_focus();
-                    }
-                }
-                "pause" => {
-                    let state = app.state::<Mutex<AgentState>>();
-                    let mut s = state.lock().unwrap();
-                    s.paused = !s.paused;
-                }
-                "quit" => std::process::exit(0),
-                _ => {}
-            },
-            SystemTrayEvent::DoubleClick { .. } => {
-                if let Some(w) = app.get_window("main") {
-                    let _ = w.show();
-                    let _ = w.set_focus();
-                }
-            }
-            _ => {}
-        })
         .invoke_handler(tauri::generate_handler![
             commands::enroll,
             commands::get_status,
@@ -64,23 +31,59 @@ fn main() {
             commands::get_events_count,
         ])
         .setup(|app| {
-            let handle = app.handle();
+            // Build system tray
+            let show = MenuItem::with_id(app, "show", "Abrir BCWork", true, None::<&str>)?;
+            let pause = MenuItem::with_id(app, "pause", "Pausar monitoreo", true, None::<&str>)?;
+            let sep = PredefinedMenuItem::separator(app)?;
+            let quit = MenuItem::with_id(app, "quit", "Salir", true, None::<&str>)?;
+            let menu = Menu::with_items(app, &[&show, &pause, &sep, &quit])?;
+
+            let _tray = TrayIconBuilder::new()
+                .menu(&menu)
+                .on_menu_event(|app, event| match event.id.as_ref() {
+                    "show" => {
+                        if let Some(w) = app.get_webview_window("main") {
+                            let _ = w.show();
+                            let _ = w.set_focus();
+                        }
+                    }
+                    "pause" => {
+                        let state = app.state::<Mutex<AgentState>>();
+                        let mut s = state.lock().unwrap();
+                        s.paused = !s.paused;
+                    }
+                    "quit" => std::process::exit(0),
+                    _ => {}
+                })
+                .on_tray_icon_event(|tray, event| {
+                    if let TrayIconEvent::DoubleClick {
+                        button: MouseButton::Left,
+                        ..
+                    } = event
+                    {
+                        let app = tray.app_handle();
+                        if let Some(w) = app.get_webview_window("main") {
+                            let _ = w.show();
+                            let _ = w.set_focus();
+                        }
+                    }
+                })
+                .build(app)?;
+
             let db_path = app
-                .path_resolver()
+                .path()
                 .app_data_dir()
                 .expect("no app data dir")
                 .join("buffer.db");
 
             db::init(&db_path).expect("failed to init local db");
 
-            // Lanzar loop de captura
-            let capture_handle = handle.clone();
+            let handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
-                capture::run_capture_loop(capture_handle).await;
+                capture::run_capture_loop(handle).await;
             });
 
-            // Lanzar loop de envío cada 5 minutos
-            let sender_handle = handle.clone();
+            let sender_handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
                 sender::run_sender_loop(sender_handle, db_path).await;
             });
@@ -133,7 +136,6 @@ mod commands {
 
         let body: serde_json::Value = resp.json().await.map_err(|e| e.to_string())?;
 
-        // Persistir credenciales en store
         use tauri_plugin_store::StoreExt;
         let store = app.store("credentials.json").map_err(|e| e.to_string())?;
         store.set("server_url", serde_json::json!(server_url));
@@ -166,7 +168,7 @@ mod commands {
     #[tauri::command]
     pub fn get_events_count(app: tauri::AppHandle) -> i64 {
         let db_path = app
-            .path_resolver()
+            .path()
             .app_data_dir()
             .expect("no app data dir")
             .join("buffer.db");
