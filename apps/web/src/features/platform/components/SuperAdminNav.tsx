@@ -1,6 +1,7 @@
 'use client'
 
 import Link from 'next/link'
+import Image from 'next/image'
 import { usePathname, useRouter } from 'next/navigation'
 import { LayoutDashboard, Building2, CreditCard, ScrollText, LogOut } from 'lucide-react'
 import { cn } from '@bcwork/ui'
@@ -22,9 +23,10 @@ export function SuperAdminNav() {
 
   return (
     <aside className="flex w-56 flex-col border-r border-gray-200 bg-white">
-      <div className="flex h-14 items-center border-b border-gray-200 px-4">
+      <div className="flex h-14 items-center gap-2.5 border-b border-gray-200 px-4">
+        <Image src="/brand/icon.svg" alt="BCWork" width={28} height={28} />
         <span className="text-sm font-bold text-gray-900">BCWork</span>
-        <span className="ml-2 rounded bg-blue-100 px-1.5 py-0.5 text-xs font-medium text-blue-700">
+        <span className="rounded bg-blue-100 px-1.5 py-0.5 text-xs font-medium text-blue-700">
           Admin
         </span>
       </div>

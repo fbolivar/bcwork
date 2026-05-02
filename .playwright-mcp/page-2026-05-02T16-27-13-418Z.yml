@@ -1,0 +1,32 @@
+- generic [active] [ref=e1]:
+  - button "Open Next.js Dev Tools" [ref=e23] [cursor=pointer]:
+    - img [ref=e24]
+  - alert [ref=e27]: BCWork — Control de Teletrabajo
+  - generic [ref=e28]:
+    - complementary [ref=e29]:
+      - generic [ref=e30]:
+        - generic [ref=e31]: BCWork
+        - generic [ref=e32]: Admin
+      - navigation [ref=e33]:
+        - link "Métricas" [ref=e34] [cursor=pointer]:
+          - /url: /super-admin/metrics
+          - img [ref=e35]
+          - text: Métricas
+        - link "Empresas" [ref=e40] [cursor=pointer]:
+          - /url: /super-admin/tenants
+          - img [ref=e41]
+          - text: Empresas
+        - link "Planes" [ref=e45] [cursor=pointer]:
+          - /url: /super-admin/plans
+          - img [ref=e46]
+          - text: Planes
+        - link "Auditoría" [ref=e48] [cursor=pointer]:
+          - /url: /super-admin/audit
+          - img [ref=e49]
+          - text: Auditoría
+      - generic [ref=e52]:
+        - paragraph [ref=e53]: Platform Admin
+        - button "Cerrar sesión" [ref=e54] [cursor=pointer]:
+          - img [ref=e55]
+          - text: Cerrar sesión
+    - main [ref=e58]

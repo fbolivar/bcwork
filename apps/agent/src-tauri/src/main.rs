@@ -28,10 +28,12 @@ fn main() {
             commands::enroll,
             commands::get_status,
             commands::set_paused,
+            commands::set_paused_with_pin,
             commands::get_events_count,
+            commands::verify_pin,
+            commands::quit_app,
         ])
         .setup(|app| {
-            // Build system tray
             let show = MenuItem::with_id(app, "show", "Abrir BCWork", true, None::<&str>)?;
             let pause = MenuItem::with_id(app, "pause", "Pausar monitoreo", true, None::<&str>)?;
             let sep = PredefinedMenuItem::separator(app)?;
@@ -48,11 +50,21 @@ fn main() {
                         }
                     }
                     "pause" => {
-                        let state = app.state::<Mutex<AgentState>>();
-                        let mut s = state.lock().unwrap();
-                        s.paused = !s.paused;
+                        // Tray pause: signal the frontend to show PIN dialog if needed
+                        if let Some(w) = app.get_webview_window("main") {
+                            let _ = w.show();
+                            let _ = w.set_focus();
+                            let _ = w.emit("tray-pause-requested", ());
+                        }
                     }
-                    "quit" => std::process::exit(0),
+                    "quit" => {
+                        // Require PIN before quitting if PIN is set
+                        if let Some(w) = app.get_webview_window("main") {
+                            let _ = w.show();
+                            let _ = w.set_focus();
+                            let _ = w.emit("tray-quit-requested", ());
+                        }
+                    }
                     _ => {}
                 })
                 .on_tray_icon_event(|tray, event| {
@@ -97,6 +109,7 @@ fn main() {
 mod commands {
     use super::*;
     use tauri::State;
+    use tauri_plugin_autostart::ManagerExt;
 
     #[tauri::command]
     pub async fn enroll(
@@ -143,12 +156,30 @@ mod commands {
         store.set("device_id", body["device_id"].clone());
         store.save().map_err(|e| e.to_string())?;
 
+        // Enable autostart on successful enrollment
+        let autostart = app.autolaunch();
+        let _ = autostart.enable();
+        log::info!("autostart enabled after enrollment");
+
         Ok(body)
     }
 
     #[tauri::command]
-    pub fn get_status(state: State<'_, Mutex<AgentState>>) -> serde_json::Value {
+    pub fn get_status(
+        app: tauri::AppHandle,
+        state: State<'_, Mutex<AgentState>>,
+    ) -> serde_json::Value {
+        use tauri_plugin_store::StoreExt;
         let s = state.lock().unwrap();
+
+        // Check if PIN is configured
+        let pin_required = app
+            .store("credentials.json")
+            .ok()
+            .and_then(|store| store.get("pin_hash"))
+            .and_then(|v| v.as_str().map(|s| !s.is_empty()))
+            .unwrap_or(false);
+
         serde_json::json!({
             "enrolled": s.enrolled,
             "paused": s.paused,
@@ -156,6 +187,7 @@ mod commands {
             "idle_seconds": s.idle_seconds,
             "current_app": s.current_app,
             "last_sent_at": s.last_sent_at,
+            "pin_required": pin_required,
         })
     }
 
@@ -163,6 +195,56 @@ mod commands {
     pub fn set_paused(state: State<'_, Mutex<AgentState>>, paused: bool) {
         let mut s = state.lock().unwrap();
         s.paused = paused;
+    }
+
+    /// Pause/resume with PIN verification. Returns error if PIN is wrong.
+    #[tauri::command]
+    pub fn set_paused_with_pin(
+        app: tauri::AppHandle,
+        state: State<'_, Mutex<AgentState>>,
+        paused: bool,
+        pin: Option<String>,
+    ) -> Result<(), String> {
+        use tauri_plugin_store::StoreExt;
+
+        let store = app.store("credentials.json").map_err(|e| e.to_string())?;
+        let stored_hash = store
+            .get("pin_hash")
+            .and_then(|v| v.as_str().map(|s| s.to_string()));
+
+        if let Some(hash) = stored_hash {
+            if !hash.is_empty() {
+                let entered = pin.ok_or("PIN requerido")?;
+                if entered != hash {
+                    return Err("PIN incorrecto".to_string());
+                }
+            }
+        }
+
+        let mut s = state.lock().unwrap();
+        s.paused = paused;
+        Ok(())
+    }
+
+    /// Verify PIN without changing state (used to confirm quit)
+    #[tauri::command]
+    pub fn verify_pin(app: tauri::AppHandle, pin: String) -> Result<bool, String> {
+        use tauri_plugin_store::StoreExt;
+        let store = app.store("credentials.json").map_err(|e| e.to_string())?;
+        let stored_hash = store
+            .get("pin_hash")
+            .and_then(|v| v.as_str().map(|s| s.to_string()))
+            .unwrap_or_default();
+
+        if stored_hash.is_empty() {
+            return Ok(true); // No PIN set, allow
+        }
+        Ok(pin == stored_hash)
+    }
+
+    #[tauri::command]
+    pub fn quit_app() {
+        std::process::exit(0);
     }
 
     #[tauri::command]

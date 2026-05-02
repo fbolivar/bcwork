@@ -877,6 +877,26 @@ export const adminRouter = router({
       return { ok: true }
     }),
 
+  setDevicePin: adminProcedure
+    .input(
+      z.object({
+        deviceId: z.string().uuid(),
+        pin: z.string().min(4).max(12).nullable(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const tenantId = ctx.user!.tid
+      const { error } = await ctx.db
+        .from('agent_devices')
+        .update({ pin_hash: input.pin })
+        .eq('id', input.deviceId)
+        .eq('tenant_id', tenantId)
+        .select('id')
+
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      return { ok: true }
+    }),
+
   // ─── Métricas y KPIs ─────────────────────────────────────────────────────
 
   getProductivityTrend: adminProcedure

@@ -1,0 +1,8 @@
+[    2941ms] Invalid or unexpected token
+[    2945ms] Invalid or unexpected token
+[    2949ms] Invalid or unexpected token
+[    3608ms] Unexpected end of input
+[    3609ms] Unexpected end of input
+[    3656ms] Unexpected end of input
+[    3661ms] Unexpected end of input
+[    3670ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://localhost:3001/favicon.ico:0

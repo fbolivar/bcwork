@@ -94,6 +94,15 @@ async fn send_batch(app: &AppHandle, db_path: &PathBuf) -> anyhow::Result<()> {
         }
         s.last_sent_at = Some(Utc::now());
         log::info!("batch sent: {} events", ids.len());
+
+        // Store pin_hash from server if provided
+        if let Some(pin_hash) = body["pin_hash"].as_str() {
+            use tauri_plugin_store::StoreExt;
+            if let Ok(store) = app.store("credentials.json") {
+                store.set("pin_hash", serde_json::json!(pin_hash));
+                let _ = store.save();
+            }
+        }
     } else {
         let status = resp.status();
         let text = resp.text().await.unwrap_or_default();

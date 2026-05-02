@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import { invoke } from '@tauri-apps/api/core'
+import { listen } from '@tauri-apps/api/event'
 
 interface AgentStatus {
   enrolled: boolean
@@ -8,6 +9,7 @@ interface AgentStatus {
   idle_seconds: number
   current_app: string | null
   last_sent_at: string | null
+  pin_required: boolean
 }
 
 function formatDuration(secs: number): string {
@@ -19,32 +21,181 @@ function formatDuration(secs: number): string {
 
 function formatTime(iso: string | null): string {
   if (!iso) return 'Nunca'
-  const d = new Date(iso)
-  return d.toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' })
+  return new Date(iso).toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' })
 }
 
+// ── PIN Dialog ────────────────────────────────────────────────────────────────
+function PinDialog({
+  title,
+  onConfirm,
+  onCancel,
+}: {
+  title: string
+  onConfirm: (pin: string) => void
+  onCancel: () => void
+}) {
+  const [pin, setPin] = useState('')
+  const [error, setError] = useState('')
+
+  return (
+    <div style={overlayStyle}>
+      <div style={dialogStyle}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+          <LockIcon />
+          <span style={{ color: '#f1f5f9', fontWeight: 700, fontSize: 16 }}>{title}</span>
+        </div>
+        <p style={{ color: '#94a3b8', fontSize: 13, marginBottom: 16 }}>
+          Ingresa el PIN de administrador para continuar.
+        </p>
+        <input
+          type="password"
+          value={pin}
+          onChange={(e) => {
+            setPin(e.target.value)
+            setError('')
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              if (pin.length < 4) {
+                setError('PIN muy corto')
+                return
+              }
+              onConfirm(pin)
+            }
+          }}
+          placeholder="••••••"
+          autoFocus
+          maxLength={12}
+          style={{
+            width: '100%',
+            background: '#0f172a',
+            border: `1px solid ${error ? '#f87171' : '#334155'}`,
+            borderRadius: 8,
+            padding: '10px 14px',
+            color: '#f1f5f9',
+            fontSize: 20,
+            letterSpacing: 6,
+            textAlign: 'center',
+            outline: 'none',
+            boxSizing: 'border-box',
+          }}
+        />
+        {error && (
+          <p style={{ color: '#f87171', fontSize: 12, marginTop: 8, textAlign: 'center' }}>
+            {error}
+          </p>
+        )}
+        <div style={{ display: 'flex', gap: 10, marginTop: 20 }}>
+          <button
+            onClick={onCancel}
+            style={{
+              flex: 1,
+              padding: '10px',
+              background: 'transparent',
+              border: '1px solid #334155',
+              borderRadius: 8,
+              color: '#94a3b8',
+              cursor: 'pointer',
+              fontSize: 14,
+            }}
+          >
+            Cancelar
+          </button>
+          <button
+            onClick={() => {
+              if (pin.length < 4) {
+                setError('PIN muy corto')
+                return
+              }
+              onConfirm(pin)
+            }}
+            style={{
+              flex: 1,
+              padding: '10px',
+              background: '#3b82f6',
+              border: 'none',
+              borderRadius: 8,
+              color: 'white',
+              cursor: 'pointer',
+              fontSize: 14,
+              fontWeight: 600,
+            }}
+          >
+            Confirmar
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── Main Dashboard ────────────────────────────────────────────────────────────
 export function DashboardScreen() {
   const [status, setStatus] = useState<AgentStatus | null>(null)
   const [pendingCount, setPendingCount] = useState(0)
+  const [pinDialog, setPinDialog] = useState<'pause' | 'quit' | null>(null)
+  const [pinError, setPinError] = useState('')
+
+  const refresh = useCallback(async () => {
+    const [s, count] = await Promise.all([
+      invoke<AgentStatus>('get_status'),
+      invoke<number>('get_events_count'),
+    ])
+    setStatus(s)
+    setPendingCount(count)
+  }, [])
 
   useEffect(() => {
-    const refresh = async () => {
-      const [s, count] = await Promise.all([
-        invoke<AgentStatus>('get_status'),
-        invoke<number>('get_events_count'),
-      ])
-      setStatus(s)
-      setPendingCount(count)
-    }
     refresh()
     const id = setInterval(refresh, 5000)
     return () => clearInterval(id)
-  }, [])
+  }, [refresh])
 
-  const togglePause = async () => {
+  // Listen for tray events
+  useEffect(() => {
+    const unlistenPause = listen('tray-pause-requested', () => {
+      if (status?.pin_required) {
+        setPinDialog('pause')
+      } else {
+        void invoke('set_paused', { paused: !status?.paused }).then(refresh)
+      }
+    })
+    const unlistenQuit = listen('tray-quit-requested', () => {
+      if (status?.pin_required) {
+        setPinDialog('quit')
+      } else {
+        void exit(0)
+      }
+    })
+    return () => {
+      void unlistenPause.then((u) => u())
+      void unlistenQuit.then((u) => u())
+    }
+  }, [status, refresh])
+
+  const requestPause = () => {
     if (!status) return
-    await invoke('set_paused', { paused: !status.paused })
-    setStatus((s) => (s ? { ...s, paused: !s.paused } : s))
+    if (status.pin_required) {
+      setPinDialog('pause')
+    } else {
+      void invoke('set_paused', { paused: !status.paused }).then(refresh)
+    }
+  }
+
+  const handlePinConfirm = async (pin: string) => {
+    const ok = await invoke<boolean>('verify_pin', { pin })
+    if (!ok) {
+      setPinError('PIN incorrecto')
+      return
+    }
+    if (pinDialog === 'pause') {
+      await invoke('set_paused', { paused: !status?.paused })
+      await refresh()
+    } else if (pinDialog === 'quit') {
+      await invoke('quit_app')
+    }
+    setPinDialog(null)
+    setPinError('')
   }
 
   if (!status) {
@@ -61,23 +212,27 @@ export function DashboardScreen() {
 
   return (
     <div style={styles.container}>
+      {pinDialog && (
+        <PinDialog
+          title={pinDialog === 'pause' ? 'Pausar monitoreo' : 'Cerrar agente'}
+          onConfirm={handlePinConfirm}
+          onCancel={() => {
+            setPinDialog(null)
+            setPinError('')
+          }}
+        />
+      )}
+
+      {/* Header */}
       <div style={styles.header}>
         <div style={styles.logo}>
-          <svg width="24" height="24" viewBox="0 0 40 40" fill="none">
-            <rect width="40" height="40" rx="10" fill="#3b82f6" />
-            <path
-              d="M10 28V12l10 8 10-8v16"
-              stroke="white"
-              strokeWidth="2.5"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-          </svg>
+          <BcworkIcon />
           <span style={styles.logoText}>BCWork Agent</span>
         </div>
         <StatusDot active={trackingActive} />
       </div>
 
+      {/* Stats */}
       <div style={styles.statsGrid}>
         <StatCard
           label="Tiempo activo"
@@ -91,6 +246,7 @@ export function DashboardScreen() {
         />
       </div>
 
+      {/* Productivity */}
       <div style={styles.progressSection}>
         <div style={styles.progressHeader}>
           <span style={styles.progressLabel}>Productividad de sesión</span>
@@ -101,6 +257,7 @@ export function DashboardScreen() {
         </div>
       </div>
 
+      {/* Current app */}
       {status.current_app && (
         <div style={styles.currentApp}>
           <span style={styles.currentAppLabel}>Aplicación activa</span>
@@ -108,6 +265,7 @@ export function DashboardScreen() {
         </div>
       )}
 
+      {/* Meta */}
       <div style={styles.meta}>
         <span style={{ color: '#64748b', fontSize: '12px' }}>
           Último envío: {formatTime(status.last_sent_at)}
@@ -119,8 +277,9 @@ export function DashboardScreen() {
         )}
       </div>
 
+      {/* Pause button */}
       <button
-        onClick={togglePause}
+        onClick={requestPause}
         style={{
           ...styles.pauseButton,
           background: trackingActive ? '#1e293b' : '#16a34a',
@@ -128,6 +287,7 @@ export function DashboardScreen() {
           border: trackingActive ? '1px solid #f87171' : '1px solid #16a34a',
         }}
       >
+        {status.pin_required && '🔒 '}
         {trackingActive ? 'Pausar monitoreo' : 'Reanudar monitoreo'}
       </button>
 
@@ -135,6 +295,72 @@ export function DashboardScreen() {
         Monitoreo conforme a Ley 2191/2022 (Desconexión Digital) y Ley 1581/2012 (HABEAS DATA)
       </p>
     </div>
+  )
+}
+
+// ── Sub-components ────────────────────────────────────────────────────────────
+function BcworkIcon() {
+  return (
+    <svg
+      width="28"
+      height="28"
+      viewBox="0 0 512 512"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+    >
+      <rect width="512" height="512" rx="96" fill="url(#gi)" />
+      <defs>
+        <linearGradient id="gi" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stopColor="#0f172a" />
+          <stop offset="100%" stopColor="#1e3a8a" />
+        </linearGradient>
+        <linearGradient id="ga" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stopColor="#06b6d4" />
+          <stop offset="100%" stopColor="#3b82f6" />
+        </linearGradient>
+      </defs>
+      <polygon
+        points="256,72 406,162 406,350 256,440 106,350 106,162"
+        fill="none"
+        stroke="url(#ga)"
+        strokeWidth="6"
+        opacity="0.9"
+      />
+      <rect x="176" y="172" width="22" height="168" rx="8" fill="url(#ga)" />
+      <path
+        d="M198 172 Q272 172 272 214 Q272 256 198 256"
+        fill="none"
+        stroke="url(#ga)"
+        strokeWidth="22"
+        strokeLinecap="round"
+      />
+      <path
+        d="M198 256 Q284 256 284 298 Q284 340 198 340"
+        fill="none"
+        stroke="url(#ga)"
+        strokeWidth="22"
+        strokeLinecap="round"
+      />
+      <polyline
+        points="290,256 310,256 322,228 338,290 350,240 366,256 386,256"
+        fill="none"
+        stroke="#06b6d4"
+        strokeWidth="12"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        opacity="0.85"
+      />
+    </svg>
+  )
+}
+
+function LockIcon() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+      <rect x="5" y="11" width="14" height="10" rx="2" stroke="#94a3b8" strokeWidth="2" />
+      <path d="M8 11V7a4 4 0 018 0v4" stroke="#94a3b8" strokeWidth="2" strokeLinecap="round" />
+      <circle cx="12" cy="16" r="1.5" fill="#94a3b8" />
+    </svg>
   )
 }
 
@@ -166,6 +392,25 @@ function StatusDot({ active }: { active: boolean }) {
   )
 }
 
+// ── Styles ────────────────────────────────────────────────────────────────────
+const overlayStyle: React.CSSProperties = {
+  position: 'fixed',
+  inset: 0,
+  background: 'rgba(0,0,0,0.75)',
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  zIndex: 100,
+}
+
+const dialogStyle: React.CSSProperties = {
+  background: '#1e293b',
+  border: '1px solid #334155',
+  borderRadius: 16,
+  padding: 24,
+  width: 320,
+}
+
 const styles: Record<string, React.CSSProperties> = {
   container: {
     minHeight: '100vh',
@@ -173,28 +418,12 @@ const styles: Record<string, React.CSSProperties> = {
     padding: '24px',
     display: 'flex',
     flexDirection: 'column',
-    gap: '20px',
+    gap: '16px',
   },
-  header: {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  logo: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '8px',
-  },
-  logoText: {
-    fontSize: '16px',
-    fontWeight: 700,
-    color: '#f1f5f9',
-  },
-  statsGrid: {
-    display: 'grid',
-    gridTemplateColumns: '1fr 1fr',
-    gap: '12px',
-  },
+  header: { display: 'flex', alignItems: 'center', justifyContent: 'space-between' },
+  logo: { display: 'flex', alignItems: 'center', gap: '10px' },
+  logoText: { fontSize: '16px', fontWeight: 700, color: '#f1f5f9' },
+  statsGrid: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' },
   statCard: {
     background: '#1e293b',
     borderRadius: '12px',
@@ -204,41 +433,18 @@ const styles: Record<string, React.CSSProperties> = {
     gap: '4px',
     border: '1px solid #334155',
   },
-  statValue: {
-    fontSize: '24px',
-    fontWeight: 700,
-    fontVariantNumeric: 'tabular-nums',
-  },
-  statLabel: {
-    fontSize: '12px',
-    color: '#64748b',
-  },
+  statValue: { fontSize: '24px', fontWeight: 700, fontVariantNumeric: 'tabular-nums' },
+  statLabel: { fontSize: '12px', color: '#64748b' },
   progressSection: {
     background: '#1e293b',
     borderRadius: '12px',
     padding: '16px',
     border: '1px solid #334155',
   },
-  progressHeader: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    marginBottom: '10px',
-  },
-  progressLabel: {
-    fontSize: '13px',
-    color: '#94a3b8',
-  },
-  progressValue: {
-    fontSize: '13px',
-    fontWeight: 600,
-    color: '#3b82f6',
-  },
-  progressBar: {
-    height: '6px',
-    background: '#0f172a',
-    borderRadius: '3px',
-    overflow: 'hidden',
-  },
+  progressHeader: { display: 'flex', justifyContent: 'space-between', marginBottom: '10px' },
+  progressLabel: { fontSize: '13px', color: '#94a3b8' },
+  progressValue: { fontSize: '13px', fontWeight: 600, color: '#3b82f6' },
+  progressBar: { height: '6px', background: '#0f172a', borderRadius: '3px', overflow: 'hidden' },
   progressFill: {
     height: '100%',
     background: 'linear-gradient(90deg, #3b82f6, #22c55e)',
@@ -254,20 +460,9 @@ const styles: Record<string, React.CSSProperties> = {
     justifyContent: 'space-between',
     border: '1px solid #334155',
   },
-  currentAppLabel: {
-    fontSize: '12px',
-    color: '#64748b',
-  },
-  currentAppName: {
-    fontSize: '13px',
-    fontWeight: 500,
-    color: '#f1f5f9',
-  },
-  meta: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
+  currentAppLabel: { fontSize: '12px', color: '#64748b' },
+  currentAppName: { fontSize: '13px', fontWeight: 500, color: '#f1f5f9' },
+  meta: { display: 'flex', justifyContent: 'space-between', alignItems: 'center' },
   pauseButton: {
     borderRadius: '10px',
     padding: '12px',

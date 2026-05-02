@@ -87,15 +87,18 @@ export async function POST(req: NextRequest) {
   const now = new Date().toISOString()
   const { tenantId, userId, deviceId } = identity
 
-  const { error: deviceErr } = await db
+  const { data: deviceRow, error: deviceErr } = await db
     .from('agent_devices')
     .update({ last_seen_at: now })
     .eq('id', deviceId)
     .is('revoked_at', null)
+    .select('pin_hash')
+    .single()
 
   if (deviceErr) {
     return NextResponse.json({ error: 'device_revoked' }, { status: 401 })
   }
+  const pinHash = (deviceRow as { pin_hash: string | null } | null)?.pin_hash ?? null
 
   // Upsert sesión activa
   let sessionId = session_state.session_id
@@ -161,5 +164,5 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  return NextResponse.json({ ok: true, session_id: sessionId ?? null })
+  return NextResponse.json({ ok: true, session_id: sessionId ?? null, pin_hash: pinHash })
 }

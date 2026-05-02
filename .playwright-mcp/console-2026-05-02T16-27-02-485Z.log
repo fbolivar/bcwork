@@ -1,0 +1,65 @@
+[     143ms] [LOG] %c Console Ninja extension is connected to Next.js browser, background: rgb(30,30,30); color: rgb(255,213,92) see https://tinyurl.com/2vt8jxzw for more info. @ :0
+[     436ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ webpack-internal:///(app-pages-browser)/../../node_modules/.pnpm/next@15.5.15_@opentelemetry_def8fc46c0914663bed16e707dd599e8/node_modules/next/dist/compiled/react-dom/cjs/react-dom-client.development.js:25630
+[     532ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://localhost:3000/favicon.ico:0
+[    6884ms] [LOG] %c >> mutation #1 %cauth.login%c %O 
+    background-color: #c5a3fc;
+    color: black;
+    padding: 2px;
+   
+    background-color: #c5a3fc;
+    color: black;
+    padding: 2px;
+  ; font-weight: bold; 
+    background-color: #c5a3fc;
+    color: black;
+    padding: 2px;
+  ; font-weight: normal; {input: Object, context: Object} @ webpack-internal:///(app-pages-browser)/../../node_modules/.pnpm/@trpc+client@11.17.0_@trpc+_5713cd65dc3a0590eb9b4052225ba978/node_modules/@trpc/client/dist/loggerLink-ineCN1PO.mjs:78
+[    7509ms] [LOG] [Fast Refresh] rebuilding @ webpack-internal:///(app-pages-browser)/../../node_modules/.pnpm/next@15.5.15_@opentelemetry_def8fc46c0914663bed16e707dd599e8/node_modules/next/dist/client/dev/hot-reloader/app/hot-reloader-app.js:196
+[    8071ms] [LOG] [Fast Refresh] done in 563ms @ webpack-internal:///(app-pages-browser)/../../node_modules/.pnpm/next@15.5.15_@opentelemetry_def8fc46c0914663bed16e707dd599e8/node_modules/next/dist/client/dev/report-hmr-latency.js:13
+[    9921ms] [LOG] %c << mutation #1 %cauth.login%c %O 
+    background-color: #904dfc;
+    color: white;
+    padding: 2px;
+   
+    background-color: #904dfc;
+    color: white;
+    padding: 2px;
+  ; font-weight: bold; 
+    background-color: #904dfc;
+    color: white;
+    padding: 2px;
+  ; font-weight: normal; {input: Object, result: Object, elapsedMs: 3037, context: Object} @ webpack-internal:///(app-pages-browser)/../../node_modules/.pnpm/@trpc+client@11.17.0_@trpc+_5713cd65dc3a0590eb9b4052225ba978/node_modules/@trpc/client/dist/loggerLink-ineCN1PO.mjs:78
+[   10029ms] [LOG] [Fast Refresh] rebuilding @ webpack-internal:///(app-pages-browser)/../../node_modules/.pnpm/next@15.5.15_@opentelemetry_def8fc46c0914663bed16e707dd599e8/node_modules/next/dist/client/dev/hot-reloader/app/hot-reloader-app.js:196
+[   10248ms] [LOG] [Fast Refresh] done in 220ms @ webpack-internal:///(app-pages-browser)/../../node_modules/.pnpm/next@15.5.15_@opentelemetry_def8fc46c0914663bed16e707dd599e8/node_modules/next/dist/client/dev/report-hmr-latency.js:13
+[   10376ms] [LOG] [Fast Refresh] rebuilding @ webpack-internal:///(app-pages-browser)/../../node_modules/.pnpm/next@15.5.15_@opentelemetry_def8fc46c0914663bed16e707dd599e8/node_modules/next/dist/client/dev/hot-reloader/app/hot-reloader-app.js:196
+[   10710ms] [LOG] [Fast Refresh] done in 333ms @ webpack-internal:///(app-pages-browser)/../../node_modules/.pnpm/next@15.5.15_@opentelemetry_def8fc46c0914663bed16e707dd599e8/node_modules/next/dist/client/dev/report-hmr-latency.js:13
+[   10905ms] [LOG] [Fast Refresh] rebuilding @ webpack-internal:///(app-pages-browser)/../../node_modules/.pnpm/next@15.5.15_@opentelemetry_def8fc46c0914663bed16e707dd599e8/node_modules/next/dist/client/dev/hot-reloader/app/hot-reloader-app.js:196
+[   11199ms] [LOG] [Fast Refresh] done in 295ms @ webpack-internal:///(app-pages-browser)/../../node_modules/.pnpm/next@15.5.15_@opentelemetry_def8fc46c0914663bed16e707dd599e8/node_modules/next/dist/client/dev/report-hmr-latency.js:13
+[   11276ms] [LOG] %c >> query #2 %cplatform.getMetrics%c %O 
+    background-color: #72e3ff;
+    color: black;
+    padding: 2px;
+   
+    background-color: #72e3ff;
+    color: black;
+    padding: 2px;
+  ; font-weight: bold; 
+    background-color: #72e3ff;
+    color: black;
+    padding: 2px;
+  ; font-weight: normal; {input: undefined, context: Object} @ webpack-internal:///(app-pages-browser)/../../node_modules/.pnpm/@trpc+client@11.17.0_@trpc+_5713cd65dc3a0590eb9b4052225ba978/node_modules/@trpc/client/dist/loggerLink-ineCN1PO.mjs:78
+[   11961ms] [LOG] %c << query #2 %cplatform.getMetrics%c %O 
+    background-color: #3fb0d8;
+    color: white;
+    padding: 2px;
+   
+    background-color: #3fb0d8;
+    color: white;
+    padding: 2px;
+  ; font-weight: bold; 
+    background-color: #3fb0d8;
+    color: white;
+    padding: 2px;
+  ; font-weight: normal; {input: undefined, result: Object, elapsedMs: 685, context: Object} @ webpack-internal:///(app-pages-browser)/../../node_modules/.pnpm/@trpc+client@11.17.0_@trpc+_5713cd65dc3a0590eb9b4052225ba978/node_modules/@trpc/client/dist/loggerLink-ineCN1PO.mjs:78
+[   15884ms] [LOG] [Fast Refresh] rebuilding @ webpack-internal:///(app-pages-browser)/../../node_modules/.pnpm/next@15.5.15_@opentelemetry_def8fc46c0914663bed16e707dd599e8/node_modules/next/dist/client/dev/hot-reloader/app/hot-reloader-app.js:196
+[   15956ms] [LOG] [Fast Refresh] done in 72ms @ webpack-internal:///(app-pages-browser)/../../node_modules/.pnpm/next@15.5.15_@opentelemetry_def8fc46c0914663bed16e707dd599e8/node_modules/next/dist/client/dev/report-hmr-latency.js:13

@@ -1,0 +1,55 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#0f172a"/>
+      <stop offset="100%" style="stop-color:#1e3a8a"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#06b6d4"/>
+      <stop offset="100%" style="stop-color:#3b82f6"/>
+    </linearGradient>
+    <filter id="glow">
+      <feGaussianBlur stdDeviation="4" result="coloredBlur"/>
+      <feMerge>
+        <feMergeNode in="coloredBlur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <!-- Background rounded square -->
+  <rect width="512" height="512" rx="96" fill="url(#bg)"/>
+
+  <!-- Outer ring (subtle) -->
+  <circle cx="256" cy="256" r="210" fill="none" stroke="#1e40af" stroke-width="2" opacity="0.5"/>
+
+  <!-- Hexagon shape -->
+  <polygon points="256,72 406,162 406,350 256,440 106,350 106,162"
+    fill="none" stroke="url(#accent)" stroke-width="6" opacity="0.9"/>
+
+  <!-- Inner hexagon (smaller) -->
+  <polygon points="256,120 370,185 370,327 256,392 142,327 142,185"
+    fill="#0f172a" opacity="0.7"/>
+
+  <!-- "B" stylized as pulse/signal line -->
+  <!-- Left vertical bar -->
+  <rect x="176" y="172" width="22" height="168" rx="8" fill="url(#accent)" filter="url(#glow)"/>
+
+  <!-- Top bump of B -->
+  <path d="M198 172 Q272 172 272 214 Q272 256 198 256" fill="none" stroke="url(#accent)" stroke-width="22" stroke-linecap="round" filter="url(#glow)"/>
+
+  <!-- Bottom bump of B (wider) -->
+  <path d="M198 256 Q284 256 284 298 Q284 340 198 340" fill="none" stroke="url(#accent)" stroke-width="22" stroke-linecap="round" filter="url(#glow)"/>
+
+  <!-- Pulse/ECG line extending right from B -->
+  <polyline points="290,256 310,256 322,228 338,290 350,240 366,256 386,256"
+    fill="none" stroke="#06b6d4" stroke-width="12" stroke-linecap="round" stroke-linejoin="round" opacity="0.85" filter="url(#glow)"/>
+
+  <!-- Corner dots (connectivity nodes) -->
+  <circle cx="256" cy="72" r="8" fill="#06b6d4" opacity="0.8"/>
+  <circle cx="406" cy="162" r="8" fill="#06b6d4" opacity="0.6"/>
+  <circle cx="406" cy="350" r="8" fill="#06b6d4" opacity="0.6"/>
+  <circle cx="256" cy="440" r="8" fill="#06b6d4" opacity="0.8"/>
+  <circle cx="106" cy="350" r="8" fill="#06b6d4" opacity="0.6"/>
+  <circle cx="106" cy="162" r="8" fill="#06b6d4" opacity="0.6"/>
+</svg>

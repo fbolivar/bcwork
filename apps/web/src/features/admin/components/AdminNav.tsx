@@ -1,6 +1,7 @@
 'use client'
 
 import Link from 'next/link'
+import Image from 'next/image'
 import { usePathname } from 'next/navigation'
 import {
   LayoutDashboard,
@@ -16,6 +17,7 @@ import {
   Shield,
   Settings,
   LogOut,
+  Download,
 } from 'lucide-react'
 import { trpc } from '@/lib/trpc-client'
 import { useRouter } from 'next/navigation'
@@ -34,6 +36,7 @@ const NAV = [
   { href: '/admin/api', label: 'Integraciones', icon: Plug },
   { href: '/admin/audit', label: 'Auditoría', icon: Shield },
   { href: '/admin/settings', label: 'Configuración', icon: Settings },
+  { href: '/admin/downloads', label: 'Descargas', icon: Download },
 ]
 
 export function AdminNav() {
@@ -45,10 +48,13 @@ export function AdminNav() {
 
   return (
     <aside className="flex w-56 flex-col border-r border-gray-200 bg-white">
-      <div className="flex items-center justify-between border-b border-gray-100 px-5 py-4">
-        <div>
-          <span className="text-sm font-bold tracking-tight text-blue-600">BCWork</span>
-          <p className="mt-0.5 text-xs text-gray-400">Panel de administración</p>
+      <div className="flex items-center justify-between border-b border-gray-100 px-4 py-3">
+        <div className="flex items-center gap-2.5">
+          <Image src="/brand/icon.svg" alt="BCWork" width={32} height={32} />
+          <div>
+            <span className="text-sm font-bold tracking-tight text-slate-800">BCWork</span>
+            <p className="text-xs text-gray-400">Panel de administración</p>
+          </div>
         </div>
         <NotificationBell />
       </div>

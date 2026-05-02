@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { keepPreviousData } from '@tanstack/react-query'
 import { trpc } from '@/lib/trpc-client'
 import { formatDate } from '@/lib/format'
-import { Monitor, ShieldOff, Copy, Check, Trash2 } from 'lucide-react'
+import { Monitor, ShieldOff, Copy, Check, Trash2, Lock, Unlock } from 'lucide-react'
 
 const PLATFORM_LABELS: Record<string, string> = {
   windows: 'Windows',
@@ -80,6 +80,87 @@ function OnlineBadge({
   )
 }
 
+function PinModal({
+  deviceId,
+  deviceName,
+  onClose,
+}: {
+  deviceId: string
+  deviceName: string
+  onClose: () => void
+}) {
+  const [pin, setPin] = useState('')
+  const [mode, setMode] = useState<'set' | 'remove'>('set')
+  const utils = trpc.useUtils()
+  const setPin_ = trpc.admin.setDevicePin.useMutation({
+    onSuccess: () => {
+      utils.admin.listDevices.invalidate()
+      onClose()
+    },
+  })
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+      <div className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-xl">
+        <h3 className="mb-1 text-base font-semibold text-gray-900">PIN del dispositivo</h3>
+        <p className="mb-4 text-sm text-gray-500">
+          Dispositivo: <strong>{deviceName}</strong>. El usuario necesitará este PIN para pausar o
+          cerrar el agente.
+        </p>
+        <div className="mb-4 flex gap-2">
+          <button
+            type="button"
+            onClick={() => setMode('set')}
+            className={`flex-1 rounded-lg py-2 text-sm font-medium ${mode === 'set' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600'}`}
+          >
+            <Lock className="mr-1 inline h-3.5 w-3.5" /> Establecer PIN
+          </button>
+          <button
+            type="button"
+            onClick={() => setMode('remove')}
+            className={`flex-1 rounded-lg py-2 text-sm font-medium ${mode === 'remove' ? 'bg-red-600 text-white' : 'bg-gray-100 text-gray-600'}`}
+          >
+            <Unlock className="mr-1 inline h-3.5 w-3.5" /> Quitar PIN
+          </button>
+        </div>
+        {mode === 'set' && (
+          <input
+            type="password"
+            value={pin}
+            onChange={(e) => setPin(e.target.value.replace(/\D/g, ''))}
+            placeholder="PIN numérico (4-12 dígitos)"
+            maxLength={12}
+            className="mb-4 w-full rounded-lg border border-gray-300 px-4 py-2 text-center font-mono text-xl tracking-widest focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
+        )}
+        {mode === 'remove' && (
+          <div className="mb-4 rounded-lg border border-red-200 bg-red-50 p-3 text-xs text-red-700">
+            El agente funcionará sin restricciones. El usuario podrá pausarlo o cerrarlo libremente.
+          </div>
+        )}
+        {setPin_.error && <p className="mb-2 text-xs text-red-600">{setPin_.error.message}</p>}
+        <div className="flex gap-3">
+          <button
+            type="button"
+            onClick={onClose}
+            className="flex-1 rounded-lg border px-4 py-2 text-sm text-gray-600 hover:bg-gray-50"
+          >
+            Cancelar
+          </button>
+          <button
+            type="button"
+            disabled={setPin_.isPending || (mode === 'set' && pin.length < 4)}
+            onClick={() => setPin_.mutate({ deviceId, pin: mode === 'set' ? pin : null })}
+            className="flex-1 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+          >
+            {setPin_.isPending ? 'Guardando...' : mode === 'set' ? 'Aplicar PIN' : 'Quitar PIN'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export function DeviceManager() {
   const [selectedUserId, setSelectedUserId] = useState<string | undefined>()
   const [page, setPage] = useState(1)
@@ -87,6 +168,7 @@ export function DeviceManager() {
   const [enrollTarget, setEnrollTarget] = useState<{ userId: string; userName: string } | null>(
     null,
   )
+  const [pinTarget, setPinTarget] = useState<{ id: string; name: string } | null>(null)
 
   const utils = trpc.useUtils()
   const { data, isLoading } = trpc.admin.listDevices.useQuery(
@@ -121,6 +203,14 @@ export function DeviceManager() {
 
   return (
     <div className="space-y-4">
+      {pinTarget && (
+        <PinModal
+          deviceId={pinTarget.id}
+          deviceName={pinTarget.name}
+          onClose={() => setPinTarget(null)}
+        />
+      )}
+
       <div className="flex flex-wrap items-center gap-3">
         <select
           aria-label="Filtrar por usuario"
@@ -227,6 +317,16 @@ export function DeviceManager() {
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-2">
+                      {!isRevoked && (
+                        <button
+                          type="button"
+                          onClick={() => setPinTarget({ id: device.id, name: device.name })}
+                          title="Configurar PIN de protección"
+                          className="rounded bg-slate-100 p-1.5 text-slate-500 hover:bg-slate-200"
+                        >
+                          <Lock className="h-3.5 w-3.5" />
+                        </button>
+                      )}
                       {!isRevoked && (
                         <button
                           type="button"
