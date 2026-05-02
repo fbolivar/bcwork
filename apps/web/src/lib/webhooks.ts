@@ -66,7 +66,8 @@ export async function dispatchWebhook(
             webhook_id: hook.id,
             tenant_id: tenantId,
             event,
-            payload,
+            payload:
+              payload as unknown as import('@bcwork/db').Database['public']['Tables']['webhook_deliveries']['Insert']['payload'],
             status_code: statusCode,
             error: errorMsg,
           }),

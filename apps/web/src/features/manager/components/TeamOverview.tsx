@@ -328,7 +328,7 @@ export function TeamOverview({ teamId }: Props) {
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-3">
                           <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-blue-100 text-xs font-bold text-blue-600">
-                            {(u.full_name ?? u.email)[0].toUpperCase()}
+                            {(u.full_name ?? u.email ?? '?')[0]?.toUpperCase() ?? '?'}
                           </div>
                           <div>
                             <p className="font-medium text-gray-900">{u.full_name ?? '—'}</p>

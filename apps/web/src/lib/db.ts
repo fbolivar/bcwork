@@ -1,6 +1,7 @@
 import { createClient } from '@supabase/supabase-js'
+import type { Database } from '@bcwork/db'
 
-type SupabaseClient = ReturnType<typeof createClient>
+type SupabaseClient = ReturnType<typeof createClient<Database>>
 
 let _db: SupabaseClient | null = null
 
@@ -11,7 +12,7 @@ export function getDb(): SupabaseClient {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY
   if (!url || !key) throw new Error('Missing NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY')
-  _db = createClient(url, key, {
+  _db = createClient<Database>(url, key, {
     auth: { persistSession: false, autoRefreshToken: false },
   })
   return _db

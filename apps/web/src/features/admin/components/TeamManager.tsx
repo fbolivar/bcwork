@@ -22,7 +22,7 @@ function TeamCard({
   allUsers,
   onDeleted,
 }: {
-  team: { id: string; name: string; description: string | null; created_at: string }
+  team: { id: string; name: string; description: string | null; created_at: string | null }
   allUsers: Array<{ id: string; full_name: string | null; email: string }>
   onDeleted: () => void
 }) {

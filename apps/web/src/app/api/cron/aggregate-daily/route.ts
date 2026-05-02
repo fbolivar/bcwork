@@ -20,7 +20,6 @@ export async function GET(req: NextRequest) {
   for (const date of dates) {
     const { data, error } = await db.rpc('aggregate_daily_user_metrics', {
       p_date: date,
-      p_tenant_id: null,
     })
     if (error) {
       console.error(`[cron] aggregate_daily_user_metrics failed for ${date}:`, error.message)
@@ -34,7 +33,6 @@ export async function GET(req: NextRequest) {
 
   const { data: alertData, error: alertError } = await db.rpc('evaluate_alerts', {
     p_date: date,
-    p_tenant_id: null,
   })
 
   let notifications = 0

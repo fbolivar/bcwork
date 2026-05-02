@@ -127,29 +127,33 @@ export default function AuditPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50">
-              {(data?.logs ?? []).map((log) => (
-                <tr key={log.id} className="hover:bg-gray-50">
+              {/* eslint-disable-next-line @typescript-eslint/ban-ts-comment */}
+              {/* @ts-ignore – Supabase join inference exceeds TS recursion limit */}
+              {(data?.logs ?? []).map((log: Record<string, unknown>) => (
+                <tr key={log.id as string} className="hover:bg-gray-50">
                   <td className="whitespace-nowrap px-4 py-2.5 text-xs text-gray-500">
-                    {formatDate(log.created_at)}
+                    {formatDate((log.created_at as string | null) ?? '')}
                   </td>
                   <td className="px-4 py-2.5">
-                    <ActionBadge action={log.action} />
+                    <ActionBadge action={log.action as string} />
                   </td>
                   <td className="px-4 py-2.5">
                     <p className="text-xs font-medium text-gray-700">
-                      {log.actor_name ?? log.actor_email}
+                      {(log.actor_name as string | null) ?? (log.actor_email as string | null)}
                     </p>
-                    {log.actor_name && (
-                      <p className="text-[10px] text-gray-400">{log.actor_email}</p>
+                    {(log.actor_name as string | null) && (
+                      <p className="text-[10px] text-gray-400">{log.actor_email as string}</p>
                     )}
                   </td>
                   <td className="hidden px-4 py-2.5 md:table-cell">
-                    <span className="font-mono text-xs text-gray-400">{log.ip_address ?? '—'}</span>
+                    <span className="font-mono text-xs text-gray-400">
+                      {(log.ip_address as string | null) ?? '—'}
+                    </span>
                   </td>
                   <td className="hidden px-4 py-2.5 lg:table-cell">
-                    {log.target_id && (
+                    {(log.target_id as string | null) && (
                       <span className="font-mono text-[10px] text-gray-400">
-                        {log.target_type}: {log.target_id.slice(0, 8)}…
+                        {log.target_type as string}: {(log.target_id as string).slice(0, 8)}…
                       </span>
                     )}
                   </td>

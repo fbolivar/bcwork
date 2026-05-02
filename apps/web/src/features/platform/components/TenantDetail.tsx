@@ -70,10 +70,10 @@ export function TenantDetail({ tenantId }: { tenantId: string }) {
               <Row label="Razón social" value={tenant.legal_name} />
               <Row label="Nombre comercial" value={tenant.trade_name ?? '—'} />
               <Row label="NIT" value={tenant.nit} mono />
-              <Row label="Timezone" value={tenant.timezone} />
-              <Row label="Retención datos" value={`${tenant.data_retention_months} meses`} />
+              <Row label="Timezone" value={tenant.timezone ?? '—'} />
+              <Row label="Retención datos" value={`${tenant.data_retention_months ?? '—'} meses`} />
               <Row label="Oficial HABEAS DATA" value={tenant.data_protection_officer ?? '—'} />
-              <Row label="Creado" value={formatDate(tenant.created_at)} />
+              <Row label="Creado" value={formatDate(tenant.created_at ?? '')} />
             </dl>
           </div>
 

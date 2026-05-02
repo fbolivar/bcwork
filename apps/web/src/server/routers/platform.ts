@@ -1,6 +1,9 @@
 import { z } from 'zod'
 import { TRPCError } from '@trpc/server'
 import { router, platformAdminProcedure } from '../trpc'
+import type { Database } from '@bcwork/db'
+
+type AuditJson = Database['public']['Tables']['audit_logs']['Row']['before_state']
 
 export const platformRouter = router({
   // ─── MÉTRICAS GLOBALES ────────────────────────────────────────────────────
@@ -35,7 +38,7 @@ export const platformRouter = router({
     // Churn: tenants cancelados en los últimos 30 días
     const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString()
     const churnedRecent = tenants.filter(
-      (t) => t.status === 'cancelled' && t.created_at > thirtyDaysAgo,
+      (t) => t.status === 'cancelled' && (t.created_at ?? '') > thirtyDaysAgo,
     ).length
 
     const activeUsers = users.filter((u) => u.status === 'active' && u.tenant_id !== null).length
@@ -309,8 +312,8 @@ export const platformRouter = router({
         action: 'license.updated',
         entity_type: 'license',
         entity_id: licenseId,
-        before_state: before as unknown as Record<string, unknown>,
-        after_state: updates,
+        before_state: before as unknown as AuditJson,
+        after_state: updates as unknown as AuditJson,
       })
 
       return { success: true }

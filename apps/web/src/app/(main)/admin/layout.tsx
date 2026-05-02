@@ -18,7 +18,8 @@ export default async function AdminLayout({ children }: { children: React.ReactN
       .eq('id', tenantId)
       .single()
 
-    if (data && !data.onboarding_complete) redirect('/onboarding')
+    const tenant = data as { onboarding_complete: boolean } | null
+    if (tenant && !tenant.onboarding_complete) redirect('/onboarding')
   }
 
   return (

@@ -14,7 +14,7 @@ export default function SessionsPage() {
           Colaboradores conectados en este momento. Se actualiza cada 30 segundos.
         </p>
       </div>
-      <ActiveSessionsPanel teamId={teams?.[0]?.id} />
+      <ActiveSessionsPanel {...(teams?.[0]?.id ? { teamId: teams[0].id } : {})} />
     </div>
   )
 }

@@ -8,7 +8,7 @@ interface AuthUser {
   email: string
   role: string
   tenantId: string | null
-  mfaEnabled: boolean
+  mfaEnabled: boolean | null
 }
 
 interface AuthStore {

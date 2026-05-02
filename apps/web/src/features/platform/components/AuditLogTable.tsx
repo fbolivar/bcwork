@@ -58,7 +58,7 @@ export function AuditLogTable({ tenantId }: { tenantId?: string }) {
             {(data?.data ?? []).map((log) => (
               <tr key={log.id} className="hover:bg-gray-50">
                 <td className="whitespace-nowrap px-4 py-2.5 text-xs tabular-nums text-gray-500">
-                  {formatDateTime(log.occurred_at)}
+                  {formatDateTime(log.occurred_at ?? '')}
                 </td>
                 <td className="px-4 py-2.5">
                   <span className="rounded bg-gray-100 px-1.5 py-0.5 font-mono text-xs">
@@ -74,7 +74,7 @@ export function AuditLogTable({ tenantId }: { tenantId?: string }) {
                     : '—'}
                 </td>
                 <td className="px-4 py-2.5 font-mono text-xs text-gray-400">
-                  {log.ip_inet ?? '—'}
+                  {(log.ip_inet as string | null) ?? '—'}
                 </td>
               </tr>
             ))}

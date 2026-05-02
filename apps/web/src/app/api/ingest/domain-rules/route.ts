@@ -36,10 +36,10 @@ export async function GET(req: NextRequest) {
   }
 
   const { data, error } = await db
-    .from('app_rules')
+    .from('app_catalog')
     .select('identifier, productivity')
     .eq('tenant_id', identity.tenantId)
-    .eq('rule_type', 'domain')
+    .eq('identifier_type', 'domain')
 
   if (error) return NextResponse.json({ error: 'db_error' }, { status: 500 })
 

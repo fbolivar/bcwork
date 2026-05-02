@@ -3,6 +3,9 @@ import { TRPCError } from '@trpc/server'
 import { router, adminProcedure, protectedProcedure } from '../trpc'
 import { hashPassword, generateRandomPassword } from '@/lib/auth/password'
 import { logAudit } from '@/lib/auth/audit'
+import type { Database } from '@bcwork/db'
+
+type UserInsert = Database['public']['Tables']['users']['Insert']
 
 export const adminRouter = router({
   // ─── Dashboard ────────────────────────────────────────────────────────────
@@ -135,7 +138,7 @@ export const adminRouter = router({
       const tempPassword = generateRandomPassword()
       const passwordHash = await hashPassword(tempPassword)
 
-      const insertData: Record<string, unknown> = {
+      const insertData: UserInsert = {
         tenant_id: tenantId,
         email: input.email.toLowerCase(),
         full_name: input.full_name,
@@ -143,9 +146,9 @@ export const adminRouter = router({
         password_hash: passwordHash,
         must_change_password: true,
         status: 'active',
+        ...(input.department ? { department: input.department } : {}),
+        ...(input.position ? { position: input.position } : {}),
       }
-      if (input.department) insertData['department'] = input.department
-      if (input.position) insertData['position'] = input.position
 
       const { data: newUser, error } = await ctx.db
         .from('users')
@@ -243,8 +246,11 @@ export const adminRouter = router({
     )
     .mutation(async ({ ctx, input }) => {
       const tenantId = ctx.user!.tid
-      const insertData: Record<string, unknown> = { tenant_id: tenantId, name: input.name }
-      if (input.description) insertData['description'] = input.description
+      const insertData = {
+        tenant_id: tenantId,
+        name: input.name,
+        ...(input.description ? { description: input.description } : {}),
+      }
 
       const { data, error } = await ctx.db
         .from('teams')
@@ -278,11 +284,13 @@ export const adminRouter = router({
       }),
     )
     .mutation(async ({ ctx, input }) => {
-      const { id, ...rest } = input
-      const updates = Object.fromEntries(Object.entries(rest).filter(([, v]) => v !== undefined))
+      const { id, name, description } = input
+      const updates: { name?: string; description?: string } = {}
+      if (name !== undefined) updates.name = name
+      if (description !== undefined) updates.description = description
       const { error } = await ctx.db
         .from('teams')
-        .update({ ...updates, updated_at: new Date().toISOString() })
+        .update(updates)
         .eq('id', id)
         .eq('tenant_id', ctx.user!.tid)
 
@@ -711,10 +719,10 @@ export const adminRouter = router({
 
   getDomainRules: adminProcedure.query(async ({ ctx }) => {
     const { data, error } = await ctx.db
-      .from('app_rules')
-      .select('identifier, productivity, rule_type')
+      .from('app_catalog')
+      .select('identifier, productivity, identifier_type')
       .eq('tenant_id', ctx.user!.tid)
-      .eq('rule_type', 'domain')
+      .eq('identifier_type', 'domain')
       .order('created_at', { ascending: false })
 
     if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
@@ -1326,7 +1334,11 @@ export const adminRouter = router({
       if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
 
       // Enriquecer con datos del actor en una segunda query
-      const actorIds = [...new Set((data ?? []).map((l) => l.actor_user_id).filter(Boolean))]
+      const actorIds = [
+        ...new Set(
+          (data ?? []).map((l) => l.actor_user_id).filter((id): id is string => id !== null),
+        ),
+      ]
       const { data: actors } = actorIds.length
         ? await ctx.db.from('users').select('id, full_name, email').in('id', actorIds)
         : { data: [] }

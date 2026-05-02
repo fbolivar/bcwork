@@ -21,7 +21,7 @@ export async function GET(req: NextRequest) {
   // Obtener todos los tenants activos
   const { data: tenants, error: tenantsError } = await db
     .from('tenants')
-    .select('id, name')
+    .select('id, legal_name, trade_name')
     .eq('status', 'active')
 
   if (tenantsError) {
@@ -65,7 +65,7 @@ export async function GET(req: NextRequest) {
     for (const recipient of recipients) {
       const html = await render(
         WeeklyDigest({
-          tenantName: tenant.name,
+          tenantName: tenant.trade_name ?? tenant.legal_name,
           fromDate: from,
           toDate: to,
           users,
@@ -76,7 +76,7 @@ export async function GET(req: NextRequest) {
       const { error: sendError } = await resend.emails.send({
         from: process.env.EMAIL_FROM ?? 'BCWork <no-reply@bcwork.co>',
         to: recipient.email,
-        subject: `Resumen semanal BCWork · ${tenant.name} (${from} al ${to})`,
+        subject: `Resumen semanal BCWork · ${tenant.trade_name ?? tenant.legal_name} (${from} al ${to})`,
         html,
       })
 

@@ -16,6 +16,10 @@ import {
   generateQrDataUrl,
 } from '@/lib/auth/mfa'
 import { logAudit } from '@/lib/auth/audit'
+import { setTenantContext } from '@/lib/db'
+import type { Database } from '@bcwork/db'
+
+type UserUpdate = Database['public']['Tables']['users']['Update']
 import {
   loginSchema,
   signupTenantSchema,
@@ -183,12 +187,11 @@ export const authRouter = router({
 
     if (!valid) {
       const attempts = (user.failed_login_attempts ?? 0) + 1
-      const updates: Record<string, unknown> = { failed_login_attempts: attempts }
+      let updates: UserUpdate = { failed_login_attempts: attempts }
 
       if (attempts >= MAX_FAILED_LOGIN_ATTEMPTS) {
         const lockUntil = new Date(Date.now() + LOCKOUT_MINUTES * 60 * 1000)
-        updates['locked_until'] = lockUntil.toISOString()
-        updates['failed_login_attempts'] = 0
+        updates = { locked_until: lockUntil.toISOString(), failed_login_attempts: 0 }
 
         await logAudit(db, {
           tenantId: user.tenant_id ?? undefined,
@@ -525,7 +528,7 @@ export const authRouter = router({
     const qrDataUrl = await generateQrDataUrl(uri)
 
     // Guardar secreto cifrado temporalmente (se confirma al verificar)
-    const encrypted = encryptSecret(secret)
+    const encrypted = encryptSecret(secret).toString('base64')
     await db.from('users').update({ mfa_secret_encrypted: encrypted }).eq('id', ctx.user.sub)
 
     return { secret, qrDataUrl }

@@ -47,6 +47,11 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'code_expired' }, { status: 401 })
   }
 
+  if (!enrollment.user_id) {
+    return NextResponse.json({ error: 'invalid_code' }, { status: 401 })
+  }
+  const enrollUserId: string = enrollment.user_id
+
   // Generar API key antes de insertar device (necesitamos el hash para device_token_hash)
   const rawKey = randomBytes(32).toString('hex')
   const keyHash = createHash('sha256').update(rawKey).digest('hex')
@@ -55,7 +60,7 @@ export async function POST(req: NextRequest) {
     .from('agent_devices')
     .insert({
       tenant_id: enrollment.tenant_id,
-      user_id: enrollment.user_id,
+      user_id: enrollUserId,
       name: device_name,
       os: platform,
       hostname,
@@ -98,7 +103,7 @@ export async function POST(req: NextRequest) {
 
   await logAudit(db, {
     tenantId: enrollment.tenant_id,
-    actorUserId: enrollment.user_id,
+    actorUserId: enrollUserId,
     action: 'device.enrolled',
     entityType: 'agent_device',
     entityId: device.id,

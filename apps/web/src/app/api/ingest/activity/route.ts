@@ -50,6 +50,7 @@ async function resolveApiKey(
 
   const deviceId = (data.name as string).replace('agent:', '')
 
+  if (!data.created_by) return null
   await db.from('api_keys').update({ last_used_at: new Date().toISOString() }).eq('id', data.id)
 
   return { tenantId: data.tenant_id, userId: data.created_by, deviceId }
@@ -85,7 +86,9 @@ export async function POST(req: NextRequest) {
 
   const { events, session_state } = parsed.data
   const now = new Date().toISOString()
-  const { tenantId, userId, deviceId } = identity
+  const { tenantId, userId: rawUserId, deviceId } = identity
+  if (!rawUserId) return NextResponse.json({ error: 'invalid_api_key' }, { status: 401 })
+  const userId: string = rawUserId
 
   const { data: deviceRow, error: deviceErr } = await db
     .from('agent_devices')
@@ -109,7 +112,6 @@ export async function POST(req: NextRequest) {
         .update({
           active_seconds: session_state.active_seconds,
           idle_seconds: session_state.idle_seconds,
-          updated_at: now,
         })
         .eq('id', sessionId)
         .eq('tenant_id', tenantId)
@@ -169,7 +171,8 @@ export async function POST(req: NextRequest) {
         (e.app_identifier && catalogMap.get(e.app_identifier)) ?? e.productivity ?? null,
       started_at: e.started_at,
       duration_seconds: e.duration_seconds,
-      metadata: e.metadata ?? null,
+      metadata: (e.metadata ??
+        null) as import('@bcwork/db').Database['public']['Tables']['activity_events']['Insert']['metadata'],
     }))
 
     const { error: insertErr } = await db.from('activity_events').insert(rows)

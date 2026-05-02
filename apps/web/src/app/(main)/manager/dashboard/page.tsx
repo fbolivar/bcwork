@@ -19,12 +19,12 @@ export default function ManagerDashboard() {
 
       <section>
         <h2 className="mb-4 text-sm font-semibold text-gray-700">Sesiones activas ahora</h2>
-        <ActiveSessionsPanel teamId={firstTeam?.id} />
+        <ActiveSessionsPanel {...(firstTeam?.id ? { teamId: firstTeam.id } : {})} />
       </section>
 
       <section>
         <h2 className="mb-4 text-sm font-semibold text-gray-700">Rendimiento del equipo</h2>
-        <TeamOverview teamId={firstTeam?.id} />
+        <TeamOverview {...(firstTeam?.id ? { teamId: firstTeam.id } : {})} />
       </section>
     </div>
   )

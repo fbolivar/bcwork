@@ -304,7 +304,8 @@ export function DeviceManager() {
                   </td>
                   <td className="px-4 py-3">
                     <span className="rounded bg-gray-100 px-1.5 py-0.5 text-xs font-medium">
-                      {PLATFORM_LABELS[device.platform] ?? device.platform}
+                      {(device.platform ? PLATFORM_LABELS[device.platform] : null) ??
+                        device.platform}
                     </span>
                   </td>
                   <td className="px-4 py-3 text-xs text-gray-500">
@@ -320,7 +321,7 @@ export function DeviceManager() {
                       {!isRevoked && (
                         <button
                           type="button"
-                          onClick={() => setPinTarget({ id: device.id, name: device.name })}
+                          onClick={() => setPinTarget({ id: device.id, name: device.name ?? '' })}
                           title="Configurar PIN de protección"
                           className="rounded bg-slate-100 p-1.5 text-slate-500 hover:bg-slate-200"
                         >

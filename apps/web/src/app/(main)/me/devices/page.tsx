@@ -41,7 +41,8 @@ export default function MyDevicesPage() {
                   <p className="font-medium text-gray-900">{d.name}</p>
                   <p className="font-mono text-xs text-gray-400">{d.hostname}</p>
                   <p className="text-xs text-gray-400">
-                    {PLATFORM[d.platform] ?? d.platform} · Enrolado {formatDate(d.enrolled_at)}
+                    {(d.platform ? PLATFORM[d.platform] : null) ?? d.platform} · Enrolado{' '}
+                    {formatDate(d.enrolled_at ?? '')}
                   </p>
                 </div>
               </div>

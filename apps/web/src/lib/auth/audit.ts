@@ -1,4 +1,7 @@
 import type { getDb } from '@/lib/db'
+import type { Database } from '@bcwork/db'
+
+type Json = Database['public']['Tables']['audit_logs']['Row']['before_state']
 
 type AuditAction =
   | 'user.login'
@@ -59,10 +62,10 @@ export async function logAudit(db: ReturnType<typeof getDb>, entry: AuditEntry):
       action: entry.action,
       entity_type: entry.entityType ?? null,
       entity_id: entry.entityId ?? null,
-      ip_inet: entry.ipInet ?? null,
+      ip_inet: (entry.ipInet ?? null) as unknown,
       user_agent: entry.userAgent ?? null,
-      before_state: entry.before ?? null,
-      after_state: entry.after ?? null,
+      before_state: (entry.before ?? null) as Json,
+      after_state: (entry.after ?? null) as Json,
     })
     .then(({ error }) => {
       if (error) console.error('[audit] failed to log:', entry.action, error.message)

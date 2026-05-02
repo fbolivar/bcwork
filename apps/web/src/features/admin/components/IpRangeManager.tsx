@@ -119,13 +119,15 @@ export function IpRangeManager() {
             <tbody className="divide-y divide-gray-50">
               {(ranges ?? []).map((r) => (
                 <tr key={r.id} className="hover:bg-gray-50">
-                  <td className="px-4 py-3 font-mono text-sm text-gray-900">{r.cidr}</td>
-                  <td className="px-4 py-3 text-gray-700">{r.label}</td>
-                  <td className="px-4 py-3 text-xs text-gray-400">{formatDate(r.created_at)}</td>
+                  <td className="px-4 py-3 font-mono text-sm text-gray-900">{r.cidr as string}</td>
+                  <td className="px-4 py-3 text-gray-700">{r.label ?? '—'}</td>
+                  <td className="px-4 py-3 text-xs text-gray-400">
+                    {formatDate(r.created_at ?? '')}
+                  </td>
                   <td className="px-4 py-3 text-right">
                     <button
                       onClick={() => {
-                        if (confirm(`¿Eliminar ${r.cidr}?`)) remove.mutate({ id: r.id })
+                        if (confirm(`¿Eliminar ${r.cidr as string}?`)) remove.mutate({ id: r.id })
                       }}
                       disabled={remove.isPending}
                       className="rounded p-1.5 text-gray-400 hover:bg-red-50 hover:text-red-600 disabled:opacity-50"
