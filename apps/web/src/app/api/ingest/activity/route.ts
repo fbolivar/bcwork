@@ -142,6 +142,20 @@ export async function POST(req: NextRequest) {
   }
 
   if (events.length > 0) {
+    // Cargar catálogo de apps del tenant para clasificar automáticamente
+    const appIds = [...new Set(events.map((e) => e.app_identifier).filter(Boolean))] as string[]
+    const catalogMap = new Map<string, string>()
+    if (appIds.length > 0) {
+      const { data: catalog } = await db
+        .from('app_catalog')
+        .select('identifier, productivity')
+        .eq('tenant_id', tenantId)
+        .in('identifier', appIds)
+      catalog?.forEach((r) => {
+        if (r.productivity) catalogMap.set(r.identifier, r.productivity)
+      })
+    }
+
     const rows = events.map((e) => ({
       tenant_id: tenantId,
       user_id: userId,
@@ -151,7 +165,8 @@ export async function POST(req: NextRequest) {
       app_identifier: e.app_identifier ?? null,
       domain: e.domain ?? null,
       window_title: e.window_title ?? null,
-      productivity: e.productivity ?? null,
+      productivity:
+        (e.app_identifier && catalogMap.get(e.app_identifier)) ?? e.productivity ?? null,
       started_at: e.started_at,
       duration_seconds: e.duration_seconds,
       metadata: e.metadata ?? null,
