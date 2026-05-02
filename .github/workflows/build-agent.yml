@@ -72,15 +72,24 @@ jobs:
             librsvg2-dev patchelf libxdo-dev libxtst-dev \
             libx11-dev libxcb1-dev
 
+      - name: Install certificate (Windows)
+        if: matrix.platform == 'windows-latest'
+        shell: pwsh
+        run: |
+          $cert = [Convert]::FromBase64String("${{ secrets.WINDOWS_CERTIFICATE }}")
+          [IO.File]::WriteAllBytes("certificate.pfx", $cert)
+          echo "WINDOWS_CERTIFICATE_FILE=${{ github.workspace }}\certificate.pfx" >> $env:GITHUB_ENV
+
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
       - name: Build agent
         run: pnpm --filter @bcwork/agent exec tauri build --target ${{ matrix.target }}
         env:
-          # Firma opcional — sin estos secrets el instalador se genera sin firma digital
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY || '' }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD || '' }}
+          WINDOWS_CERTIFICATE_FILE: ${{ env.WINDOWS_CERTIFICATE_FILE }}
+          WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
 
       - name: Upload installers
         uses: actions/upload-artifact@v4
@@ -112,11 +121,11 @@ jobs:
 
             | Plataforma | Archivo |
             |-----------|---------|
-            | Windows (instalador) | `BCWork-Agent_1.0.0_x64-setup.exe` |
-            | Windows (MSI) | `BCWork-Agent_1.0.0_x64_en-US.msi` |
-            | Linux (Debian/Ubuntu) | `bcwork-agent_1.0.0_amd64.deb` |
-            | Linux (AppImage) | `bcwork-agent_1.0.0_amd64.AppImage` |
-            | macOS (Apple Silicon) | `BCWork-Agent_1.0.0_aarch64.dmg` |
+            | Windows (instalador) | `BCWork.Agent_0.1.0_x64-setup.exe` |
+            | Windows (MSI) | `BCWork.Agent_0.1.0_x64_en-US.msi` |
+            | Linux (Debian/Ubuntu) | `BCWork.Agent_0.1.0_amd64.deb` |
+            | Linux (AppImage) | `BCWork.Agent_0.1.0_amd64.AppImage` |
+            | macOS (Apple Silicon) | `BCWork.Agent_0.1.0_aarch64.dmg` |
 
             ### Instalación
 
