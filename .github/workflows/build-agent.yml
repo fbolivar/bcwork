@@ -50,7 +50,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: pnpm
 
       - name: Install Rust
@@ -78,8 +78,9 @@ jobs:
       - name: Build agent
         run: pnpm --filter @bcwork/agent tauri build --target ${{ matrix.target }}
         env:
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          # Firma opcional — sin estos secrets el instalador se genera sin firma digital
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY || '' }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD || '' }}
 
       - name: Upload installers
         uses: actions/upload-artifact@v4
@@ -111,11 +112,11 @@ jobs:
 
             | Plataforma | Archivo |
             |-----------|---------|
-            | Windows (instalador) | `BCWork-Agent_x.x.x_x64-setup.exe` |
-            | Windows (MSI) | `BCWork-Agent_x.x.x_x64_en-US.msi` |
-            | Linux (Debian/Ubuntu) | `bcwork-agent_x.x.x_amd64.deb` |
-            | Linux (AppImage) | `bcwork-agent_x.x.x_amd64.AppImage` |
-            | macOS (Apple Silicon) | `BCWork-Agent_x.x.x_aarch64.dmg` |
+            | Windows (instalador) | `BCWork-Agent_1.0.0_x64-setup.exe` |
+            | Windows (MSI) | `BCWork-Agent_1.0.0_x64_en-US.msi` |
+            | Linux (Debian/Ubuntu) | `bcwork-agent_1.0.0_amd64.deb` |
+            | Linux (AppImage) | `bcwork-agent_1.0.0_amd64.AppImage` |
+            | macOS (Apple Silicon) | `BCWork-Agent_1.0.0_aarch64.dmg` |
 
             ### Instalación
 
