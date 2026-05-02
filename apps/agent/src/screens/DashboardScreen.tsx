@@ -130,10 +130,10 @@ function PinDialog({
 }
 
 // ── Main Dashboard ────────────────────────────────────────────────────────────
-export function DashboardScreen() {
+export function DashboardScreen({ onUnenroll }: { onUnenroll?: () => void }) {
   const [status, setStatus] = useState<AgentStatus | null>(null)
   const [pendingCount, setPendingCount] = useState(0)
-  const [pinDialog, setPinDialog] = useState<'pause' | 'quit' | null>(null)
+  const [pinDialog, setPinDialog] = useState<'pause' | 'quit' | 'unenroll' | null>(null)
   const [pinError, setPinError] = useState('')
 
   const refresh = useCallback(async () => {
@@ -193,6 +193,9 @@ export function DashboardScreen() {
       await refresh()
     } else if (pinDialog === 'quit') {
       await invoke('quit_app')
+    } else if (pinDialog === 'unenroll') {
+      await invoke('unenroll')
+      onUnenroll?.()
     }
     setPinDialog(null)
     setPinError('')
@@ -214,7 +217,13 @@ export function DashboardScreen() {
     <div style={styles.container}>
       {pinDialog && (
         <PinDialog
-          title={pinDialog === 'pause' ? 'Pausar monitoreo' : 'Cerrar agente'}
+          title={
+            pinDialog === 'pause'
+              ? 'Pausar monitoreo'
+              : pinDialog === 'unenroll'
+                ? 'Desenrolar dispositivo'
+                : 'Cerrar agente'
+          }
           onConfirm={handlePinConfirm}
           onCancel={() => {
             setPinDialog(null)
@@ -289,6 +298,27 @@ export function DashboardScreen() {
       >
         {status.pin_required && '🔒 '}
         {trackingActive ? 'Pausar monitoreo' : 'Reanudar monitoreo'}
+      </button>
+
+      <button
+        onClick={() => {
+          if (status?.pin_required) {
+            setPinDialog('unenroll')
+          } else if (confirm('¿Desenrolar este dispositivo? Deberás ingresar un nuevo código.')) {
+            void invoke('unenroll').then(() => onUnenroll?.())
+          }
+        }}
+        style={{
+          background: 'transparent',
+          border: 'none',
+          color: '#475569',
+          fontSize: '11px',
+          cursor: 'pointer',
+          textDecoration: 'underline',
+          padding: '4px',
+        }}
+      >
+        Desenrolar dispositivo
       </button>
 
       <p style={styles.legal}>

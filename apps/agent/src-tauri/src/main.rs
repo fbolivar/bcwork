@@ -26,6 +26,7 @@ fn main() {
         .manage(Mutex::new(AgentState::default()))
         .invoke_handler(tauri::generate_handler![
             commands::enroll,
+            commands::unenroll,
             commands::get_status,
             commands::set_paused,
             commands::set_paused_with_pin,
@@ -245,6 +246,29 @@ mod commands {
     #[tauri::command]
     pub fn quit_app() {
         std::process::exit(0);
+    }
+
+    #[tauri::command]
+    pub fn unenroll(app: tauri::AppHandle, state: State<'_, Mutex<AgentState>>) {
+        use tauri_plugin_store::StoreExt;
+        if let Ok(store) = app.store("credentials.json") {
+            store.delete("api_key");
+            store.delete("device_id");
+            store.delete("server_url");
+            store.delete("pin_hash");
+            let _ = store.save();
+        }
+        let mut s = state.lock().unwrap();
+        s.enrolled = false;
+        s.active_seconds = 0;
+        s.idle_seconds = 0;
+        s.paused = false;
+        s.last_sent_at = None;
+        s.session_id = None;
+        s.session_started_at = None;
+
+        use tauri_plugin_autostart::ManagerExt;
+        let _ = app.autolaunch().disable();
     }
 
     #[tauri::command]

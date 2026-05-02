@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { listen } from '@tauri-apps/api/event'
 import { EnrollScreen } from './screens/EnrollScreen'
 import { DashboardScreen } from './screens/DashboardScreen'
 import { getStore } from './lib/store'
@@ -12,6 +13,16 @@ export function App() {
         setEnrolled(!!key)
       })
     })
+  }, [])
+
+  // Volver al EnrollScreen cuando el servidor rechaza las credenciales
+  useEffect(() => {
+    const unlisten = listen('agent-unenrolled', () => {
+      setEnrolled(false)
+    })
+    return () => {
+      void unlisten.then((u) => u())
+    }
   }, [])
 
   if (enrolled === null) {
@@ -28,7 +39,7 @@ export function App() {
     return <EnrollScreen onEnrolled={() => setEnrolled(true)} />
   }
 
-  return <DashboardScreen />
+  return <DashboardScreen onUnenroll={() => setEnrolled(false)} />
 }
 
 function Spinner() {

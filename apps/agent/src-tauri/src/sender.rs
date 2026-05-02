@@ -107,6 +107,22 @@ async fn send_batch(app: &AppHandle, db_path: &PathBuf) -> anyhow::Result<()> {
         let status = resp.status();
         let text = resp.text().await.unwrap_or_default();
         log::error!("batch rejected: {} - {}", status, text);
+
+        // Credenciales inválidas → borrar y volver al EnrollScreen
+        if status == 401 || status == 403 {
+            use tauri::Emitter;
+            store.delete("api_key");
+            store.delete("device_id");
+            store.delete("pin_hash");
+            let _ = store.save();
+            let state = app.state::<Mutex<crate::state::AgentState>>();
+            let mut s = state.lock().unwrap();
+            s.enrolled = false;
+            if let Some(w) = app.get_webview_window("main") {
+                let _ = w.emit("agent-unenrolled", ());
+            }
+            log::warn!("credenciales revocadas, volviendo a EnrollScreen");
+        }
     }
 
     Ok(())
