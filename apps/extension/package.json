@@ -8,8 +8,7 @@
     "build": "wxt build",
     "build:firefox": "wxt build -b firefox",
     "zip": "wxt zip",
-    "typecheck": "wxt prepare && tsc --noEmit",
-    "postinstall": "wxt prepare"
+    "typecheck": "wxt prepare && tsc --noEmit"
   },
   "dependencies": {
     "react": "^19.0.0",
