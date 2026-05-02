@@ -36,6 +36,7 @@ type AuditAction =
   | 'tenant.onboarding_completed'
   | 'device.revoked'
   | 'device.enrolled'
+  | 'device.deleted'
 
 interface AuditEntry {
   tenantId?: string
