@@ -2,6 +2,9 @@ import { Download, Monitor, Apple, Terminal } from 'lucide-react'
 
 const GITHUB_REPO = 'fbolivar/bcwork'
 const LATEST_TAG = 'agent-v1.0.0'
+// Tauri reemplaza espacios con puntos en el nombre del producto
+const APP_PREFIX = 'BCWork.Agent'
+const VERSION = '0.1.0'
 
 const DOWNLOADS = [
   {
@@ -13,12 +16,12 @@ const DOWNLOADS = [
       {
         label: 'Instalador (.exe)',
         description: 'Recomendado — NSIS installer',
-        filename: `BCWork-Agent_${LATEST_TAG.replace('agent-v', '')}_x64-setup.exe`,
+        filename: `${APP_PREFIX}_${VERSION}_x64-setup.exe`,
       },
       {
         label: 'MSI Package',
         description: 'Para despliegue empresarial (Group Policy)',
-        filename: `BCWork-Agent_${LATEST_TAG.replace('agent-v', '')}_x64_en-US.msi`,
+        filename: `${APP_PREFIX}_${VERSION}_x64_en-US.msi`,
       },
     ],
   },
@@ -31,12 +34,12 @@ const DOWNLOADS = [
       {
         label: 'Debian/Ubuntu (.deb)',
         description: 'Ubuntu 22.04+, Debian 11+',
-        filename: `bcwork-agent_${LATEST_TAG.replace('agent-v', '')}_amd64.deb`,
+        filename: `${APP_PREFIX}_${VERSION}_amd64.deb`,
       },
       {
         label: 'AppImage',
         description: 'Universal — cualquier distro Linux x64',
-        filename: `bcwork-agent_${LATEST_TAG.replace('agent-v', '')}_amd64.AppImage`,
+        filename: `${APP_PREFIX}_${VERSION}_amd64.AppImage`,
       },
     ],
   },
@@ -49,7 +52,7 @@ const DOWNLOADS = [
       {
         label: 'DMG (Apple Silicon)',
         description: 'macOS 12+ — Mac con chip M1/M2/M3',
-        filename: `BCWork-Agent_${LATEST_TAG.replace('agent-v', '')}_aarch64.dmg`,
+        filename: `${APP_PREFIX}_${VERSION}_aarch64.dmg`,
       },
     ],
   },
