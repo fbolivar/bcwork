@@ -76,7 +76,7 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Build agent
-        run: pnpm --filter @bcwork/agent tauri build --target ${{ matrix.target }}
+        run: pnpm --filter @bcwork/agent exec tauri build --target ${{ matrix.target }}
         env:
           # Firma opcional — sin estos secrets el instalador se genera sin firma digital
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY || '' }}
