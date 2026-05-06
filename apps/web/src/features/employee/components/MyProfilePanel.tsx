@@ -2,7 +2,9 @@
 
 import { useState } from 'react'
 import { trpc } from '@/lib/trpc-client'
-import { User, Shield, Key, CheckCircle2 } from 'lucide-react'
+import { User, Shield, Key, CheckCircle2, CalendarDays } from 'lucide-react'
+
+const DAY_NAMES = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb']
 
 function Badge({ label, color }: { label: string; color: string }) {
   return (
@@ -24,6 +26,7 @@ const ROLE_LABELS: Record<string, string> = {
 export function MyProfilePanel() {
   const utils = trpc.useUtils()
   const { data: profile, isLoading } = trpc.employee.getMyProfile.useQuery()
+  const { data: schedule } = trpc.employee.getMySchedule.useQuery()
 
   const [editName, setEditName] = useState('')
   const [editDept, setEditDept] = useState('')
@@ -107,30 +110,40 @@ export function MyProfilePanel() {
           >
             <div className="grid gap-4 sm:grid-cols-2">
               <div>
-                <label className="mb-1 block text-xs font-medium text-gray-600">
+                <label htmlFor="edit-name" className="mb-1 block text-xs font-medium text-gray-600">
                   Nombre completo
                 </label>
                 <input
+                  id="edit-name"
                   type="text"
                   value={editName}
                   onChange={(e) => setEditName(e.target.value)}
+                  placeholder="Tu nombre completo"
                   className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </div>
               <div>
-                <label className="mb-1 block text-xs font-medium text-gray-600">
+                <label
+                  htmlFor="edit-email"
+                  className="mb-1 block text-xs font-medium text-gray-600"
+                >
                   Correo electrónico
                 </label>
                 <input
+                  id="edit-email"
                   type="email"
                   value={profile?.email ?? ''}
                   disabled
+                  placeholder="correo@empresa.com"
                   className="w-full rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-500"
                 />
               </div>
               <div>
-                <label className="mb-1 block text-xs font-medium text-gray-600">Departamento</label>
+                <label htmlFor="edit-dept" className="mb-1 block text-xs font-medium text-gray-600">
+                  Departamento
+                </label>
                 <input
+                  id="edit-dept"
                   type="text"
                   value={editDept}
                   onChange={(e) => setEditDept(e.target.value)}
@@ -139,8 +152,11 @@ export function MyProfilePanel() {
                 />
               </div>
               <div>
-                <label className="mb-1 block text-xs font-medium text-gray-600">Cargo</label>
+                <label htmlFor="edit-pos" className="mb-1 block text-xs font-medium text-gray-600">
+                  Cargo
+                </label>
                 <input
+                  id="edit-pos"
                   type="text"
                   value={editPos}
                   onChange={(e) => setEditPos(e.target.value)}
@@ -202,6 +218,54 @@ export function MyProfilePanel() {
         )}
       </div>
 
+      {/* Horario de trabajo */}
+      {schedule && (
+        <div className="rounded-2xl border border-gray-200 bg-white p-6">
+          <div className="mb-4 flex items-center gap-2">
+            <CalendarDays className="h-4 w-4 text-gray-500" />
+            <h2 className="text-sm font-semibold text-gray-900">Mi horario de trabajo</h2>
+          </div>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div>
+              <p className="text-xs font-medium text-gray-500">Turno</p>
+              <p className="mt-0.5 text-sm text-gray-900">{schedule.name}</p>
+            </div>
+            <div>
+              <p className="text-xs font-medium text-gray-500">Horas semanales</p>
+              <p className="mt-0.5 text-sm text-gray-900">{schedule.weekly_hours}h / semana</p>
+            </div>
+            <div>
+              <p className="text-xs font-medium text-gray-500">Horario</p>
+              <p className="mt-0.5 text-sm text-gray-900">
+                {schedule.start_time.slice(0, 5)} – {schedule.end_time.slice(0, 5)}
+              </p>
+            </div>
+            <div>
+              <p className="text-xs font-medium text-gray-500">Descanso</p>
+              <p className="mt-0.5 text-sm text-gray-900">{schedule.break_minutes} min</p>
+            </div>
+          </div>
+          <div className="mt-4">
+            <p className="mb-2 text-xs font-medium text-gray-500">Días laborables</p>
+            <div className="flex gap-1.5">
+              {DAY_NAMES.map((name, idx) => {
+                const active = schedule.days_of_week.includes(idx)
+                return (
+                  <span
+                    key={name}
+                    className={`flex h-7 w-8 items-center justify-center rounded-md text-xs font-medium ${
+                      active ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-400'
+                    }`}
+                  >
+                    {name}
+                  </span>
+                )
+              })}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Seguridad */}
       <div className="rounded-2xl border border-gray-200 bg-white p-6">
         <div className="mb-4 flex items-center gap-2">
@@ -219,39 +283,48 @@ export function MyProfilePanel() {
         >
           <div className="grid gap-4 sm:grid-cols-3">
             <div>
-              <label className="mb-1 block text-xs font-medium text-gray-600">
+              <label htmlFor="cur-pass" className="mb-1 block text-xs font-medium text-gray-600">
                 Contraseña actual
               </label>
               <input
+                id="cur-pass"
                 type="password"
                 value={curPass}
                 onChange={(e) => setCurPass(e.target.value)}
                 required
+                placeholder="••••••••"
                 className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
             </div>
             <div>
-              <label className="mb-1 block text-xs font-medium text-gray-600">
+              <label htmlFor="new-pass" className="mb-1 block text-xs font-medium text-gray-600">
                 Nueva contraseña
               </label>
               <input
+                id="new-pass"
                 type="password"
                 value={newPass}
                 onChange={(e) => setNewPass(e.target.value)}
                 required
                 minLength={8}
+                placeholder="Mínimo 8 caracteres"
                 className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
             </div>
             <div>
-              <label className="mb-1 block text-xs font-medium text-gray-600">
+              <label
+                htmlFor="confirm-pass"
+                className="mb-1 block text-xs font-medium text-gray-600"
+              >
                 Confirmar contraseña
               </label>
               <input
+                id="confirm-pass"
                 type="password"
                 value={confirmPass}
                 onChange={(e) => setConfirmPass(e.target.value)}
                 required
+                placeholder="Repite la contraseña"
                 className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
             </div>

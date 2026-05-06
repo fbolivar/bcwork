@@ -1,12 +1,13 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { trpc } from '@/lib/trpc-client'
 import { Bell, CheckCircle2, Users, User } from 'lucide-react'
 
 export function SendNotificationPanel() {
   const { data: members, isLoading } = trpc.notifications.getTenantMembers.useQuery()
 
+  const [deptFilter, setDeptFilter] = useState<string>('all')
   const [selectedIds, setSelectedIds] = useState<string[]>([])
   const [title, setTitle] = useState('')
   const [body, setBody] = useState('')
@@ -22,17 +23,36 @@ export function SendNotificationPanel() {
     },
   })
 
+  const departments = useMemo(() => {
+    const depts = [...new Set((members ?? []).map((m) => m.department).filter(Boolean))] as string[]
+    return depts.sort()
+  }, [members])
+
+  const visibleMembers = useMemo(
+    () => (members ?? []).filter((m) => deptFilter === 'all' || m.department === deptFilter),
+    [members, deptFilter],
+  )
+
   function toggleAll() {
-    if (selectedIds.length === (members ?? []).length) {
-      setSelectedIds([])
+    const visibleIds = visibleMembers.map((m) => m.id)
+    const allSelected = visibleIds.every((id) => selectedIds.includes(id))
+    if (allSelected) {
+      setSelectedIds((prev) => prev.filter((id) => !visibleIds.includes(id)))
     } else {
-      setSelectedIds((members ?? []).map((m) => m.id))
+      setSelectedIds((prev) => [...new Set([...prev, ...visibleIds])])
     }
   }
 
   function toggleMember(id: string) {
     setSelectedIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]))
   }
+
+  function selectDept(dept: string) {
+    setDeptFilter(dept)
+  }
+
+  const visibleSelected = visibleMembers.filter((m) => selectedIds.includes(m.id)).length
+  const allVisibleSelected = visibleMembers.length > 0 && visibleSelected === visibleMembers.length
 
   return (
     <div className="space-y-6">
@@ -56,11 +76,40 @@ export function SendNotificationPanel() {
               onClick={toggleAll}
               className="text-xs text-blue-600 hover:underline"
             >
-              {selectedIds.length === (members ?? []).length
-                ? 'Deseleccionar todo'
-                : 'Seleccionar todo'}
+              {allVisibleSelected ? 'Deseleccionar' : 'Seleccionar todos'}
             </button>
           </div>
+
+          {/* Filtro por departamento */}
+          {departments.length > 0 && (
+            <div className="mb-3 flex flex-wrap gap-1.5">
+              <button
+                type="button"
+                onClick={() => selectDept('all')}
+                className={`rounded-full px-2.5 py-0.5 text-xs font-medium transition-colors ${
+                  deptFilter === 'all'
+                    ? 'bg-blue-600 text-white'
+                    : 'border border-gray-200 bg-white text-gray-500 hover:bg-gray-50'
+                }`}
+              >
+                Todos
+              </button>
+              {departments.map((dept) => (
+                <button
+                  key={dept}
+                  type="button"
+                  onClick={() => selectDept(dept)}
+                  className={`rounded-full px-2.5 py-0.5 text-xs font-medium transition-colors ${
+                    deptFilter === dept
+                      ? 'bg-blue-600 text-white'
+                      : 'border border-gray-200 bg-white text-gray-500 hover:bg-gray-50'
+                  }`}
+                >
+                  {dept}
+                </button>
+              ))}
+            </div>
+          )}
 
           {isLoading ? (
             <div className="space-y-2">
@@ -68,11 +117,11 @@ export function SendNotificationPanel() {
                 <div key={i} className="h-10 animate-pulse rounded-lg bg-gray-100" />
               ))}
             </div>
-          ) : (members ?? []).length === 0 ? (
-            <p className="py-6 text-center text-sm text-gray-400">Sin empleados activos</p>
+          ) : visibleMembers.length === 0 ? (
+            <p className="py-6 text-center text-sm text-gray-400">Sin empleados en este filtro</p>
           ) : (
-            <div className="max-h-80 space-y-1 overflow-y-auto">
-              {(members ?? []).map((m) => {
+            <div className="max-h-72 space-y-1 overflow-y-auto">
+              {visibleMembers.map((m) => {
                 const selected = selectedIds.includes(m.id)
                 return (
                   <button
@@ -139,10 +188,11 @@ export function SendNotificationPanel() {
             }}
           >
             <div>
-              <label className="mb-1 block text-xs font-medium text-gray-600">
+              <label htmlFor="notif-title" className="mb-1 block text-xs font-medium text-gray-600">
                 Título <span className="text-red-500">*</span>
               </label>
               <input
+                id="notif-title"
                 type="text"
                 required
                 maxLength={200}
@@ -154,10 +204,11 @@ export function SendNotificationPanel() {
             </div>
 
             <div>
-              <label className="mb-1 block text-xs font-medium text-gray-600">
+              <label htmlFor="notif-body" className="mb-1 block text-xs font-medium text-gray-600">
                 Detalle <span className="text-gray-400">(opcional)</span>
               </label>
               <textarea
+                id="notif-body"
                 maxLength={1000}
                 value={body}
                 onChange={(e) => setBody(e.target.value)}
@@ -166,6 +217,20 @@ export function SendNotificationPanel() {
                 className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
             </div>
+
+            {/* Vista previa */}
+            {title && (
+              <div className="rounded-lg border border-blue-100 bg-blue-50 p-3">
+                <p className="mb-1 text-xs font-medium text-blue-600">Vista previa</p>
+                <p className="text-sm font-semibold text-gray-800">{title}</p>
+                {body && <p className="mt-0.5 text-xs text-gray-600">{body}</p>}
+                {selectedIds.length > 0 && (
+                  <p className="mt-1.5 text-xs text-blue-500">
+                    → {selectedIds.length} destinatario{selectedIds.length > 1 ? 's' : ''}
+                  </p>
+                )}
+              </div>
+            )}
 
             {send.error && <p className="text-sm text-red-600">{send.error.message}</p>}
 

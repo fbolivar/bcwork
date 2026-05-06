@@ -20,6 +20,8 @@ const SEVERITY_DOT = {
 
 export function NotificationBell() {
   const [open, setOpen] = useState(false)
+  const [toast, setToast] = useState<string | null>(null)
+  const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const ref = useRef<HTMLDivElement>(null)
 
   const { data: meData } = trpc.auth.me.useQuery()
@@ -66,6 +68,10 @@ export function NotificationBell() {
       .on('broadcast', { event: 'new_notification' }, () => {
         void refetchCount()
         if (open) void refetchList()
+        // Show toast
+        if (toastTimerRef.current) clearTimeout(toastTimerRef.current)
+        setToast('Nueva notificación')
+        toastTimerRef.current = setTimeout(() => setToast(null), 5000)
       })
       .subscribe()
     return () => {
@@ -76,94 +82,112 @@ export function NotificationBell() {
   const unread = countData?.count ?? 0
 
   return (
-    <div ref={ref} className="relative">
-      <button
-        type="button"
-        title="Ver notificaciones"
-        onClick={() => setOpen((v) => !v)}
-        className="relative rounded-md p-1.5 text-gray-500 hover:bg-gray-100"
-      >
-        <Bell className="h-5 w-5" />
-        {unread > 0 && (
-          <span className="absolute -right-0.5 -top-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[10px] font-bold text-white">
-            {unread > 9 ? '9+' : unread}
-          </span>
-        )}
-      </button>
-
-      {open && (
-        <div className="absolute right-0 top-9 z-50 w-80 rounded-xl border border-gray-200 bg-white shadow-lg">
-          <div className="flex items-center justify-between border-b border-gray-100 px-4 py-3">
-            <span className="text-sm font-semibold text-gray-700">Notificaciones</span>
-            <div className="flex items-center gap-2">
-              {unread > 0 && (
-                <button
-                  type="button"
-                  onClick={() => markAll.mutate()}
-                  className="flex items-center gap-1 rounded px-2 py-0.5 text-xs text-gray-500 hover:bg-gray-100"
-                >
-                  <Check className="h-3 w-3" /> Marcar todas
-                </button>
-              )}
-              <button
-                type="button"
-                title="Cerrar notificaciones"
-                onClick={() => setOpen(false)}
-                className="rounded p-0.5 text-gray-400 hover:bg-gray-100"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-          </div>
-
-          <div className="max-h-96 overflow-y-auto">
-            {isLoading ? (
-              <div className="space-y-2 p-3">
-                {[1, 2, 3].map((i) => (
-                  <div key={i} className="h-12 animate-pulse rounded-lg bg-gray-100" />
-                ))}
-              </div>
-            ) : (notifications ?? []).length === 0 ? (
-              <div className="py-10 text-center text-sm text-gray-400">Sin notificaciones</div>
-            ) : (
-              <div className="space-y-1 p-2">
-                {(notifications ?? []).map((n) => (
-                  <div
-                    key={n.id}
-                    className={`rounded-lg p-3 text-xs ${SEVERITY_STYLES[n.severity]} ${!n.read_at ? 'opacity-100' : 'opacity-60'}`}
-                  >
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="flex items-start gap-2">
-                        <span
-                          className={`mt-1 h-2 w-2 shrink-0 rounded-full ${SEVERITY_DOT[n.severity]}`}
-                        />
-                        <div>
-                          <p className="font-semibold text-gray-800">{n.title}</p>
-                          <p className="mt-0.5 text-gray-600">{n.body}</p>
-                          {n.subject_name && (
-                            <p className="mt-0.5 text-gray-400">Usuario: {n.subject_name}</p>
-                          )}
-                          <p className="mt-1 text-gray-400">{formatDate(n.created_at)}</p>
-                        </div>
-                      </div>
-                      {!n.read_at && (
-                        <button
-                          type="button"
-                          title="Marcar como leída"
-                          onClick={() => markAsRead.mutate({ ids: [n.id] })}
-                          className="shrink-0 rounded p-0.5 hover:bg-white/60"
-                        >
-                          <Check className="h-3 w-3 text-gray-500" />
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
+    <>
+      {/* Toast */}
+      {toast && (
+        <div className="fixed bottom-5 right-5 z-[200] flex items-center gap-3 rounded-xl border border-blue-200 bg-white px-4 py-3 shadow-lg">
+          <span className="flex h-2 w-2 rounded-full bg-blue-500" />
+          <p className="text-sm font-medium text-gray-800">{toast}</p>
+          <button
+            type="button"
+            title="Cerrar aviso"
+            onClick={() => setToast(null)}
+            className="ml-1 text-gray-400 hover:text-gray-600"
+          >
+            <X className="h-3.5 w-3.5" />
+          </button>
         </div>
       )}
-    </div>
+
+      <div ref={ref} className="relative">
+        <button
+          type="button"
+          title="Ver notificaciones"
+          onClick={() => setOpen((v) => !v)}
+          className="relative rounded-md p-1.5 text-gray-500 hover:bg-gray-100"
+        >
+          <Bell className="h-5 w-5" />
+          {unread > 0 && (
+            <span className="absolute -right-0.5 -top-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[10px] font-bold text-white">
+              {unread > 9 ? '9+' : unread}
+            </span>
+          )}
+        </button>
+
+        {open && (
+          <div className="absolute right-0 top-9 z-50 w-80 rounded-xl border border-gray-200 bg-white shadow-lg">
+            <div className="flex items-center justify-between border-b border-gray-100 px-4 py-3">
+              <span className="text-sm font-semibold text-gray-700">Notificaciones</span>
+              <div className="flex items-center gap-2">
+                {unread > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => markAll.mutate()}
+                    className="flex items-center gap-1 rounded px-2 py-0.5 text-xs text-gray-500 hover:bg-gray-100"
+                  >
+                    <Check className="h-3 w-3" /> Marcar todas
+                  </button>
+                )}
+                <button
+                  type="button"
+                  title="Cerrar notificaciones"
+                  onClick={() => setOpen(false)}
+                  className="rounded p-0.5 text-gray-400 hover:bg-gray-100"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+            </div>
+
+            <div className="max-h-96 overflow-y-auto">
+              {isLoading ? (
+                <div className="space-y-2 p-3">
+                  {[1, 2, 3].map((i) => (
+                    <div key={i} className="h-12 animate-pulse rounded-lg bg-gray-100" />
+                  ))}
+                </div>
+              ) : (notifications ?? []).length === 0 ? (
+                <div className="py-10 text-center text-sm text-gray-400">Sin notificaciones</div>
+              ) : (
+                <div className="space-y-1 p-2">
+                  {(notifications ?? []).map((n) => (
+                    <div
+                      key={n.id}
+                      className={`rounded-lg p-3 text-xs ${SEVERITY_STYLES[n.severity]} ${!n.read_at ? 'opacity-100' : 'opacity-60'}`}
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="flex items-start gap-2">
+                          <span
+                            className={`mt-1 h-2 w-2 shrink-0 rounded-full ${SEVERITY_DOT[n.severity]}`}
+                          />
+                          <div>
+                            <p className="font-semibold text-gray-800">{n.title}</p>
+                            <p className="mt-0.5 text-gray-600">{n.body}</p>
+                            {n.subject_name && (
+                              <p className="mt-0.5 text-gray-400">Usuario: {n.subject_name}</p>
+                            )}
+                            <p className="mt-1 text-gray-400">{formatDate(n.created_at)}</p>
+                          </div>
+                        </div>
+                        {!n.read_at && (
+                          <button
+                            type="button"
+                            title="Marcar como leída"
+                            onClick={() => markAsRead.mutate({ ids: [n.id] })}
+                            className="shrink-0 rounded p-0.5 hover:bg-white/60"
+                          >
+                            <Check className="h-3 w-3 text-gray-500" />
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+    </>
   )
 }

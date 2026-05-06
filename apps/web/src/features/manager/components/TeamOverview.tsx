@@ -2,7 +2,7 @@
 
 import { useState, Fragment } from 'react'
 import { trpc } from '@/lib/trpc-client'
-import { Activity, Clock, TrendingUp, X, Monitor } from 'lucide-react'
+import { Activity, Clock, TrendingUp, X, Monitor, Download } from 'lucide-react'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -70,13 +70,15 @@ function UserDetail({
   const detail = trpc.manager.getUserDetail.useQuery({ userId, days })
   const d = detail.data
 
-  const prodValues = (d?.metrics ?? []).map((m) => Math.round(m.productivity_ratio * 100))
+  const prodValues = ((d?.metrics ?? []) as Array<{ productivity_ratio: number }>).map((m) =>
+    Math.round(m.productivity_ratio * 100),
+  )
+  const lastMetric = d?.metrics.at(-1) as { domains_top?: unknown; apps_top?: unknown } | undefined
   const topDomains = (
-    (d?.metrics.at(-1)?.domains_top as Array<{ domain: string; secs: number }>) ?? []
+    (lastMetric?.domains_top as Array<{ domain: string; secs: number }>) ?? []
   ).slice(0, 6)
-
   const topApps = (
-    (d?.metrics.at(-1)?.apps_top as Array<{ identifier: string; secs: number }>) ?? []
+    (lastMetric?.apps_top as Array<{ identifier: string; secs: number }>) ?? []
   ).slice(0, 5)
 
   return (
@@ -190,6 +192,54 @@ function UserDetail({
   )
 }
 
+// ── CSV Export ────────────────────────────────────────────────────────────────
+
+type UserStat = {
+  full_name: string | null
+  email: string
+  department: string | null
+  active_seconds: number
+  productivity_ratio: number
+  overtime_seconds: number
+  days_active: number
+  focus_score: number | null
+}
+
+function exportTeamCSV(users: UserStat[], days: number) {
+  const headers = [
+    'Nombre',
+    'Email',
+    'Departamento',
+    'Tiempo activo',
+    'Productividad',
+    'Horas extra',
+    'Días activos',
+    'Focus',
+  ]
+  const rows = users.map((u) => [
+    u.full_name ?? '',
+    u.email,
+    u.department ?? '',
+    fmtHours(u.active_seconds),
+    `${Math.round(u.productivity_ratio * 100)}%`,
+    u.overtime_seconds > 60 ? fmtHours(u.overtime_seconds) : '0',
+    String(u.days_active),
+    u.focus_score != null ? String(Math.round(u.focus_score)) : '—',
+  ])
+  const csv =
+    '﻿' +
+    [headers, ...rows].map((r) => r.map((c) => `"${c.replace(/"/g, '""')}"`).join(',')).join('\r\n')
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `equipo-${days}d-${new Date().toISOString().slice(0, 10)}.csv`
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+  URL.revokeObjectURL(url)
+}
+
 // ── TeamOverview ──────────────────────────────────────────────────────────────
 
 interface Props {
@@ -213,22 +263,34 @@ export function TeamOverview({ teamId }: Props) {
     <div className="space-y-5">
       {/* Controls */}
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex gap-1 rounded-lg border border-gray-200 bg-white p-1">
-          {[7, 14, 30].map((d) => (
+        <div className="flex items-center gap-2">
+          <div className="flex gap-1 rounded-lg border border-gray-200 bg-white p-1">
+            {[7, 14, 30].map((d) => (
+              <button
+                key={d}
+                type="button"
+                onClick={() => {
+                  setDays(d)
+                  setSelectedUserId(null)
+                }}
+                className={`rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
+                  days === d ? 'bg-blue-600 text-white' : 'text-gray-500 hover:bg-gray-100'
+                }`}
+              >
+                {d}d
+              </button>
+            ))}
+          </div>
+          {users.length > 0 && (
             <button
-              key={d}
               type="button"
-              onClick={() => {
-                setDays(d)
-                setSelectedUserId(null)
-              }}
-              className={`rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
-                days === d ? 'bg-blue-600 text-white' : 'text-gray-500 hover:bg-gray-100'
-              }`}
+              onClick={() => exportTeamCSV(users, days)}
+              className="flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-50"
             >
-              {d}d
+              <Download className="h-3.5 w-3.5" />
+              CSV
             </button>
-          ))}
+          )}
         </div>
         {summary && (
           <div className="flex flex-wrap gap-4 text-sm text-gray-500">
