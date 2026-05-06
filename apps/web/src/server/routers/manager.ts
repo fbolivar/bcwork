@@ -327,6 +327,7 @@ export const managerRouter = router({
         channel: 'in_app' as const,
         title: `Solicitud de corrección ${statusText}`,
         body: input.review_note ?? `Tu solicitud del ${edit.applies_to_date} fue ${statusText}.`,
+        sent_by: ctx.user!.sub,
       })
       broadcastNotification(edit.user_id)
 
@@ -378,6 +379,7 @@ export const managerRouter = router({
           tenant_id: ctx.user!.tid,
           user_id: e.user_id,
           channel: 'in_app' as const,
+          sent_by: ctx.user!.sub,
           title: `Solicitud de corrección ${statusText}`,
           body:
             input.review_note ??

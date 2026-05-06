@@ -30,7 +30,9 @@ export const notificationsRouter = router({
 
       let msgQuery = ctx.db
         .from('notifications')
-        .select('id, title, body, read_at, created_at')
+        .select(
+          'id, title, body, read_at, created_at, sent_by, users!notifications_sent_by_fkey(full_name)',
+        )
         .eq('tenant_id', ctx.user!.tid)
         .eq('user_id', ctx.user!.sub)
         .order('created_at', { ascending: false })
@@ -56,6 +58,7 @@ export const notificationsRouter = router({
         created_at: n.created_at ?? '',
         subject_name:
           (n.users as unknown as { full_name: string | null } | null)?.full_name ?? null,
+        sender_name: null as string | null,
         source: 'alert' as const,
       }))
 
@@ -66,7 +69,8 @@ export const notificationsRouter = router({
         severity: 'info' as const,
         read_at: n.read_at,
         created_at: n.created_at ?? '',
-        subject_name: null,
+        subject_name: null as string | null,
+        sender_name: (n.users as unknown as { full_name: string | null } | null)?.full_name ?? null,
         source: 'manager' as const,
       }))
 
@@ -160,6 +164,7 @@ export const notificationsRouter = router({
         channel: 'in_app',
         title: input.title,
         body: input.body ?? null,
+        sent_by: ctx.user!.sub,
       }))
 
       const { error } = await ctx.db.from('notifications').insert(rows)

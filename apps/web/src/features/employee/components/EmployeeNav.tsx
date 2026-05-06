@@ -11,6 +11,7 @@ import {
   CalendarClock,
   ShieldCheck,
   MonitorDown,
+  Bell,
   X,
 } from 'lucide-react'
 import { trpc } from '@/lib/trpc-client'
@@ -19,6 +20,7 @@ const NAV = [
   { href: '/me/dashboard', label: 'Mi día', icon: LayoutDashboard },
   { href: '/me/metrics', label: 'Mi rendimiento', icon: BarChart2 },
   { href: '/me/sessions', label: 'Mis sesiones', icon: CalendarClock },
+  { href: '/me/notifications', label: 'Notificaciones', icon: Bell },
   { href: '/me/devices', label: 'Mis dispositivos', icon: Monitor },
   { href: '/me/agent', label: 'Activar agente', icon: MonitorDown },
   { href: '/me/profile', label: 'Mi perfil', icon: User },
@@ -29,6 +31,10 @@ export function EmployeeNav({ onClose }: { onClose?: () => void } = {}) {
   const pathname = usePathname()
   const router = useRouter()
   const logout = trpc.auth.logout.useMutation({ onSuccess: () => router.push('/login') })
+  const { data: countData } = trpc.notifications.getUnreadCount.useQuery(undefined, {
+    refetchInterval: 30000,
+  })
+  const unread = countData?.count ?? 0
 
   return (
     <aside className="flex h-full w-52 flex-col border-r border-gray-200 bg-white">
@@ -63,7 +69,12 @@ export function EmployeeNav({ onClose }: { onClose?: () => void } = {}) {
               }`}
             >
               <Icon className="h-4 w-4 shrink-0" />
-              {label}
+              <span className="flex-1">{label}</span>
+              {href === '/me/notifications' && unread > 0 && (
+                <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold text-white">
+                  {unread > 9 ? '9+' : unread}
+                </span>
+              )}
             </Link>
           )
         })}

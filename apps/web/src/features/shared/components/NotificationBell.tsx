@@ -162,9 +162,14 @@ export function NotificationBell() {
                           />
                           <div>
                             <p className="font-semibold text-gray-800">{n.title}</p>
-                            <p className="mt-0.5 text-gray-600">{n.body}</p>
+                            {n.body && <p className="mt-0.5 text-gray-600">{n.body}</p>}
                             {n.subject_name && (
                               <p className="mt-0.5 text-gray-400">Usuario: {n.subject_name}</p>
+                            )}
+                            {'sender_name' in n && n.sender_name && (
+                              <p className="mt-0.5 font-medium text-gray-500">
+                                De: {n.sender_name}
+                              </p>
                             )}
                             <p className="mt-1 text-gray-400">{formatDate(n.created_at)}</p>
                           </div>

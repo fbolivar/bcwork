@@ -1256,6 +1256,7 @@ export type Database = {
           id: string
           link: string | null
           read_at: string | null
+          sent_by: string | null
           tenant_id: string
           title: string
           user_id: string
@@ -1267,6 +1268,7 @@ export type Database = {
           id?: string
           link?: string | null
           read_at?: string | null
+          sent_by?: string | null
           tenant_id: string
           title: string
           user_id: string
@@ -1278,6 +1280,7 @@ export type Database = {
           id?: string
           link?: string | null
           read_at?: string | null
+          sent_by?: string | null
           tenant_id?: string
           title?: string
           user_id?: string
@@ -1293,6 +1296,13 @@ export type Database = {
           {
             foreignKeyName: "notifications_user_id_fkey"
             columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "notifications_sent_by_fkey"
+            columns: ["sent_by"]
             isOneToOne: false
             referencedRelation: "users"
             referencedColumns: ["id"]
