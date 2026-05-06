@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { Menu } from 'lucide-react'
 import { EmployeeNav } from './EmployeeNav'
 import { NotificationBell } from '@/features/shared/components/NotificationBell'
+import { WorkplaceAlerts } from './WorkplaceAlerts'
 
 export function EmployeeShell({ children }: { children: React.ReactNode }) {
   const [open, setOpen] = useState(false)
@@ -42,6 +43,7 @@ export function EmployeeShell({ children }: { children: React.ReactNode }) {
           <div className="mx-auto max-w-4xl px-6 py-8">{children}</div>
         </main>
       </div>
+      <WorkplaceAlerts />
     </div>
   )
 }

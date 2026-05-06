@@ -378,7 +378,7 @@ export const adminRouter = router({
     const { data, error } = await ctx.db
       .from('work_schedules')
       .select(
-        'id, name, timezone, days_of_week, start_time, end_time, disconnection_grace_minutes, created_at',
+        'id, name, timezone, days_of_week, start_time, end_time, disconnection_grace_minutes, break_alert_enabled, break_alert_interval_minutes, break_alert_message, end_of_day_alert_enabled, end_of_day_alert_offset_minutes, end_of_day_alert_message, created_at',
       )
       .eq('tenant_id', ctx.user!.tid)
       .order('name', { ascending: true })
@@ -396,6 +396,24 @@ export const adminRouter = router({
         start_time: z.string().regex(/^\d{2}:\d{2}$/),
         end_time: z.string().regex(/^\d{2}:\d{2}$/),
         disconnection_grace_minutes: z.number().int().min(0).max(120).default(30),
+        break_alert_enabled: z.boolean().default(true),
+        break_alert_interval_minutes: z.number().int().min(30).max(480).default(90),
+        break_alert_message: z
+          .string()
+          .min(5)
+          .max(500)
+          .default(
+            'Llevas mucho tiempo conectado delante de tu PC, por favor toma un descanso de unos minutos.',
+          ),
+        end_of_day_alert_enabled: z.boolean().default(true),
+        end_of_day_alert_offset_minutes: z.number().int().min(-60).max(0).default(0),
+        end_of_day_alert_message: z
+          .string()
+          .min(5)
+          .max(500)
+          .default(
+            'Has llegado al fin de tu jornada laboral. Recuerda que hasta tu siguiente día laboral no estás en la obligación de atender asuntos profesionales.',
+          ),
       }),
     )
     .mutation(async ({ ctx, input }) => {
@@ -426,6 +444,12 @@ export const adminRouter = router({
           .regex(/^\d{2}:\d{2}$/)
           .optional(),
         disconnection_grace_minutes: z.number().int().min(0).max(120).optional(),
+        break_alert_enabled: z.boolean().optional(),
+        break_alert_interval_minutes: z.number().int().min(30).max(480).optional(),
+        break_alert_message: z.string().min(5).max(500).optional(),
+        end_of_day_alert_enabled: z.boolean().optional(),
+        end_of_day_alert_offset_minutes: z.number().int().min(-60).max(0).optional(),
+        end_of_day_alert_message: z.string().min(5).max(500).optional(),
       }),
     )
     .mutation(async ({ ctx, input }) => {

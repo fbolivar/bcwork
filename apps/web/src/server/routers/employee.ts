@@ -31,7 +31,7 @@ export const employeeRouter = router({
     const { data, error } = await ctx.db
       .from('user_schedules')
       .select(
-        'effective_from, effective_to, work_schedules(name, weekly_hours, start_time, end_time, days_of_week, break_minutes, disconnection_grace_minutes)',
+        'effective_from, effective_to, work_schedules(name, weekly_hours, start_time, end_time, days_of_week, break_minutes, disconnection_grace_minutes, timezone, break_alert_enabled, break_alert_interval_minutes, break_alert_message, end_of_day_alert_enabled, end_of_day_alert_offset_minutes, end_of_day_alert_message)',
       )
       .eq('user_id', ctx.user!.sub)
       .lte('effective_from', today)
@@ -51,6 +51,13 @@ export const employeeRouter = router({
       days_of_week: number[]
       break_minutes: number
       disconnection_grace_minutes: number
+      timezone: string
+      break_alert_enabled: boolean
+      break_alert_interval_minutes: number
+      break_alert_message: string
+      end_of_day_alert_enabled: boolean
+      end_of_day_alert_offset_minutes: number
+      end_of_day_alert_message: string
     } | null
   }),
 

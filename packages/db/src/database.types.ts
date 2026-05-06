@@ -1974,10 +1974,16 @@ export type Database = {
       }
       work_schedules: {
         Row: {
+          break_alert_enabled: boolean
+          break_alert_interval_minutes: number
+          break_alert_message: string
           break_minutes: number | null
           created_at: string | null
           days_of_week: number[] | null
           disconnection_grace_minutes: number | null
+          end_of_day_alert_enabled: boolean
+          end_of_day_alert_message: string
+          end_of_day_alert_offset_minutes: number
           end_time: string | null
           flex_minutes: number | null
           id: string
@@ -1989,10 +1995,16 @@ export type Database = {
           weekly_hours: number | null
         }
         Insert: {
+          break_alert_enabled?: boolean
+          break_alert_interval_minutes?: number
+          break_alert_message?: string
           break_minutes?: number | null
           created_at?: string | null
           days_of_week?: number[] | null
           disconnection_grace_minutes?: number | null
+          end_of_day_alert_enabled?: boolean
+          end_of_day_alert_message?: string
+          end_of_day_alert_offset_minutes?: number
           end_time?: string | null
           flex_minutes?: number | null
           id?: string
@@ -2004,10 +2016,16 @@ export type Database = {
           weekly_hours?: number | null
         }
         Update: {
+          break_alert_enabled?: boolean
+          break_alert_interval_minutes?: number
+          break_alert_message?: string
           break_minutes?: number | null
           created_at?: string | null
           days_of_week?: number[] | null
           disconnection_grace_minutes?: number | null
+          end_of_day_alert_enabled?: boolean
+          end_of_day_alert_message?: string
+          end_of_day_alert_offset_minutes?: number
           end_time?: string | null
           flex_minutes?: number | null
           id?: string
