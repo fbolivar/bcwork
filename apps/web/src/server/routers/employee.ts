@@ -2207,7 +2207,8 @@ export const employeeRouter = router({
         survey_id: input.survey_id,
         tenant_id: ctx.user!.tid,
         user_id: ctx.user!.sub,
-        answers: input.answers,
+        answers:
+          input.answers as unknown as import('@bcwork/db').Database['public']['Tables']['pulse_responses']['Insert']['answers'],
       })
       if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
       return { ok: true }
