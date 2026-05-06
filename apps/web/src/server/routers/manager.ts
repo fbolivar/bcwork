@@ -324,7 +324,7 @@ export const managerRouter = router({
       await ctx.db.from('notifications').insert({
         tenant_id: ctx.user!.tid,
         user_id: edit.user_id,
-        channel: 'manager_message' as const,
+        channel: 'in_app' as const,
         title: `Solicitud de corrección ${statusText}`,
         body: input.review_note ?? `Tu solicitud del ${edit.applies_to_date} fue ${statusText}.`,
       })
@@ -377,7 +377,7 @@ export const managerRouter = router({
         edits.map((e) => ({
           tenant_id: ctx.user!.tid,
           user_id: e.user_id,
-          channel: 'manager_message' as const,
+          channel: 'in_app' as const,
           title: `Solicitud de corrección ${statusText}`,
           body:
             input.review_note ??

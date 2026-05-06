@@ -157,7 +157,7 @@ export const notificationsRouter = router({
       const rows = input.userIds.map((uid) => ({
         tenant_id: ctx.user!.tid,
         user_id: uid,
-        channel: 'manager_message',
+        channel: 'in_app',
         title: input.title,
         body: input.body ?? null,
       }))

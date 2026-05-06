@@ -346,7 +346,7 @@ export const employeeRouter = router({
           managers.map((m) => ({
             tenant_id: ctx.user!.tid,
             user_id: m.id,
-            channel: 'manager_message' as const,
+            channel: 'in_app' as const,
             title: 'Nueva solicitud de corrección',
             body: `Un empleado solicitó corrección de actividad para el ${input.applies_to_date}.`,
           })),
