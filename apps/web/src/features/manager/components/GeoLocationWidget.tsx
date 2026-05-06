@@ -3,7 +3,7 @@
 import { ComposableMap, Geographies, Geography, Marker } from 'react-simple-maps'
 import { MapPin } from 'lucide-react'
 
-const GEO_URL = 'https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json'
+const GEO_URL = '/world-110m.json'
 
 interface UserLoc {
   user_id: string
@@ -32,11 +32,16 @@ export function GeoLocationWidget({ locations }: { locations: UserLoc[] }) {
         <span className="text-xs text-gray-400">{locations.length} usuarios · últimos 30 días</span>
       </div>
 
-      {/* World map */}
-      <div className="overflow-hidden rounded-xl" style={{ background: '#0d1b3e' }}>
+      {/* World map — fixed height container */}
+      <div
+        className="overflow-hidden rounded-xl"
+        style={{ background: '#0d1b3e', height: '220px' }}
+      >
         <ComposableMap
-          projectionConfig={{ scale: 140, center: [0, 10] }}
-          style={{ width: '100%', height: 'auto' }}
+          width={800}
+          height={400}
+          projectionConfig={{ scale: 130, center: [10, 10] }}
+          style={{ width: '100%', height: '100%' }}
         >
           <Geographies geography={GEO_URL}>
             {({ geographies }) =>
@@ -46,7 +51,7 @@ export function GeoLocationWidget({ locations }: { locations: UserLoc[] }) {
                   geography={geo}
                   fill="#1e3a8a"
                   stroke="#1d4ed8"
-                  strokeWidth={0.3}
+                  strokeWidth={0.4}
                   style={{
                     default: { outline: 'none' },
                     hover: { outline: 'none', fill: '#1e40af' },

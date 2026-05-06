@@ -177,6 +177,9 @@ importers:
       resend:
         specifier: ^6.12.2
         version: 6.12.2(@react-email/render@2.0.6(react-dom@19.2.5(react@19.2.5))(react@19.2.5))
+      world-atlas:
+        specifier: ^2.0.2
+        version: 2.0.2
       zod:
         specifier: ^3.24.0
         version: 3.25.76
@@ -9597,6 +9600,12 @@ packages:
       }
     engines: { node: '>=0.10.0' }
 
+  world-atlas@2.0.2:
+    resolution:
+      {
+        integrity: sha512-IXfV0qwlKXpckz1FhwXVwKRjiIhOnWttOskm5CtxMsjgE/MXAYRHWJqgXOpM8IkcPBoXnyTU5lFHcYa5ChG0LQ==,
+      }
+
   wrap-ansi@10.0.0:
     resolution:
       {
@@ -15578,6 +15587,8 @@ snapshots:
   winreg@0.0.12: {}
 
   word-wrap@1.2.5: {}
+
+  world-atlas@2.0.2: {}
 
   wrap-ansi@10.0.0:
     dependencies:
