@@ -2056,4 +2056,160 @@ export const employeeRouter = router({
       if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
       return { ok: true }
     }),
+
+  // ─── Declaración de ubicación (WFH / Oficina / Viaje) ────────────────────
+
+  declareWorkLocation: protectedProcedure
+    .input(
+      z.object({
+        date: z.string(),
+        location_type: z.enum(['home', 'office', 'travel', 'other']),
+        note: z.string().max(500).optional(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { error } = await ctx.db.from('work_locations').upsert(
+        {
+          tenant_id: ctx.user!.tid,
+          user_id: ctx.user!.sub,
+          date: input.date,
+          location_type: input.location_type,
+          note: input.note ?? null,
+        },
+        { onConflict: 'tenant_id,user_id,date' },
+      )
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      return { ok: true }
+    }),
+
+  getMyWorkLocations: protectedProcedure
+    .input(z.object({ days: z.number().min(1).max(90).default(30) }))
+    .query(async ({ ctx, input }) => {
+      const since = new Date(Date.now() - input.days * 24 * 60 * 60 * 1000)
+        .toISOString()
+        .slice(0, 10)
+      const { data, error } = await ctx.db
+        .from('work_locations')
+        .select('*')
+        .eq('user_id', ctx.user!.sub)
+        .gte('date', since)
+        .order('date', { ascending: false })
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      return data ?? []
+    }),
+
+  getTeamWorkLocations: protectedProcedure
+    .input(z.object({ date: z.string().optional() }))
+    .query(async ({ ctx, input }) => {
+      const date = input.date ?? new Date().toISOString().slice(0, 10)
+      const { data, error } = await ctx.db
+        .from('work_locations')
+        .select('*, users!work_locations_user_id_fkey(id, full_name, position, department)')
+        .eq('tenant_id', ctx.user!.tid)
+        .eq('date', date)
+        .order('created_at', { ascending: false })
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      return data ?? []
+    }),
+
+  // ─── Kudos / Reconocimiento entre pares ──────────────────────────────────
+
+  sendKudos: protectedProcedure
+    .input(
+      z.object({
+        to_user_id: z.string().uuid(),
+        message: z.string().min(1).max(500),
+        value: z.enum([
+          'teamwork',
+          'innovation',
+          'excellence',
+          'leadership',
+          'helpfulness',
+          'other',
+        ]),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      if (input.to_user_id === ctx.user!.sub)
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'No puedes enviarte kudos a ti mismo' })
+      const { error } = await ctx.db.from('kudos').insert({
+        tenant_id: ctx.user!.tid,
+        from_user_id: ctx.user!.sub,
+        to_user_id: input.to_user_id,
+        message: input.message,
+        value: input.value,
+      })
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      return { ok: true }
+    }),
+
+  getKudosFeed: protectedProcedure
+    .input(z.object({ limit: z.number().min(1).max(100).default(50) }))
+    .query(async ({ ctx, input }) => {
+      const { data, error } = await ctx.db
+        .from('kudos')
+        .select(
+          '*, from_user:users!kudos_from_user_id_fkey(id, full_name), to_user:users!kudos_to_user_id_fkey(id, full_name)',
+        )
+        .eq('tenant_id', ctx.user!.tid)
+        .order('created_at', { ascending: false })
+        .limit(input.limit)
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      return data ?? []
+    }),
+
+  getMyKudosReceived: protectedProcedure.query(async ({ ctx }) => {
+    const { data, error } = await ctx.db
+      .from('kudos')
+      .select('*, from_user:users!kudos_from_user_id_fkey(id, full_name)')
+      .eq('to_user_id', ctx.user!.sub)
+      .order('created_at', { ascending: false })
+      .limit(50)
+    if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+    return data ?? []
+  }),
+
+  // ─── Encuestas de pulso ───────────────────────────────────────────────────
+
+  getActiveSurveys: protectedProcedure.query(async ({ ctx }) => {
+    const now = new Date().toISOString()
+    const { data: surveys, error } = await ctx.db
+      .from('pulse_surveys')
+      .select('*')
+      .eq('tenant_id', ctx.user!.tid)
+      .eq('status', 'active')
+      .or(`ends_at.is.null,ends_at.gte.${now}`)
+      .order('created_at', { ascending: false })
+    if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+
+    const surveyIds = (surveys ?? []).map((s) => s.id)
+    if (surveyIds.length === 0) return []
+
+    const { data: myResponses } = await ctx.db
+      .from('pulse_responses')
+      .select('survey_id')
+      .eq('user_id', ctx.user!.sub)
+      .in('survey_id', surveyIds)
+
+    const respondedIds = new Set((myResponses ?? []).map((r) => r.survey_id))
+    return (surveys ?? []).map((s) => ({ ...s, already_responded: respondedIds.has(s.id) }))
+  }),
+
+  submitSurveyResponse: protectedProcedure
+    .input(
+      z.object({
+        survey_id: z.string().uuid(),
+        answers: z.array(z.object({ question_index: z.number(), value: z.unknown() })),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { error } = await ctx.db.from('pulse_responses').insert({
+        survey_id: input.survey_id,
+        tenant_id: ctx.user!.tid,
+        user_id: ctx.user!.sub,
+        answers: input.answers,
+      })
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      return { ok: true }
+    }),
 })

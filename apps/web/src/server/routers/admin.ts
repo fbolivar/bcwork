@@ -2057,15 +2057,13 @@ export const adminRouter = router({
           .eq('id', existing.id)
         if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
       } else {
-        const { error } = await ctx.db
-          .from('integrations')
-          .insert({
-            tenant_id: ctx.user!.tid,
-            type: input.type,
-            label: input.label ?? null,
-            config: input.config,
-            active: input.active,
-          })
+        const { error } = await ctx.db.from('integrations').insert({
+          tenant_id: ctx.user!.tid,
+          type: input.type,
+          label: input.label ?? null,
+          config: input.config,
+          active: input.active,
+        })
         if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
       }
 
@@ -2097,4 +2095,119 @@ export const adminRouter = router({
     if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
     return data ?? []
   }),
+
+  // ─── Work locations admin ─────────────────────────────────────────────────
+
+  getTeamWorkLocationSummary: adminProcedure
+    .input(z.object({ date: z.string().optional() }))
+    .query(async ({ ctx, input }) => {
+      const date = input.date ?? new Date().toISOString().slice(0, 10)
+      const { data, error } = await ctx.db
+        .from('work_locations')
+        .select('*, users!work_locations_user_id_fkey(id, full_name, position, department)')
+        .eq('tenant_id', ctx.user!.tid)
+        .eq('date', date)
+        .order('created_at', { ascending: false })
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      return data ?? []
+    }),
+
+  // ─── Kudos admin ──────────────────────────────────────────────────────────
+
+  getAdminKudosFeed: adminProcedure
+    .input(z.object({ limit: z.number().min(1).max(200).default(100) }))
+    .query(async ({ ctx, input }) => {
+      const { data, error } = await ctx.db
+        .from('kudos')
+        .select(
+          '*, from_user:users!kudos_from_user_id_fkey(id, full_name), to_user:users!kudos_to_user_id_fkey(id, full_name)',
+        )
+        .eq('tenant_id', ctx.user!.tid)
+        .order('created_at', { ascending: false })
+        .limit(input.limit)
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      return data ?? []
+    }),
+
+  // ─── Pulse surveys admin ──────────────────────────────────────────────────
+
+  listPulseSurveys: adminProcedure.query(async ({ ctx }) => {
+    const { data, error } = await ctx.db
+      .from('pulse_surveys')
+      .select('*')
+      .eq('tenant_id', ctx.user!.tid)
+      .order('created_at', { ascending: false })
+    if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+    return data ?? []
+  }),
+
+  createPulseSurvey: adminProcedure
+    .input(
+      z.object({
+        title: z.string().min(1).max(200),
+        questions: z
+          .array(
+            z.object({
+              text: z.string().min(1).max(500),
+              type: z.enum(['rating', 'text', 'choice']),
+              options: z.array(z.string()).optional(),
+            }),
+          )
+          .min(1)
+          .max(10),
+        ends_at: z.string().optional(),
+        activate: z.boolean().default(false),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { data, error } = await ctx.db
+        .from('pulse_surveys')
+        .insert({
+          tenant_id: ctx.user!.tid,
+          created_by: ctx.user!.sub,
+          title: input.title,
+          questions: input.questions,
+          status: input.activate ? 'active' : 'draft',
+          starts_at: input.activate ? new Date().toISOString() : null,
+          ends_at: input.ends_at ?? null,
+        })
+        .select()
+        .single()
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      return data
+    }),
+
+  updatePulseSurveyStatus: adminProcedure
+    .input(z.object({ id: z.string().uuid(), status: z.enum(['draft', 'active', 'closed']) }))
+    .mutation(async ({ ctx, input }) => {
+      const patch: { status: string; starts_at?: string } = { status: input.status }
+      if (input.status === 'active') patch.starts_at = new Date().toISOString()
+      const { error } = await ctx.db
+        .from('pulse_surveys')
+        .update(patch)
+        .eq('id', input.id)
+        .eq('tenant_id', ctx.user!.tid)
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      return { ok: true }
+    }),
+
+  getPulseSurveyResults: adminProcedure
+    .input(z.object({ survey_id: z.string().uuid() }))
+    .query(async ({ ctx, input }) => {
+      const [surveyRes, responsesRes] = await Promise.all([
+        ctx.db
+          .from('pulse_surveys')
+          .select('*')
+          .eq('id', input.survey_id)
+          .eq('tenant_id', ctx.user!.tid)
+          .single(),
+        ctx.db
+          .from('pulse_responses')
+          .select('*, users!pulse_responses_user_id_fkey(id, full_name)')
+          .eq('survey_id', input.survey_id)
+          .order('created_at', { ascending: false }),
+      ])
+      if (surveyRes.error) throw new TRPCError({ code: 'NOT_FOUND', message: 'Survey not found' })
+      return { survey: surveyRes.data, responses: responsesRes.data ?? [] }
+    }),
 })

@@ -32,6 +32,9 @@ import {
   Timer,
   Receipt,
   BarChart3,
+  MapPin,
+  Heart as HeartIcon,
+  ClipboardCheck,
 } from 'lucide-react'
 import { trpc } from '@/lib/trpc-client'
 
@@ -56,6 +59,9 @@ const NAV = [
   { href: '/me/pomodoro', label: 'Pomodoro', icon: Timer },
   { href: '/me/invoices', label: 'Mis facturas', icon: Receipt },
   { href: '/me/benchmark', label: 'Mi benchmark', icon: BarChart3 },
+  { href: '/me/work-location', label: 'Mi ubicación', icon: MapPin },
+  { href: '/me/kudos', label: 'Reconocimiento', icon: HeartIcon },
+  { href: '/me/pulse-surveys', label: 'Encuestas', icon: ClipboardCheck },
   { href: '/me/manual-time', label: 'Tiempo manual', icon: PenLine },
   { href: '/me/notifications', label: 'Notificaciones', icon: Bell },
   { href: '/me/devices', label: 'Mis dispositivos', icon: Monitor },

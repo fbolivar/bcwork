@@ -24,6 +24,9 @@ import {
   MessageSquare,
   CalendarOff,
   CalendarDays,
+  MapPin,
+  Heart,
+  ClipboardCheck,
 } from 'lucide-react'
 import { trpc } from '@/lib/trpc-client'
 import { useRouter } from 'next/navigation'
@@ -40,6 +43,9 @@ const NAV = [
   { href: '/admin/messages', label: 'Mensajes', icon: MessageSquare },
   { href: '/admin/absences', label: 'Ausencias', icon: CalendarOff },
   { href: '/admin/pto', label: 'Balance PTO', icon: CalendarDays },
+  { href: '/admin/pulse-surveys', label: 'Encuestas', icon: ClipboardCheck },
+  { href: '/admin/kudos', label: 'Reconocimiento', icon: Heart },
+  { href: '/admin/work-locations', label: 'Ubicaciones', icon: MapPin },
   { href: '/admin/integrations', label: 'Integraciones', icon: Plug },
   { href: '/admin/apps', label: 'Aplicaciones', icon: AppWindow },
   { href: '/admin/ips', label: 'IPs Corporativas', icon: Network },
