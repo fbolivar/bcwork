@@ -1,5 +1,6 @@
 'use client'
 
+import dynamic from 'next/dynamic'
 import { trpc } from '@/lib/trpc-client'
 import {
   Monitor,
@@ -13,6 +14,14 @@ import {
   Clock,
 } from 'lucide-react'
 import Link from 'next/link'
+
+const GeoLocationWidget = dynamic(
+  () =>
+    import('@/features/manager/components/GeoLocationWidget').then((m) => ({
+      default: m.GeoLocationWidget,
+    })),
+  { ssr: false, loading: () => <div className="h-64 animate-pulse rounded-xl bg-gray-100" /> },
+)
 
 // ── Utility Card ──────────────────────────────────────────────────────────────
 
@@ -74,6 +83,7 @@ function StatusRow({
 export function DashboardStats() {
   const stats = trpc.admin.getStats.useQuery(undefined, { refetchInterval: 60_000 })
   const snap = trpc.admin.getTeamSnapshot.useQuery(undefined, { refetchInterval: 30_000 })
+  const { data: geoLocations = [] } = trpc.manager.getTeamGeoLocations.useQuery()
 
   const now = new Date()
   const hour = now.getHours()
@@ -310,6 +320,9 @@ export function DashboardStats() {
           color="#22c55e"
         />
       </div>
+
+      {/* Geo map */}
+      <GeoLocationWidget locations={geoLocations} />
     </div>
   )
 }

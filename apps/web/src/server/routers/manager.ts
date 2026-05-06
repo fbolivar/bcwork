@@ -3,6 +3,77 @@ import { TRPCError } from '@trpc/server'
 import { router, protectedProcedure, requireRole } from '../trpc'
 import { broadcastNotification, broadcastNotificationToMany } from '@/lib/realtime-broadcast'
 
+// ─── Geo helpers ──────────────────────────────────────────────────────────────
+
+function isPrivateIP(ip: string): boolean {
+  if (ip === '127.0.0.1' || ip === '::1') return true
+  const p = ip.split('.').map(Number)
+  if (p.length !== 4) return false
+  const a = p[0] ?? 0
+  const b = p[1] ?? 0
+  return a === 10 || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168)
+}
+
+type GeoInfo = {
+  countryCode: string
+  country: string
+  city: string
+  lat: number
+  lon: number
+  ts: number
+}
+const _geoCache = new Map<string, GeoInfo>()
+const GEO_TTL = 6 * 3600 * 1000
+
+async function geolocateBatch(ips: string[]): Promise<Map<string, GeoInfo>> {
+  const result = new Map<string, GeoInfo>()
+  const toFetch: string[] = []
+  for (const ip of ips) {
+    const c = _geoCache.get(ip)
+    if (c && Date.now() - c.ts < GEO_TTL) result.set(ip, c)
+    else toFetch.push(ip)
+  }
+  if (toFetch.length > 0) {
+    try {
+      const res = await fetch(
+        'http://ip-api.com/batch?fields=status,query,countryCode,country,city,lat,lon',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(toFetch.slice(0, 100)),
+          signal: AbortSignal.timeout(5000),
+        },
+      )
+      const data = (await res.json()) as Array<{
+        status: string
+        query: string
+        countryCode: string
+        country: string
+        city: string
+        lat: number
+        lon: number
+      }>
+      for (const g of data) {
+        if (g.status === 'success') {
+          const info: GeoInfo = {
+            countryCode: g.countryCode,
+            country: g.country,
+            city: g.city,
+            lat: g.lat,
+            lon: g.lon,
+            ts: Date.now(),
+          }
+          _geoCache.set(g.query, info)
+          result.set(g.query, info)
+        }
+      }
+    } catch {
+      /* fail silently */
+    }
+  }
+  return result
+}
+
 const managerProcedure = protectedProcedure.use(requireRole('tenant_admin', 'manager'))
 
 export const managerRouter = router({
@@ -448,6 +519,62 @@ export const managerRouter = router({
         inactive: members.filter((m) => !activeUserIds.has(m.id)),
       }
     }),
+
+  // ─── Geolocalización ─────────────────────────────────────────────────────────
+
+  getTeamGeoLocations: managerProcedure.query(async ({ ctx }) => {
+    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString()
+
+    const { data: sessions, error } = await ctx.db
+      .from('work_sessions')
+      .select('user_id, ip_inet, started_at')
+      .eq('tenant_id', ctx.user!.tid)
+      .gte('started_at', thirtyDaysAgo)
+      .order('started_at', { ascending: false })
+
+    if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+
+    const latestPerUser = new Map<string, { user_id: string; ip: string | null }>()
+    for (const s of sessions ?? []) {
+      if (!latestPerUser.has(s.user_id)) {
+        latestPerUser.set(s.user_id, {
+          user_id: s.user_id,
+          ip: typeof s.ip_inet === 'string' ? s.ip_inet : null,
+        })
+      }
+    }
+
+    const userIds = [...latestPerUser.keys()]
+    if (userIds.length === 0) return []
+
+    const { data: users } = await ctx.db
+      .from('users')
+      .select('id, full_name')
+      .in('id', userIds)
+      .eq('tenant_id', ctx.user!.tid)
+
+    const nameMap = new Map((users ?? []).map((u) => [u.id, u.full_name]))
+
+    const publicIPs = [...latestPerUser.values()]
+      .filter((u) => u.ip && !isPrivateIP(u.ip))
+      .map((u) => u.ip!)
+
+    const geoMap =
+      publicIPs.length > 0 ? await geolocateBatch(publicIPs) : new Map<string, GeoInfo>()
+
+    return [...latestPerUser.values()].map((u) => {
+      const geo = u.ip ? geoMap.get(u.ip) : undefined
+      return {
+        user_id: u.user_id,
+        full_name: nameMap.get(u.user_id) ?? 'Usuario',
+        country: geo?.country ?? null,
+        country_code: geo?.countryCode ?? null,
+        city: geo?.city ?? null,
+        lat: geo?.lat ?? null,
+        lon: geo?.lon ?? null,
+      }
+    })
+  }),
 
   getUserDetail: managerProcedure
     .input(

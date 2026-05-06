@@ -1,8 +1,18 @@
 'use client'
 
+import dynamic from 'next/dynamic'
 import { trpc } from '@/lib/trpc-client'
 import { ActiveSessionsPanel } from '@/features/manager/components/ActiveSessionsPanel'
 import { TeamOverview } from '@/features/manager/components/TeamOverview'
+
+const GeoLocationWidget = dynamic(
+  () =>
+    import('@/features/manager/components/GeoLocationWidget').then((m) => ({
+      default: m.GeoLocationWidget,
+    })),
+  { ssr: false, loading: () => <div className="h-64 animate-pulse rounded-xl bg-gray-100" /> },
+)
+
 import {
   Users,
   UserCheck,
@@ -74,6 +84,7 @@ export default function ManagerDashboard() {
   const { data: pending } = trpc.manager.getPendingCorrectionsCount.useQuery()
   const { data: metrics } = trpc.manager.getTeamMetrics.useQuery({ teamId, days: 7 })
   const { data: monthMetrics } = trpc.manager.getTeamMetrics.useQuery({ teamId, days: 30 })
+  const { data: geoLocations = [] } = trpc.manager.getTeamGeoLocations.useQuery()
 
   const activeCount = status?.active.length ?? 0
   const inactiveCount = status?.inactive.length ?? 0
@@ -274,6 +285,10 @@ export default function ManagerDashboard() {
       <section>
         <h2 className="mb-4 text-sm font-semibold text-gray-700">Rendimiento del equipo</h2>
         <TeamOverview {...(teamId ? { teamId } : {})} />
+      </section>
+
+      <section>
+        <GeoLocationWidget locations={geoLocations} />
       </section>
     </div>
   )
