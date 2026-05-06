@@ -1430,6 +1430,136 @@ export type Database = {
           },
         ]
       }
+      expenses: {
+        Row: {
+          amount: number
+          category: string
+          created_at: string
+          currency: string
+          description: string | null
+          employee_id: string
+          expense_date: string
+          id: string
+          manager_note: string | null
+          receipt_url: string | null
+          status: string
+          tenant_id: string
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          amount: number
+          category: string
+          created_at?: string
+          currency?: string
+          description?: string | null
+          employee_id: string
+          expense_date: string
+          id?: string
+          manager_note?: string | null
+          receipt_url?: string | null
+          status?: string
+          tenant_id: string
+          title: string
+          updated_at?: string
+        }
+        Update: {
+          amount?: number
+          category?: string
+          created_at?: string
+          currency?: string
+          description?: string | null
+          employee_id?: string
+          expense_date?: string
+          id?: string
+          manager_note?: string | null
+          receipt_url?: string | null
+          status?: string
+          tenant_id?: string
+          title?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "expenses_employee_id_fkey"
+            columns: ["employee_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "expenses_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      hr_documents: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          doc_type: string
+          employee_id: string | null
+          expires_at: string | null
+          file_name: string | null
+          file_url: string | null
+          id: string
+          tenant_id: string
+          title: string
+          visibility: string
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          doc_type: string
+          employee_id?: string | null
+          expires_at?: string | null
+          file_name?: string | null
+          file_url?: string | null
+          id?: string
+          tenant_id: string
+          title: string
+          visibility?: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          doc_type?: string
+          employee_id?: string | null
+          expires_at?: string | null
+          file_name?: string | null
+          file_url?: string | null
+          id?: string
+          tenant_id?: string
+          title?: string
+          visibility?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "hr_documents_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "hr_documents_employee_id_fkey"
+            columns: ["employee_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "hr_documents_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       integrations: {
         Row: {
           active: boolean
@@ -1949,6 +2079,168 @@ export type Database = {
             columns: ["user_id"]
             isOneToOne: false
             referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      payslips: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          currency: string
+          deductions: number
+          employee_id: string
+          gross_amount: number
+          hours_worked: number | null
+          id: string
+          net_amount: number
+          notes: string | null
+          period_end: string
+          period_label: string
+          period_start: string
+          status: string
+          tenant_id: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          currency?: string
+          deductions?: number
+          employee_id: string
+          gross_amount?: number
+          hours_worked?: number | null
+          id?: string
+          net_amount?: number
+          notes?: string | null
+          period_end: string
+          period_label: string
+          period_start: string
+          status?: string
+          tenant_id: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          currency?: string
+          deductions?: number
+          employee_id?: string
+          gross_amount?: number
+          hours_worked?: number | null
+          id?: string
+          net_amount?: number
+          notes?: string | null
+          period_end?: string
+          period_label?: string
+          period_start?: string
+          status?: string
+          tenant_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "payslips_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "payslips_employee_id_fkey"
+            columns: ["employee_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "payslips_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      performance_reviews: {
+        Row: {
+          acknowledged_at: string | null
+          answers: Json | null
+          created_at: string
+          created_by: string | null
+          due_date: string | null
+          id: string
+          overall_rating: number | null
+          period_label: string
+          questions: Json
+          review_type: string
+          reviewee_id: string
+          reviewer_id: string
+          status: string
+          submitted_at: string | null
+          tenant_id: string
+        }
+        Insert: {
+          acknowledged_at?: string | null
+          answers?: Json | null
+          created_at?: string
+          created_by?: string | null
+          due_date?: string | null
+          id?: string
+          overall_rating?: number | null
+          period_label: string
+          questions?: Json
+          review_type: string
+          reviewee_id: string
+          reviewer_id: string
+          status?: string
+          submitted_at?: string | null
+          tenant_id: string
+        }
+        Update: {
+          acknowledged_at?: string | null
+          answers?: Json | null
+          created_at?: string
+          created_by?: string | null
+          due_date?: string | null
+          id?: string
+          overall_rating?: number | null
+          period_label?: string
+          questions?: Json
+          review_type?: string
+          reviewee_id?: string
+          reviewer_id?: string
+          status?: string
+          submitted_at?: string | null
+          tenant_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "performance_reviews_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "performance_reviews_reviewee_id_fkey"
+            columns: ["reviewee_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "performance_reviews_reviewer_id_fkey"
+            columns: ["reviewer_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "performance_reviews_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
             referencedColumns: ["id"]
           },
         ]

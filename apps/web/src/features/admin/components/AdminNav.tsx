@@ -27,6 +27,11 @@ import {
   MapPin,
   Heart,
   ClipboardCheck,
+  DollarSign,
+  FileText,
+  Star,
+  Wallet,
+  Network as OrgIcon,
 } from 'lucide-react'
 import { trpc } from '@/lib/trpc-client'
 import { useRouter } from 'next/navigation'
@@ -46,6 +51,11 @@ const NAV = [
   { href: '/admin/pulse-surveys', label: 'Encuestas', icon: ClipboardCheck },
   { href: '/admin/kudos', label: 'Reconocimiento', icon: Heart },
   { href: '/admin/work-locations', label: 'Ubicaciones', icon: MapPin },
+  { href: '/admin/payslips', label: 'Nómina', icon: DollarSign },
+  { href: '/admin/hr-documents', label: 'Documentos HR', icon: FileText },
+  { href: '/admin/performance-reviews', label: 'Evaluaciones', icon: Star },
+  { href: '/admin/expenses', label: 'Gastos', icon: Wallet },
+  { href: '/admin/org-chart', label: 'Organigrama', icon: OrgIcon },
   { href: '/admin/integrations', label: 'Integraciones', icon: Plug },
   { href: '/admin/apps', label: 'Aplicaciones', icon: AppWindow },
   { href: '/admin/ips', label: 'IPs Corporativas', icon: Network },

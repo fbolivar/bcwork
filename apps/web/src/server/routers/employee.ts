@@ -2213,4 +2213,174 @@ export const employeeRouter = router({
       if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
       return { ok: true }
     }),
+
+  // ─── Payslips / Nómina ───────────────────────────────────────────────────
+
+  getMyPayslips: protectedProcedure.query(async ({ ctx }) => {
+    const { data, error } = await ctx.db
+      .from('payslips')
+      .select('*')
+      .eq('employee_id', ctx.user!.sub)
+      .order('period_start', { ascending: false })
+    if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+    return data ?? []
+  }),
+
+  acknowledgePayslip: protectedProcedure
+    .input(z.object({ id: z.string().uuid() }))
+    .mutation(async ({ ctx, input }) => {
+      const { error } = await ctx.db
+        .from('payslips')
+        .update({ status: 'acknowledged', updated_at: new Date().toISOString() })
+        .eq('id', input.id)
+        .eq('employee_id', ctx.user!.sub)
+        .eq('status', 'issued')
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      return { ok: true }
+    }),
+
+  // ─── HR Documents ─────────────────────────────────────────────────────────
+
+  getMyHRDocuments: protectedProcedure.query(async ({ ctx }) => {
+    const { data, error } = await ctx.db
+      .from('hr_documents')
+      .select('*')
+      .eq('tenant_id', ctx.user!.tid)
+      .or(`employee_id.eq.${ctx.user!.sub},employee_id.is.null`)
+      .neq('visibility', 'admin_only')
+      .order('created_at', { ascending: false })
+    if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+    return data ?? []
+  }),
+
+  // ─── Performance Reviews ──────────────────────────────────────────────────
+
+  getMyPerformanceReviews: protectedProcedure.query(async ({ ctx }) => {
+    const { data, error } = await ctx.db
+      .from('performance_reviews')
+      .select(
+        '*, reviewee:users!performance_reviews_reviewee_id_fkey(id, full_name, position), reviewer:users!performance_reviews_reviewer_id_fkey(id, full_name)',
+      )
+      .or(`reviewee_id.eq.${ctx.user!.sub},reviewer_id.eq.${ctx.user!.sub}`)
+      .order('created_at', { ascending: false })
+    if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+    return data ?? []
+  }),
+
+  submitReview: protectedProcedure
+    .input(
+      z.object({
+        review_id: z.string().uuid(),
+        answers: z.array(z.object({ question_index: z.number(), value: z.unknown() })),
+        overall_rating: z.number().int().min(1).max(5),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      type ReviewUpdate = {
+        answers: unknown
+        overall_rating: number
+        status: string
+        submitted_at: string
+      }
+      const patch: ReviewUpdate = {
+        answers: input.answers,
+        overall_rating: input.overall_rating,
+        status: 'submitted',
+        submitted_at: new Date().toISOString(),
+      }
+      const { error } = await (ctx.db as any)
+        .from('performance_reviews')
+        .update(patch)
+        .eq('id', input.review_id)
+        .eq('reviewer_id', ctx.user!.sub)
+        .eq('status', 'pending')
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      return { ok: true }
+    }),
+
+  acknowledgeReview: protectedProcedure
+    .input(z.object({ review_id: z.string().uuid() }))
+    .mutation(async ({ ctx, input }) => {
+      const { error } = await ctx.db
+        .from('performance_reviews')
+        .update({
+          status: 'acknowledged',
+          acknowledged_at: new Date().toISOString(),
+        })
+        .eq('id', input.review_id)
+        .eq('reviewee_id', ctx.user!.sub)
+        .eq('status', 'submitted')
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      return { ok: true }
+    }),
+
+  // ─── Expenses / Gastos ────────────────────────────────────────────────────
+
+  getMyExpenses: protectedProcedure.query(async ({ ctx }) => {
+    const { data, error } = await ctx.db
+      .from('expenses')
+      .select('*')
+      .eq('employee_id', ctx.user!.sub)
+      .order('expense_date', { ascending: false })
+    if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+    return data ?? []
+  }),
+
+  submitExpense: protectedProcedure
+    .input(
+      z.object({
+        title: z.string().min(1).max(200),
+        expense_date: z.string(),
+        amount: z.number().positive(),
+        currency: z.string().default('COP'),
+        category: z.enum(['travel', 'food', 'equipment', 'software', 'training', 'other']),
+        description: z.string().max(1000).optional(),
+        receipt_url: z.string().url().optional().or(z.literal('')),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { data, error } = await ctx.db
+        .from('expenses')
+        .insert({
+          tenant_id: ctx.user!.tid,
+          employee_id: ctx.user!.sub,
+          title: input.title,
+          expense_date: input.expense_date,
+          amount: input.amount,
+          currency: input.currency,
+          category: input.category,
+          description: input.description ?? null,
+          receipt_url: input.receipt_url || null,
+        })
+        .select()
+        .single()
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      return data
+    }),
+
+  cancelExpense: protectedProcedure
+    .input(z.object({ id: z.string().uuid() }))
+    .mutation(async ({ ctx, input }) => {
+      const { error } = await ctx.db
+        .from('expenses')
+        .delete()
+        .eq('id', input.id)
+        .eq('employee_id', ctx.user!.sub)
+        .eq('status', 'pending')
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      return { ok: true }
+    }),
+
+  // ─── Org chart / Directorio ───────────────────────────────────────────────
+
+  getOrgChart: protectedProcedure.query(async ({ ctx }) => {
+    const { data, error } = await ctx.db
+      .from('users')
+      .select('id, full_name, email, role, department, position, status, manager_id')
+      .eq('tenant_id', ctx.user!.tid)
+      .neq('status', 'deleted')
+      .order('full_name')
+    if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+    return data ?? []
+  }),
 })

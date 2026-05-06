@@ -2210,4 +2210,245 @@ export const adminRouter = router({
       if (surveyRes.error) throw new TRPCError({ code: 'NOT_FOUND', message: 'Survey not found' })
       return { survey: surveyRes.data, responses: responsesRes.data ?? [] }
     }),
+
+  // ─── Payslips admin ───────────────────────────────────────────────────────
+
+  getPayslips: adminProcedure
+    .input(z.object({ employee_id: z.string().uuid().optional() }))
+    .query(async ({ ctx, input }) => {
+      let q = ctx.db
+        .from('payslips')
+        .select('*, users!payslips_employee_id_fkey(id, full_name, email, department, position)')
+        .eq('tenant_id', ctx.user!.tid)
+        .order('period_start', { ascending: false })
+      if (input.employee_id) q = q.eq('employee_id', input.employee_id)
+      const { data, error } = await q
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      return data ?? []
+    }),
+
+  createPayslip: adminProcedure
+    .input(
+      z.object({
+        employee_id: z.string().uuid(),
+        period_label: z.string().min(1).max(100),
+        period_start: z.string(),
+        period_end: z.string(),
+        gross_amount: z.number().min(0),
+        deductions: z.number().min(0).default(0),
+        currency: z.string().default('COP'),
+        hours_worked: z.number().min(0).optional(),
+        notes: z.string().max(2000).optional(),
+        issue_now: z.boolean().default(false),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const net_amount = input.gross_amount - input.deductions
+      const { data, error } = await ctx.db
+        .from('payslips')
+        .insert({
+          tenant_id: ctx.user!.tid,
+          employee_id: input.employee_id,
+          period_label: input.period_label,
+          period_start: input.period_start,
+          period_end: input.period_end,
+          gross_amount: input.gross_amount,
+          deductions: input.deductions,
+          net_amount,
+          currency: input.currency,
+          hours_worked: input.hours_worked ?? null,
+          notes: input.notes ?? null,
+          status: input.issue_now ? 'issued' : 'draft',
+          created_by: ctx.user!.sub,
+        })
+        .select()
+        .single()
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      return data
+    }),
+
+  updatePayslipStatus: adminProcedure
+    .input(z.object({ id: z.string().uuid(), status: z.enum(['draft', 'issued', 'acknowledged']) }))
+    .mutation(async ({ ctx, input }) => {
+      const { error } = await ctx.db
+        .from('payslips')
+        .update({ status: input.status, updated_at: new Date().toISOString() })
+        .eq('id', input.id)
+        .eq('tenant_id', ctx.user!.tid)
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      return { ok: true }
+    }),
+
+  // ─── HR Documents admin ───────────────────────────────────────────────────
+
+  getHRDocuments: adminProcedure
+    .input(z.object({ employee_id: z.string().uuid().optional() }))
+    .query(async ({ ctx, input }) => {
+      let q = ctx.db
+        .from('hr_documents')
+        .select('*, users!hr_documents_employee_id_fkey(id, full_name, email)')
+        .eq('tenant_id', ctx.user!.tid)
+        .order('created_at', { ascending: false })
+      if (input.employee_id) q = q.eq('employee_id', input.employee_id)
+      const { data, error } = await q
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      return data ?? []
+    }),
+
+  createHRDocument: adminProcedure
+    .input(
+      z.object({
+        employee_id: z.string().uuid().optional(),
+        title: z.string().min(1).max(300),
+        doc_type: z.enum(['contract', 'policy', 'certificate', 'letter', 'other']),
+        file_url: z.string().url().optional().or(z.literal('')),
+        file_name: z.string().max(300).optional(),
+        visibility: z.enum(['employee', 'admin_only', 'all']).default('employee'),
+        expires_at: z.string().optional(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { data, error } = await ctx.db
+        .from('hr_documents')
+        .insert({
+          tenant_id: ctx.user!.tid,
+          employee_id: input.employee_id ?? null,
+          title: input.title,
+          doc_type: input.doc_type,
+          file_url: input.file_url || null,
+          file_name: input.file_name ?? null,
+          visibility: input.visibility,
+          expires_at: input.expires_at ?? null,
+          created_by: ctx.user!.sub,
+        })
+        .select()
+        .single()
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      return data
+    }),
+
+  deleteHRDocument: adminProcedure
+    .input(z.object({ id: z.string().uuid() }))
+    .mutation(async ({ ctx, input }) => {
+      const { error } = await ctx.db
+        .from('hr_documents')
+        .delete()
+        .eq('id', input.id)
+        .eq('tenant_id', ctx.user!.tid)
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      return { ok: true }
+    }),
+
+  // ─── Performance Reviews admin ────────────────────────────────────────────
+
+  listPerformanceReviews: adminProcedure
+    .input(z.object({ employee_id: z.string().uuid().optional() }))
+    .query(async ({ ctx, input }) => {
+      let q = ctx.db
+        .from('performance_reviews')
+        .select(
+          '*, reviewee:users!performance_reviews_reviewee_id_fkey(id, full_name, position), reviewer:users!performance_reviews_reviewer_id_fkey(id, full_name)',
+        )
+        .eq('tenant_id', ctx.user!.tid)
+        .order('created_at', { ascending: false })
+      if (input.employee_id) q = q.eq('reviewee_id', input.employee_id)
+      const { data, error } = await q
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      return data ?? []
+    }),
+
+  createPerformanceReview: adminProcedure
+    .input(
+      z.object({
+        reviewee_id: z.string().uuid(),
+        reviewer_id: z.string().uuid(),
+        review_type: z.enum(['self', 'manager', 'peer']),
+        period_label: z.string().min(1).max(100),
+        questions: z
+          .array(
+            z.object({
+              text: z.string().min(1).max(500),
+              type: z.enum(['rating', 'text', 'choice']),
+              options: z.array(z.string()).optional(),
+            }),
+          )
+          .min(1)
+          .max(15),
+        due_date: z.string().optional(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { data, error } = await ctx.db
+        .from('performance_reviews')
+        .insert({
+          tenant_id: ctx.user!.tid,
+          reviewee_id: input.reviewee_id,
+          reviewer_id: input.reviewer_id,
+          review_type: input.review_type,
+          period_label: input.period_label,
+          questions: input.questions,
+          due_date: input.due_date ?? null,
+          created_by: ctx.user!.sub,
+        })
+        .select()
+        .single()
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      return data
+    }),
+
+  // ─── Expenses admin ───────────────────────────────────────────────────────
+
+  getAdminExpenses: adminProcedure
+    .input(
+      z.object({
+        status: z.enum(['pending', 'approved', 'rejected', 'reimbursed', 'all']).default('all'),
+      }),
+    )
+    .query(async ({ ctx, input }) => {
+      let q = ctx.db
+        .from('expenses')
+        .select('*, users!expenses_employee_id_fkey(id, full_name, email, department)')
+        .eq('tenant_id', ctx.user!.tid)
+        .order('created_at', { ascending: false })
+      if (input.status !== 'all') q = q.eq('status', input.status)
+      const { data, error } = await q
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      return data ?? []
+    }),
+
+  updateExpenseStatus: adminProcedure
+    .input(
+      z.object({
+        id: z.string().uuid(),
+        status: z.enum(['approved', 'rejected', 'reimbursed']),
+        manager_note: z.string().max(500).optional(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { error } = await ctx.db
+        .from('expenses')
+        .update({
+          status: input.status,
+          manager_note: input.manager_note ?? null,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', input.id)
+        .eq('tenant_id', ctx.user!.tid)
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      return { ok: true }
+    }),
+
+  // ─── Org chart admin ──────────────────────────────────────────────────────
+
+  updateUserManager: adminProcedure
+    .input(z.object({ user_id: z.string().uuid(), manager_id: z.string().uuid().nullable() }))
+    .mutation(async ({ ctx, input }) => {
+      const { error } = await ctx.db
+        .from('users')
+        .update({ manager_id: input.manager_id, updated_at: new Date().toISOString() })
+        .eq('id', input.user_id)
+        .eq('tenant_id', ctx.user!.tid)
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      return { ok: true }
+    }),
 })

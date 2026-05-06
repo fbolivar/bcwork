@@ -35,6 +35,9 @@ import {
   MapPin,
   Heart as HeartIcon,
   ClipboardCheck,
+  DollarSign,
+  Star,
+  Wallet,
 } from 'lucide-react'
 import { trpc } from '@/lib/trpc-client'
 
@@ -62,6 +65,11 @@ const NAV = [
   { href: '/me/work-location', label: 'Mi ubicación', icon: MapPin },
   { href: '/me/kudos', label: 'Reconocimiento', icon: HeartIcon },
   { href: '/me/pulse-surveys', label: 'Encuestas', icon: ClipboardCheck },
+  { href: '/me/payslips', label: 'Mis recibos', icon: DollarSign },
+  { href: '/me/hr-documents', label: 'Documentos HR', icon: FileText },
+  { href: '/me/performance-reviews', label: 'Evaluaciones', icon: Star },
+  { href: '/me/expenses', label: 'Mis gastos', icon: Wallet },
+  { href: '/me/org-chart', label: 'Directorio', icon: Users },
   { href: '/me/manual-time', label: 'Tiempo manual', icon: PenLine },
   { href: '/me/notifications', label: 'Notificaciones', icon: Bell },
   { href: '/me/devices', label: 'Mis dispositivos', icon: Monitor },
