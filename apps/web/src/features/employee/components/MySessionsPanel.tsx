@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useMemo } from 'react'
+import { Fragment, useState, useEffect, useMemo } from 'react'
 import Link from 'next/link'
 import { trpc } from '@/lib/trpc-client'
 import {
@@ -13,7 +13,66 @@ import {
   AlertCircle,
   BarChart2,
   XCircle,
+  ChevronDown,
+  ChevronRight,
 } from 'lucide-react'
+
+function DayActivity({ date }: { date: string }) {
+  const { data, isLoading } = trpc.employee.getMyDayActivity.useQuery({ date })
+
+  if (isLoading) {
+    return (
+      <div className="space-y-1.5 px-4 py-3">
+        {[1, 2, 3].map((i) => (
+          <div key={i} className="h-5 animate-pulse rounded bg-gray-100" />
+        ))}
+      </div>
+    )
+  }
+
+  if (!data || data.apps.length === 0) {
+    return (
+      <div className="px-4 py-3 text-xs text-gray-400">Sin datos de actividad para este día.</div>
+    )
+  }
+
+  const maxSecs = data.apps[0]?.secs ?? 1
+
+  function fmtSecs(secs: number) {
+    const h = Math.floor(secs / 3600)
+    const m = Math.floor((secs % 3600) / 60)
+    return h > 0 ? `${h}h ${m}m` : `${m}m`
+  }
+
+  return (
+    <div className="bg-gray-50 px-4 py-3">
+      <p className="mb-2 text-xs font-medium text-gray-500">Top apps del día</p>
+      <div className="space-y-1.5">
+        {data.apps.map((app) => {
+          const filled = Math.round((app.secs / maxSecs) * 10)
+          return (
+            <div key={app.name} className="flex items-center gap-2 text-xs">
+              <span className="w-28 shrink-0 truncate text-gray-700" title={app.name}>
+                {app.name}
+              </span>
+              <div className="flex flex-1 gap-0.5">
+                {Array.from({ length: 10 }).map((_, i) => (
+                  <div
+                    key={i}
+                    className={`h-2 flex-1 rounded-sm ${i < filled ? 'bg-blue-400' : 'bg-gray-200'}`}
+                  />
+                ))}
+              </div>
+              <span className="w-12 shrink-0 text-right tabular-nums text-gray-500">
+                {fmtSecs(app.secs)}
+              </span>
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
 
 function fmtHours(secs: number | null) {
   if (!secs || secs <= 0) return '0m'
@@ -84,6 +143,7 @@ type ModalSession = {
 
 export function MySessionsPanel() {
   const [days, setDays] = useState<DaysPeriod>(30)
+  const [expandedDate, setExpandedDate] = useState<string | null>(null)
   const [modalSession, setModalSession] = useState<ModalSession | null>(null)
   const [editType, setEditType] = useState('missed_session')
   const [reason, setReason] = useState('')
@@ -214,11 +274,13 @@ export function MySessionsPanel() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-gray-100 bg-gray-50">
+                <th className="w-8 px-2 py-3">
+                  <span className="sr-only">Expandir</span>
+                </th>
                 <th className="px-4 py-3 text-left font-medium text-gray-500">Fecha</th>
                 <th className="px-4 py-3 text-left font-medium text-gray-500">Entrada</th>
                 <th className="px-4 py-3 text-left font-medium text-gray-500">Salida</th>
                 <th className="px-4 py-3 text-left font-medium text-gray-500">Duración</th>
-                {/* #5 — columna productividad con barra */}
                 <th className="px-4 py-3 text-left font-medium text-gray-500">Productividad</th>
                 <th className="px-4 py-3 text-left font-medium text-gray-500">Ubicación</th>
                 <th className="px-4 py-3">
@@ -239,108 +301,133 @@ export function MySessionsPanel() {
                 const activePct =
                   totalSecs > 0 ? Math.round(((s.active_seconds ?? 0) / totalSecs) * 100) : 0
 
+                const isExpanded = expandedDate === sessionDate
+
                 return (
-                  <tr key={s.id} className={`hover:bg-gray-50 ${isActive ? 'bg-blue-50/40' : ''}`}>
-                    <td className="px-4 py-3 text-gray-900">
-                      <div className="flex items-center gap-1.5">
-                        {isActive && (
-                          <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-green-500" />
-                        )}
-                        {fmtDate(s.started_at)}
-                      </div>
-                    </td>
-                    <td className="px-4 py-3 tabular-nums text-gray-700">
-                      {fmtTime(s.started_at)}
-                    </td>
-                    <td className="px-4 py-3 tabular-nums text-gray-700">
-                      {isActive ? (
-                        <span className="font-medium text-green-600">Activa</span>
-                      ) : s.ended_at ? (
-                        fmtTime(s.ended_at)
-                      ) : (
-                        '—'
-                      )}
-                    </td>
-                    <td className="px-4 py-3 tabular-nums text-gray-700">
-                      <div className="flex items-center gap-1">
-                        {isActive && <Clock className="h-3 w-3 text-green-500" />}
-                        {fmtHours(dur)}
-                      </div>
-                    </td>
-                    {/* #5 — barra de productividad */}
-                    <td className="px-4 py-3">
-                      <div className="space-y-1">
-                        <div className="flex items-center gap-2 text-xs">
-                          <span className="flex items-center gap-0.5 text-blue-600">
-                            <Zap className="h-3 w-3" />
-                            {fmtHours(s.active_seconds)}
-                          </span>
-                          <span className="flex items-center gap-0.5 text-gray-400">
-                            <Coffee className="h-3 w-3" />
-                            {fmtHours(s.idle_seconds)}
-                          </span>
+                  <Fragment key={s.id}>
+                    <tr className={`hover:bg-gray-50 ${isActive ? 'bg-blue-50/40' : ''}`}>
+                      <td className="px-2 py-3">
+                        <button
+                          type="button"
+                          title={isExpanded ? 'Ocultar actividad' : 'Ver actividad del día'}
+                          onClick={() => setExpandedDate(isExpanded ? null : sessionDate)}
+                          className="rounded p-0.5 text-gray-400 hover:text-gray-600"
+                        >
+                          {isExpanded ? (
+                            <ChevronDown className="h-3.5 w-3.5" />
+                          ) : (
+                            <ChevronRight className="h-3.5 w-3.5" />
+                          )}
+                        </button>
+                      </td>
+                      <td className="px-4 py-3 text-gray-900">
+                        <div className="flex items-center gap-1.5">
+                          {isActive && (
+                            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-green-500" />
+                          )}
+                          {fmtDate(s.started_at)}
                         </div>
-                        {totalSecs > 0 && (
-                          <div className="flex gap-0.5">
-                            {Array.from({ length: 5 }).map((_, i) => {
-                              const filled = activePct >= (i + 1) * 20
-                              const color =
-                                activePct >= 70
-                                  ? 'bg-blue-500'
-                                  : activePct >= 40
-                                    ? 'bg-yellow-400'
-                                    : 'bg-red-400'
-                              return (
-                                <div
-                                  key={i}
-                                  className={`h-1.5 w-3 rounded-full ${filled ? color : 'bg-gray-200'}`}
-                                />
-                              )
-                            })}
+                      </td>
+                      <td className="px-4 py-3 tabular-nums text-gray-700">
+                        {fmtTime(s.started_at)}
+                      </td>
+                      <td className="px-4 py-3 tabular-nums text-gray-700">
+                        {isActive ? (
+                          <span className="font-medium text-green-600">Activa</span>
+                        ) : s.ended_at ? (
+                          fmtTime(s.ended_at)
+                        ) : (
+                          '—'
+                        )}
+                      </td>
+                      <td className="px-4 py-3 tabular-nums text-gray-700">
+                        <div className="flex items-center gap-1">
+                          {isActive && <Clock className="h-3 w-3 text-green-500" />}
+                          {fmtHours(dur)}
+                        </div>
+                      </td>
+                      {/* #5 — barra de productividad */}
+                      <td className="px-4 py-3">
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-2 text-xs">
+                            <span className="flex items-center gap-0.5 text-blue-600">
+                              <Zap className="h-3 w-3" />
+                              {fmtHours(s.active_seconds)}
+                            </span>
+                            <span className="flex items-center gap-0.5 text-gray-400">
+                              <Coffee className="h-3 w-3" />
+                              {fmtHours(s.idle_seconds)}
+                            </span>
                           </div>
-                        )}
-                      </div>
-                    </td>
-                    <td className="px-4 py-3">
-                      {s.location_type ? (
-                        <span className="flex items-center gap-1 text-xs text-gray-500">
-                          <MapPin className="h-3 w-3" />
-                          {LOCATION_LABELS[s.location_type] ?? s.location_type}
-                        </span>
-                      ) : (
-                        '—'
-                      )}
-                    </td>
-                    <td className="px-4 py-3 text-right">
-                      <div className="flex items-center justify-end gap-1">
-                        {/* #4 — muestra estado pero permite nueva solicitud si fue rechazada */}
-                        {latestEdit && (
-                          <span
-                            className={`rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_COLORS[latestEdit.status ?? 'pending'] ?? 'bg-gray-100 text-gray-600'}`}
-                          >
-                            {STATUS_LABELS[latestEdit.status ?? 'pending'] ?? latestEdit.status}
+                          {totalSecs > 0 && (
+                            <div className="flex gap-0.5">
+                              {Array.from({ length: 5 }).map((_, i) => {
+                                const filled = activePct >= (i + 1) * 20
+                                const color =
+                                  activePct >= 70
+                                    ? 'bg-blue-500'
+                                    : activePct >= 40
+                                      ? 'bg-yellow-400'
+                                      : 'bg-red-400'
+                                return (
+                                  <div
+                                    key={i}
+                                    className={`h-1.5 w-3 rounded-full ${filled ? color : 'bg-gray-200'}`}
+                                  />
+                                )
+                              })}
+                            </div>
+                          )}
+                        </div>
+                      </td>
+                      <td className="px-4 py-3">
+                        {s.location_type ? (
+                          <span className="flex items-center gap-1 text-xs text-gray-500">
+                            <MapPin className="h-3 w-3" />
+                            {LOCATION_LABELS[s.location_type] ?? s.location_type}
                           </span>
+                        ) : (
+                          '—'
                         )}
-                        {canRequest && (
-                          <button
-                            type="button"
-                            onClick={() =>
-                              setModalSession({
-                                date: sessionDate,
-                                started_at: s.started_at,
-                                ended_at: s.ended_at,
-                                active_seconds: s.active_seconds,
-                                idle_seconds: s.idle_seconds,
-                              })
-                            }
-                            className="rounded-md border border-gray-200 px-2.5 py-1 text-xs text-gray-600 hover:border-blue-300 hover:text-blue-600"
-                          >
-                            Solicitar corrección
-                          </button>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
+                      </td>
+                      <td className="px-4 py-3 text-right">
+                        <div className="flex items-center justify-end gap-1">
+                          {/* #4 — muestra estado pero permite nueva solicitud si fue rechazada */}
+                          {latestEdit && (
+                            <span
+                              className={`rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_COLORS[latestEdit.status ?? 'pending'] ?? 'bg-gray-100 text-gray-600'}`}
+                            >
+                              {STATUS_LABELS[latestEdit.status ?? 'pending'] ?? latestEdit.status}
+                            </span>
+                          )}
+                          {canRequest && (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setModalSession({
+                                  date: sessionDate,
+                                  started_at: s.started_at,
+                                  ended_at: s.ended_at,
+                                  active_seconds: s.active_seconds,
+                                  idle_seconds: s.idle_seconds,
+                                })
+                              }
+                              className="rounded-md border border-gray-200 px-2.5 py-1 text-xs text-gray-600 hover:border-blue-300 hover:text-blue-600"
+                            >
+                              Solicitar corrección
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                    {isExpanded && (
+                      <tr>
+                        <td colSpan={8} className="border-b border-gray-100 p-0">
+                          <DayActivity date={sessionDate} />
+                        </td>
+                      </tr>
+                    )}
+                  </Fragment>
                 )
               })}
             </tbody>

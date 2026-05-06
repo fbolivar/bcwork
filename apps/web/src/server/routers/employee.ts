@@ -282,6 +282,32 @@ export const employeeRouter = router({
       return data ?? []
     }),
 
+  // ─── Actividad de un día específico (para timeline) ──────────────────────
+
+  getMyDayActivity: protectedProcedure
+    .input(z.object({ date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/) }))
+    .query(async ({ ctx, input }) => {
+      const { data, error } = await ctx.db
+        .from('daily_user_metrics')
+        .select('apps_top, active_seconds, productive_seconds')
+        .eq('tenant_id', ctx.user!.tid)
+        .eq('user_id', ctx.user!.sub)
+        .eq('metric_date', input.date)
+        .maybeSingle()
+
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      if (!data) return { apps: [], activeSeconds: 0, productiveSeconds: 0 }
+
+      type AppEntry = { name: string; secs: number }
+      const apps = Array.isArray(data.apps_top) ? (data.apps_top as AppEntry[]).slice(0, 8) : []
+
+      return {
+        apps,
+        activeSeconds: data.active_seconds ?? 0,
+        productiveSeconds: data.productive_seconds ?? 0,
+      }
+    }),
+
   // ─── Solicitar corrección de actividad ────────────────────────────────────
 
   requestActivityEdit: protectedProcedure

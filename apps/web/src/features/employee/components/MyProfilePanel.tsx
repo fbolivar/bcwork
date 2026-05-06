@@ -6,6 +6,29 @@ import { User, Shield, Key, CheckCircle2, CalendarDays } from 'lucide-react'
 
 const DAY_NAMES = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb']
 
+function passwordStrength(pass: string): {
+  score: number
+  label: string
+  segmentColor: string
+  textColor: string
+} {
+  if (!pass) return { score: 0, label: '', segmentColor: '', textColor: '' }
+  let score = 0
+  if (pass.length >= 8) score++
+  if (pass.length >= 12) score++
+  if (/[A-Z]/.test(pass) && /[0-9]/.test(pass)) score++
+  if (/[^A-Za-z0-9]/.test(pass)) score++
+  const labels = ['', 'Débil', 'Regular', 'Buena', 'Fuerte']
+  const segmentColors = ['', 'bg-red-400', 'bg-yellow-400', 'bg-blue-400', 'bg-green-500']
+  const textColors = ['', 'text-red-500', 'text-yellow-600', 'text-blue-500', 'text-green-600']
+  return {
+    score,
+    label: labels[score] ?? '',
+    segmentColor: segmentColors[score] ?? '',
+    textColor: textColors[score] ?? '',
+  }
+}
+
 function Badge({ label, color }: { label: string; color: string }) {
   return (
     <span
@@ -310,6 +333,23 @@ export function MyProfilePanel() {
                 placeholder="Mínimo 8 caracteres"
                 className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
+              {newPass &&
+                (() => {
+                  const s = passwordStrength(newPass)
+                  return (
+                    <div className="mt-1.5 space-y-1">
+                      <div className="flex gap-1">
+                        {[1, 2, 3, 4].map((i) => (
+                          <div
+                            key={i}
+                            className={`h-1 flex-1 rounded-full transition-colors ${i <= s.score ? s.segmentColor : 'bg-gray-200'}`}
+                          />
+                        ))}
+                      </div>
+                      <p className={`text-xs ${s.textColor}`}>{s.label}</p>
+                    </div>
+                  )
+                })()}
             </div>
             <div>
               <label

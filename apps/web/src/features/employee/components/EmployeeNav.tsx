@@ -11,6 +11,7 @@ import {
   CalendarClock,
   ShieldCheck,
   MonitorDown,
+  X,
 } from 'lucide-react'
 import { trpc } from '@/lib/trpc-client'
 
@@ -24,16 +25,28 @@ const NAV = [
   { href: '/me/privacy', label: 'Mi privacidad', icon: ShieldCheck },
 ]
 
-export function EmployeeNav() {
+export function EmployeeNav({ onClose }: { onClose?: () => void } = {}) {
   const pathname = usePathname()
   const router = useRouter()
   const logout = trpc.auth.logout.useMutation({ onSuccess: () => router.push('/login') })
 
   return (
-    <aside className="flex w-52 flex-col border-r border-gray-200 bg-white">
-      <div className="border-b border-gray-100 px-5 py-4">
-        <span className="text-sm font-bold tracking-tight text-blue-600">BCWork</span>
-        <p className="mt-0.5 text-xs text-gray-400">Mi espacio</p>
+    <aside className="flex h-full w-52 flex-col border-r border-gray-200 bg-white">
+      <div className="flex items-center justify-between border-b border-gray-100 px-5 py-4">
+        <div>
+          <span className="text-sm font-bold tracking-tight text-blue-600">BCWork</span>
+          <p className="mt-0.5 text-xs text-gray-400">Mi espacio</p>
+        </div>
+        {onClose && (
+          <button
+            type="button"
+            title="Cerrar menú"
+            onClick={onClose}
+            className="rounded-md p-1 text-gray-400 hover:bg-gray-100 lg:hidden"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        )}
       </div>
       <nav className="flex-1 space-y-0.5 p-2">
         {NAV.map(({ href, label, icon: Icon }) => {
@@ -42,6 +55,7 @@ export function EmployeeNav() {
             <Link
               key={href}
               href={href}
+              onClick={onClose}
               className={`flex items-center gap-2.5 rounded-md px-3 py-2 text-sm transition-colors ${
                 active
                   ? 'bg-blue-50 font-medium text-blue-700'

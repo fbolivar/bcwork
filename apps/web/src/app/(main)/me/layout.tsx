@@ -1,7 +1,6 @@
 import { headers } from 'next/headers'
 import { redirect } from 'next/navigation'
-import { EmployeeNav } from '@/features/employee/components/EmployeeNav'
-import { EmployeeTopBar } from '@/features/employee/components/EmployeeTopBar'
+import { EmployeeShell } from '@/features/employee/components/EmployeeShell'
 import { getDb } from '@/lib/db'
 
 export default async function MeLayout({ children }: { children: React.ReactNode }) {
@@ -31,15 +30,5 @@ export default async function MeLayout({ children }: { children: React.ReactNode
     }
   }
 
-  return (
-    <div className="flex h-screen bg-gray-50">
-      <EmployeeNav />
-      <div className="flex flex-1 flex-col overflow-hidden">
-        <EmployeeTopBar />
-        <main className="flex-1 overflow-y-auto">
-          <div className="mx-auto max-w-4xl px-6 py-8">{children}</div>
-        </main>
-      </div>
-    </div>
-  )
+  return <EmployeeShell>{children}</EmployeeShell>
 }

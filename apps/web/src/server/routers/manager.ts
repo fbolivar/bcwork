@@ -243,6 +243,14 @@ export const managerRouter = router({
     .input(
       z.object({
         status: z.enum(['pending', 'approved', 'rejected', 'all']).default('pending'),
+        dateFrom: z
+          .string()
+          .regex(/^\d{4}-\d{2}-\d{2}$/)
+          .optional(),
+        dateTo: z
+          .string()
+          .regex(/^\d{4}-\d{2}-\d{2}$/)
+          .optional(),
       }),
     )
     .query(async ({ ctx, input }) => {
@@ -253,11 +261,13 @@ export const managerRouter = router({
         )
         .eq('tenant_id', ctx.user!.tid)
         .order('created_at', { ascending: false })
-        .limit(100)
+        .limit(200)
 
       if (input.status !== 'all') {
         query = query.eq('status', input.status)
       }
+      if (input.dateFrom) query = query.gte('applies_to_date', input.dateFrom)
+      if (input.dateTo) query = query.lte('applies_to_date', input.dateTo)
 
       const { data, error } = await query
       if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
@@ -321,6 +331,64 @@ export const managerRouter = router({
       broadcastNotification(edit.user_id)
 
       return { ok: true }
+    }),
+
+  bulkReviewActivityEdits: managerProcedure
+    .input(
+      z.object({
+        ids: z.array(z.string().uuid()).min(1).max(100),
+        status: z.enum(['approved', 'rejected']),
+        review_note: z.string().max(500).optional(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { data: edits, error: fetchError } = await ctx.db
+        .from('activity_edits')
+        .select('id, user_id, applies_to_date')
+        .in('id', input.ids)
+        .eq('tenant_id', ctx.user!.tid)
+        .eq('status', 'pending')
+
+      if (fetchError)
+        throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: fetchError.message })
+      if (!edits || edits.length === 0)
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'No se encontraron solicitudes pendientes',
+        })
+
+      const validIds = edits.map((e) => e.id)
+
+      const { error } = await ctx.db
+        .from('activity_edits')
+        .update({
+          status: input.status,
+          review_note: input.review_note ?? null,
+          reviewed_by: ctx.user!.sub,
+          reviewed_at: new Date().toISOString(),
+        })
+        .in('id', validIds)
+        .eq('tenant_id', ctx.user!.tid)
+
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+
+      const statusText = input.status === 'approved' ? 'aprobada' : 'rechazada'
+      await ctx.db.from('notifications').insert(
+        edits.map((e) => ({
+          tenant_id: ctx.user!.tid,
+          user_id: e.user_id,
+          channel: 'manager_message' as const,
+          title: `Solicitud de corrección ${statusText}`,
+          body:
+            input.review_note ??
+            `Tu solicitud del ${String(e.applies_to_date ?? '')} fue ${statusText}.`,
+        })),
+      )
+
+      const uniqueUserIds = [...new Set(edits.map((e) => e.user_id))]
+      broadcastNotificationToMany(uniqueUserIds)
+
+      return { ok: true, count: validIds.length }
     }),
 
   getPendingCorrectionsCount: managerProcedure.query(async ({ ctx }) => {
