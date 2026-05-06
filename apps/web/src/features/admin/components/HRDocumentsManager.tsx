@@ -2,7 +2,19 @@
 
 import { useState } from 'react'
 import { trpc } from '@/lib/trpc-client'
-import { FileText, Plus, X, Trash2, FileCheck, GraduationCap, Mail, FolderOpen } from 'lucide-react'
+import {
+  FileText,
+  Plus,
+  X,
+  Trash2,
+  FileCheck,
+  GraduationCap,
+  Mail,
+  FolderOpen,
+  PenLine,
+  CheckCircle2,
+  Clock,
+} from 'lucide-react'
 
 type DocType = 'contract' | 'policy' | 'certificate' | 'letter' | 'other'
 
@@ -14,15 +26,33 @@ const DOC_TYPE_MAP: Record<DocType, { label: string; icon: React.ReactNode }> = 
   other: { label: 'Otro', icon: <FolderOpen className="h-4 w-4" /> },
 }
 
+type DocRow = {
+  id: string
+  title: string
+  doc_type: string
+  file_url: string | null
+  file_name: string | null
+  expires_at: string | null
+  employee_id: string | null
+  created_at: string
+  requires_signature: boolean
+  signed_at: string | null
+  signature_data: string | null
+  signed_name: string | null
+  users?: { full_name: string } | null
+}
+
 export function HRDocumentsManager() {
   const utils = trpc.useUtils()
   const [showCreate, setShowCreate] = useState(false)
+  const [sigPreview, setSigPreview] = useState<DocRow | null>(null)
   const [title, setTitle] = useState('')
   const [docType, setDocType] = useState<DocType>('contract')
   const [fileUrl, setFileUrl] = useState('')
   const [fileName, setFileName] = useState('')
   const [expiresAt, setExpiresAt] = useState('')
   const [employeeId, setEmployeeId] = useState('')
+  const [requireSignature, setRequireSignature] = useState(false)
   const [filterEmployee, setFilterEmployee] = useState('')
 
   const { data: docs, isLoading } = trpc.admin.getHRDocuments.useQuery({
@@ -39,12 +69,19 @@ export function HRDocumentsManager() {
       setFileName('')
       setExpiresAt('')
       setEmployeeId('')
+      setRequireSignature(false)
     },
   })
 
   const remove = trpc.admin.deleteHRDocument.useMutation({
     onSuccess: () => utils.admin.getHRDocuments.invalidate(),
   })
+
+  const toggleSig = trpc.admin.toggleRequireSignature.useMutation({
+    onSuccess: () => utils.admin.getHRDocuments.invalidate(),
+  })
+
+  const allDocs = (docs ?? []) as DocRow[]
 
   return (
     <div className="space-y-5">
@@ -73,7 +110,6 @@ export function HRDocumentsManager() {
           className="rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none"
         >
           <option value="">Todos los empleados</option>
-          <option value="__company__">Solo empresa (globales)</option>
           {(usersData?.data ?? []).map((u) => (
             <option key={u.id} value={u.id}>
               {u.full_name}
@@ -88,62 +124,98 @@ export function HRDocumentsManager() {
             <div key={i} className="h-16 rounded-xl bg-gray-100" />
           ))}
         </div>
-      ) : ((docs ?? []) as any[]).length === 0 ? (
+      ) : allDocs.length === 0 ? (
         <div className="rounded-2xl border border-dashed border-gray-200 py-12 text-center">
           <FileText className="mx-auto mb-3 h-10 w-10 text-gray-300" />
           <p className="text-sm text-gray-500">No hay documentos</p>
         </div>
       ) : (
         <div className="space-y-2">
-          {((docs ?? []) as any[]).map((raw) => {
-            type DocRow = {
-              id: string
-              title: string
-              doc_type: string
-              file_url: string | null
-              file_name: string | null
-              expires_at: string | null
-              employee_id: string | null
-              created_at: string
-              users?: { full_name: string } | null
-            }
-            const d = raw as DocRow
+          {allDocs.map((d) => {
             const typeInfo = DOC_TYPE_MAP[d.doc_type as DocType] ?? DOC_TYPE_MAP.other
             const isExpired = d.expires_at ? new Date(d.expires_at) < new Date() : false
+            const isSigned = d.requires_signature && !!d.signed_at
+            const pendingSign = d.requires_signature && !d.signed_at
             return (
               <div
                 key={d.id}
-                className={`flex items-center gap-3 rounded-xl border px-4 py-3 ${isExpired ? 'border-red-100 bg-red-50' : 'border-gray-100 bg-white'}`}
+                className={`rounded-xl border px-4 py-3 ${isExpired ? 'border-red-100 bg-red-50' : 'border-gray-100 bg-white'}`}
               >
-                <div className="text-gray-500">{typeInfo.icon}</div>
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-medium text-gray-800">{d.title}</p>
-                  <p className="mt-0.5 text-xs text-gray-400">
-                    {typeInfo.label}
-                    {d.users ? ` · ${d.users.full_name}` : ' · Toda la empresa'}
-                    {d.expires_at &&
-                      ` · Vence ${new Date(d.expires_at + 'T12:00:00').toLocaleDateString('es-CO', { day: '2-digit', month: 'short', year: 'numeric' })}`}
-                  </p>
-                </div>
-                {d.file_url && (
-                  <a
-                    href={d.file_url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="rounded-lg border border-gray-200 px-3 py-1.5 text-xs text-gray-600 hover:bg-gray-50"
+                <div className="flex items-center gap-3">
+                  <div className="text-gray-500">{typeInfo.icon}</div>
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-medium text-gray-800">{d.title}</p>
+                    <p className="mt-0.5 text-xs text-gray-400">
+                      {typeInfo.label}
+                      {d.users ? ` · ${d.users.full_name}` : ' · Toda la empresa'}
+                      {d.expires_at &&
+                        ` · Vence ${new Date(d.expires_at + 'T12:00:00').toLocaleDateString('es-CO', { day: '2-digit', month: 'short', year: 'numeric' })}`}
+                    </p>
+                  </div>
+
+                  {isSigned && (
+                    <button
+                      type="button"
+                      onClick={() => setSigPreview(d)}
+                      className="flex items-center gap-1.5 rounded-full bg-green-100 px-2.5 py-0.5 text-xs font-medium text-green-700 hover:bg-green-200"
+                    >
+                      <CheckCircle2 className="h-3 w-3" />
+                      Firmado
+                    </button>
+                  )}
+                  {pendingSign && (
+                    <span className="flex items-center gap-1.5 rounded-full bg-orange-100 px-2.5 py-0.5 text-xs font-medium text-orange-700">
+                      <Clock className="h-3 w-3" />
+                      Pendiente
+                    </span>
+                  )}
+
+                  {d.employee_id && (
+                    <button
+                      type="button"
+                      title={d.requires_signature ? 'Quitar firma requerida' : 'Requerir firma'}
+                      onClick={() =>
+                        toggleSig.mutate({ id: d.id, requires_signature: !d.requires_signature })
+                      }
+                      disabled={toggleSig.isPending}
+                      className={`rounded-lg border px-2.5 py-1.5 text-xs transition-colors ${d.requires_signature ? 'border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100' : 'border-gray-200 text-gray-500 hover:bg-gray-50'}`}
+                    >
+                      <PenLine className="h-3.5 w-3.5" />
+                    </button>
+                  )}
+
+                  {d.file_url && (
+                    <a
+                      href={d.file_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="rounded-lg border border-gray-200 px-3 py-1.5 text-xs text-gray-600 hover:bg-gray-50"
+                    >
+                      Abrir
+                    </a>
+                  )}
+                  <button
+                    type="button"
+                    title="Eliminar"
+                    onClick={() => remove.mutate({ id: d.id })}
+                    disabled={remove.isPending}
+                    className="text-gray-400 hover:text-red-500"
                   >
-                    Abrir
-                  </a>
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                </div>
+
+                {isSigned && (
+                  <div className="mt-2 border-t border-gray-100 pt-2 text-xs text-gray-400">
+                    Firmado por <span className="font-medium text-gray-700">{d.signed_name}</span>{' '}
+                    el{' '}
+                    {new Date(d.signed_at!).toLocaleDateString('es-CO', {
+                      day: '2-digit',
+                      month: 'long',
+                      year: 'numeric',
+                    })}
+                  </div>
                 )}
-                <button
-                  type="button"
-                  title="Eliminar"
-                  onClick={() => remove.mutate({ id: d.id })}
-                  disabled={remove.isPending}
-                  className="text-gray-400 hover:text-red-500"
-                >
-                  <Trash2 className="h-4 w-4" />
-                </button>
               </div>
             )
           })}
@@ -253,6 +325,17 @@ export function HRDocumentsManager() {
                   className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none"
                 />
               </div>
+              {employeeId && (
+                <label className="flex items-center gap-2 text-sm text-gray-700">
+                  <input
+                    type="checkbox"
+                    checked={requireSignature}
+                    onChange={(e) => setRequireSignature(e.target.checked)}
+                    className="h-4 w-4 rounded border-gray-300 text-blue-600"
+                  />
+                  Requiere firma electrónica del empleado
+                </label>
+              )}
             </div>
             <div className="mt-4 flex gap-2">
               <button
@@ -273,12 +356,51 @@ export function HRDocumentsManager() {
                     file_name: fileName || undefined,
                     expires_at: expiresAt || undefined,
                     employee_id: employeeId || undefined,
-                  })
+                    requires_signature: requireSignature,
+                  } as any)
                 }
                 className="flex-1 rounded-lg bg-blue-600 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
               >
                 Crear documento
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {sigPreview && sigPreview.signature_data && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-2xl">
+            <div className="flex items-center justify-between">
+              <h3 className="text-base font-semibold text-gray-900">Firma registrada</h3>
+              <button
+                type="button"
+                title="Cerrar"
+                onClick={() => setSigPreview(null)}
+                className="rounded p-1 text-gray-400 hover:text-gray-600"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="mt-3 space-y-2">
+              <p className="text-xs text-gray-500">{sigPreview.title}</p>
+              <img
+                src={sigPreview.signature_data}
+                alt="Firma electrónica"
+                className="w-full rounded-xl border border-gray-200 bg-gray-50"
+              />
+              <p className="text-xs text-gray-400">
+                Firmado por{' '}
+                <span className="font-medium text-gray-700">{sigPreview.signed_name}</span>
+                <br />
+                {new Date(sigPreview.signed_at!).toLocaleString('es-CO', {
+                  day: '2-digit',
+                  month: 'long',
+                  year: 'numeric',
+                  hour: '2-digit',
+                  minute: '2-digit',
+                })}
+              </p>
             </div>
           </div>
         </div>

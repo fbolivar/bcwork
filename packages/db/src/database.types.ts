@@ -1678,6 +1678,10 @@ export type Database = {
           file_name: string | null
           file_url: string | null
           id: string
+          requires_signature: boolean
+          signature_data: string | null
+          signed_at: string | null
+          signed_name: string | null
           tenant_id: string
           title: string
           visibility: string
@@ -1691,6 +1695,10 @@ export type Database = {
           file_name?: string | null
           file_url?: string | null
           id?: string
+          requires_signature?: boolean
+          signature_data?: string | null
+          signed_at?: string | null
+          signed_name?: string | null
           tenant_id: string
           title: string
           visibility?: string
@@ -1704,6 +1712,10 @@ export type Database = {
           file_name?: string | null
           file_url?: string | null
           id?: string
+          requires_signature?: boolean
+          signature_data?: string | null
+          signed_at?: string | null
+          signed_name?: string | null
           tenant_id?: string
           title?: string
           visibility?: string

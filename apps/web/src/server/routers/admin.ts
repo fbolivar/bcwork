@@ -2339,6 +2339,24 @@ export const adminRouter = router({
       return { ok: true }
     }),
 
+  toggleRequireSignature: adminProcedure
+    .input(z.object({ id: z.string().uuid(), requires_signature: z.boolean() }))
+    .mutation(async ({ ctx, input }) => {
+      const patch: Record<string, unknown> = { requires_signature: input.requires_signature }
+      if (!input.requires_signature) {
+        patch.signed_at = null
+        patch.signature_data = null
+        patch.signed_name = null
+      }
+      const { error } = await ctx.db
+        .from('hr_documents')
+        .update(patch as any)
+        .eq('id', input.id)
+        .eq('tenant_id', ctx.user!.tid)
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      return { ok: true }
+    }),
+
   // ─── Performance Reviews admin ────────────────────────────────────────────
 
   listPerformanceReviews: adminProcedure
@@ -2774,17 +2792,15 @@ export const adminRouter = router({
       }),
     )
     .mutation(async ({ ctx, input }) => {
-      const { error } = await ctx.db
-        .from('announcements' as any)
-        .insert({
-          tenant_id: ctx.user!.tid,
-          created_by: ctx.user!.sub,
-          title: input.title,
-          body: input.body,
-          pinned: input.pinned,
-          published_at: input.published_at ?? new Date().toISOString(),
-          expires_at: input.expires_at ?? null,
-        })
+      const { error } = await ctx.db.from('announcements' as any).insert({
+        tenant_id: ctx.user!.tid,
+        created_by: ctx.user!.sub,
+        title: input.title,
+        body: input.body,
+        pinned: input.pinned,
+        published_at: input.published_at ?? new Date().toISOString(),
+        expires_at: input.expires_at ?? null,
+      })
       if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
       return { ok: true }
     }),
@@ -2832,15 +2848,13 @@ export const adminRouter = router({
       }),
     )
     .mutation(async ({ ctx, input }) => {
-      const { error } = await ctx.db
-        .from('company_events' as any)
-        .insert({
-          ...input,
-          tenant_id: ctx.user!.tid,
-          created_by: ctx.user!.sub,
-          description: input.description ?? null,
-          end_date: input.end_date ?? null,
-        })
+      const { error } = await ctx.db.from('company_events' as any).insert({
+        ...input,
+        tenant_id: ctx.user!.tid,
+        created_by: ctx.user!.sub,
+        description: input.description ?? null,
+        end_date: input.end_date ?? null,
+      })
       if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
       return { ok: true }
     }),

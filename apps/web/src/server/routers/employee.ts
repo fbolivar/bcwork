@@ -2253,6 +2253,31 @@ export const employeeRouter = router({
     return data ?? []
   }),
 
+  signDocument: protectedProcedure
+    .input(
+      z.object({
+        id: z.string().uuid(),
+        signature_data: z.string().min(1),
+        signed_name: z.string().min(1).max(200),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { error } = await ctx.db
+        .from('hr_documents')
+        .update({
+          signed_at: new Date().toISOString(),
+          signature_data: input.signature_data,
+          signed_name: input.signed_name,
+        })
+        .eq('id', input.id)
+        .eq('requires_signature', true)
+        .or(`employee_id.eq.${ctx.user!.sub},employee_id.is.null`)
+        .eq('tenant_id', ctx.user!.tid)
+        .is('signed_at', null)
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      return { ok: true }
+    }),
+
   // ─── Performance Reviews ──────────────────────────────────────────────────
 
   getMyPerformanceReviews: protectedProcedure.query(async ({ ctx }) => {
@@ -2497,15 +2522,13 @@ export const employeeRouter = router({
       }),
     )
     .mutation(async ({ ctx, input }) => {
-      const { error } = await ctx.db
-        .from('labor_certificates' as any)
-        .insert({
-          employee_id: ctx.user!.sub,
-          tenant_id: ctx.user!.tid,
-          type: input.type,
-          reason: input.reason ?? null,
-          status: 'pending',
-        })
+      const { error } = await ctx.db.from('labor_certificates' as any).insert({
+        employee_id: ctx.user!.sub,
+        tenant_id: ctx.user!.tid,
+        type: input.type,
+        reason: input.reason ?? null,
+        status: 'pending',
+      })
       if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
       return { ok: true }
     }),
