@@ -5,7 +5,6 @@ import { usePathname, useRouter } from 'next/navigation'
 import {
   LayoutDashboard,
   BarChart2,
-  Monitor,
   LogOut,
   User,
   CalendarClock,
@@ -33,7 +32,6 @@ import {
   Receipt,
   BarChart3,
   MapPin,
-  Heart as HeartIcon,
   ClipboardCheck,
   DollarSign,
   Star,
@@ -45,52 +43,99 @@ import {
   FileCheck,
   Megaphone,
   CalendarRange,
+  Monitor,
 } from 'lucide-react'
 import { trpc } from '@/lib/trpc-client'
 
-const NAV = [
-  { href: '/me/dashboard', label: 'Mi día', icon: LayoutDashboard },
-  { href: '/me/metrics', label: 'Mi rendimiento', icon: BarChart2 },
-  { href: '/me/timesheet', label: 'Asistencia', icon: ClipboardList },
-  { href: '/me/attendance', label: 'Calendario', icon: CalendarCheck },
-  { href: '/me/wellness', label: 'Mi bienestar', icon: Heart },
-  { href: '/me/projects', label: 'Proyectos', icon: Briefcase },
-  { href: '/me/reports', label: 'Mis informes', icon: FileText },
-  { href: '/me/overtime-requests', label: 'Horas extra', icon: Clock4 },
-  { href: '/me/goals', label: 'Mis objetivos', icon: Target },
-  { href: '/me/messages', label: 'Mensajes', icon: MessageSquare },
-  { href: '/me/sessions', label: 'Mis sesiones', icon: CalendarClock },
-  { href: '/me/activity', label: 'Mi actividad', icon: ActivitySquare },
-  { href: '/me/screenshots', label: 'Mis capturas', icon: Camera },
-  { href: '/me/schedule', label: 'Mi horario', icon: CalendarDays },
-  { href: '/me/absences', label: 'Mis ausencias', icon: CalendarOff },
-  { href: '/me/breaks', label: 'Mis pausas', icon: Coffee },
-  { href: '/me/team-presence', label: 'Equipo en línea', icon: Users },
-  { href: '/me/pomodoro', label: 'Pomodoro', icon: Timer },
-  { href: '/me/invoices', label: 'Mis facturas', icon: Receipt },
-  { href: '/me/benchmark', label: 'Mi benchmark', icon: BarChart3 },
-  { href: '/me/work-location', label: 'Mi ubicación', icon: MapPin },
-  { href: '/me/kudos', label: 'Reconocimiento', icon: HeartIcon },
-  { href: '/me/pulse-surveys', label: 'Encuestas', icon: ClipboardCheck },
-  { href: '/me/payslips', label: 'Mis recibos', icon: DollarSign },
-  { href: '/me/hr-documents', label: 'Documentos HR', icon: FileText },
-  { href: '/me/performance-reviews', label: 'Evaluaciones', icon: Star },
-  { href: '/me/expenses', label: 'Mis gastos', icon: Wallet },
-  { href: '/me/org-chart', label: 'Directorio', icon: Users },
-  { href: '/me/onboarding', label: 'Onboarding', icon: Rocket },
-  { href: '/me/training', label: 'Capacitación', icon: GraduationCap },
-  { href: '/me/benefits', label: 'Mis beneficios', icon: Gift },
-  { href: '/me/1on1s', label: 'Reuniones 1:1', icon: Video },
-  { href: '/me/certificates', label: 'Certificados', icon: FileCheck },
-  { href: '/me/announcements', label: 'Anuncios', icon: Megaphone },
-  { href: '/me/company-calendar', label: 'Calendario empresa', icon: CalendarRange },
-  { href: '/me/manual-time', label: 'Tiempo manual', icon: PenLine },
-  { href: '/me/notifications', label: 'Notificaciones', icon: Bell },
-  { href: '/me/devices', label: 'Mis dispositivos', icon: Monitor },
-  { href: '/me/agent', label: 'Activar agente', icon: MonitorDown },
-  { href: '/me/profile', label: 'Mi perfil', icon: User },
-  { href: '/me/privacy', label: 'Mi privacidad', icon: ShieldCheck },
-  { href: '/me/export', label: 'Exportar datos', icon: Download },
+type NavItem = {
+  href: string
+  label: string
+  icon: React.ElementType
+}
+
+type NavGroup = {
+  label: string
+  items: NavItem[]
+}
+
+const NAV_GROUPS: NavGroup[] = [
+  {
+    label: 'Inicio',
+    items: [
+      { href: '/me/dashboard', label: 'Mi día', icon: LayoutDashboard },
+      { href: '/me/messages', label: 'Mensajes', icon: MessageSquare },
+      { href: '/me/notifications', label: 'Notificaciones', icon: Bell },
+      { href: '/me/announcements', label: 'Anuncios', icon: Megaphone },
+    ],
+  },
+  {
+    label: 'Tiempo y trabajo',
+    items: [
+      { href: '/me/sessions', label: 'Mis sesiones', icon: CalendarClock },
+      { href: '/me/activity', label: 'Mi actividad', icon: ActivitySquare },
+      { href: '/me/timesheet', label: 'Asistencia', icon: ClipboardList },
+      { href: '/me/attendance', label: 'Calendario', icon: CalendarCheck },
+      { href: '/me/schedule', label: 'Mi horario', icon: CalendarDays },
+      { href: '/me/manual-time', label: 'Tiempo manual', icon: PenLine },
+      { href: '/me/breaks', label: 'Mis pausas', icon: Coffee },
+      { href: '/me/pomodoro', label: 'Pomodoro', icon: Timer },
+      { href: '/me/projects', label: 'Proyectos', icon: Briefcase },
+    ],
+  },
+  {
+    label: 'Rendimiento',
+    items: [
+      { href: '/me/metrics', label: 'Mi rendimiento', icon: BarChart2 },
+      { href: '/me/goals', label: 'Mis objetivos', icon: Target },
+      { href: '/me/performance-reviews', label: 'Evaluaciones', icon: Star },
+      { href: '/me/benchmark', label: 'Mi benchmark', icon: BarChart3 },
+      { href: '/me/reports', label: 'Mis informes', icon: FileText },
+      { href: '/me/screenshots', label: 'Mis capturas', icon: Camera },
+    ],
+  },
+  {
+    label: 'Equipo y empresa',
+    items: [
+      { href: '/me/org-chart', label: 'Directorio', icon: Users },
+      { href: '/me/team-presence', label: 'Equipo en línea', icon: MapPin },
+      { href: '/me/1on1s', label: 'Reuniones 1:1', icon: Video },
+      { href: '/me/company-calendar', label: 'Calendario empresa', icon: CalendarRange },
+      { href: '/me/kudos', label: 'Reconocimientos', icon: Heart },
+      { href: '/me/pulse-surveys', label: 'Encuestas', icon: ClipboardCheck },
+    ],
+  },
+  {
+    label: 'Laboral',
+    items: [
+      { href: '/me/absences', label: 'Mis ausencias', icon: CalendarOff },
+      { href: '/me/overtime-requests', label: 'Horas extra', icon: Clock4 },
+      { href: '/me/payslips', label: 'Mis recibos', icon: DollarSign },
+      { href: '/me/expenses', label: 'Mis gastos', icon: Wallet },
+      { href: '/me/invoices', label: 'Mis facturas', icon: Receipt },
+      { href: '/me/benefits', label: 'Mis beneficios', icon: Gift },
+      { href: '/me/hr-documents', label: 'Documentos HR', icon: FileCheck },
+      { href: '/me/certificates', label: 'Certificados', icon: FileText },
+      { href: '/me/work-location', label: 'Mi ubicación', icon: MapPin },
+    ],
+  },
+  {
+    label: 'Crecimiento',
+    items: [
+      { href: '/me/onboarding', label: 'Onboarding', icon: Rocket },
+      { href: '/me/training', label: 'Capacitación', icon: GraduationCap },
+      { href: '/me/wellness', label: 'Mi bienestar', icon: Heart },
+    ],
+  },
+  {
+    label: 'Ajustes',
+    items: [
+      { href: '/me/profile', label: 'Mi perfil', icon: User },
+      { href: '/me/devices', label: 'Mis dispositivos', icon: Monitor },
+      { href: '/me/agent', label: 'Activar agente', icon: MonitorDown },
+      { href: '/me/privacy', label: 'Mi privacidad', icon: ShieldCheck },
+      { href: '/me/export', label: 'Exportar datos', icon: Download },
+    ],
+  },
 ]
 
 export function EmployeeNav({ onClose }: { onClose?: () => void } = {}) {
@@ -107,12 +152,23 @@ export function EmployeeNav({ onClose }: { onClose?: () => void } = {}) {
   })
   const unreadMsgs = msgCountData?.count ?? 0
 
+  const badges: Record<string, number> = {
+    '/me/notifications': unread,
+    '/me/messages': unreadMsgs,
+  }
+
   return (
-    <aside className="flex h-full w-52 flex-col border-r border-gray-200 bg-white">
-      <div className="flex items-center justify-between border-b border-gray-100 px-5 py-4">
-        <div>
-          <span className="text-sm font-bold tracking-tight text-blue-600">BCWork</span>
-          <p className="mt-0.5 text-xs text-gray-400">Mi espacio</p>
+    <aside className="flex h-full w-56 flex-col border-r border-gray-100 bg-white">
+      {/* Header */}
+      <div className="flex items-center justify-between px-4 py-4">
+        <div className="flex items-center gap-2.5">
+          <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-blue-600 text-xs font-bold text-white">
+            B
+          </div>
+          <div>
+            <p className="text-sm font-bold tracking-tight text-gray-900">BCWork</p>
+            <p className="text-[10px] text-gray-400">Mi espacio</p>
+          </div>
         </div>
         {onClose && (
           <button
@@ -125,44 +181,53 @@ export function EmployeeNav({ onClose }: { onClose?: () => void } = {}) {
           </button>
         )}
       </div>
-      <nav className="flex-1 space-y-0.5 p-2">
-        {NAV.map(({ href, label, icon: Icon }) => {
-          const active = pathname.startsWith(href)
-          return (
-            <Link
-              key={href}
-              href={href}
-              onClick={onClose}
-              className={`flex items-center gap-2.5 rounded-md px-3 py-2 text-sm transition-colors ${
-                active
-                  ? 'bg-blue-50 font-medium text-blue-700'
-                  : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
-              }`}
-            >
-              <Icon className="h-4 w-4 shrink-0" />
-              <span className="flex-1">{label}</span>
-              {href === '/me/notifications' && unread > 0 && (
-                <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold text-white">
-                  {unread > 9 ? '9+' : unread}
-                </span>
-              )}
-              {href === '/me/messages' && unreadMsgs > 0 && (
-                <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold text-white">
-                  {unreadMsgs > 9 ? '9+' : unreadMsgs}
-                </span>
-              )}
-            </Link>
-          )
-        })}
+
+      {/* Nav */}
+      <nav className="flex-1 overflow-y-auto px-3 pb-4">
+        {NAV_GROUPS.map((group) => (
+          <div key={group.label} className="mb-4">
+            <p className="mb-1 px-2 text-[10px] font-semibold uppercase tracking-widest text-gray-400">
+              {group.label}
+            </p>
+            <div className="space-y-0.5">
+              {group.items.map(({ href, label, icon: Icon }) => {
+                const active = pathname.startsWith(href)
+                const badge = badges[href] ?? 0
+                return (
+                  <Link
+                    key={href}
+                    href={href}
+                    onClick={onClose}
+                    className={`flex items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-sm transition-colors ${
+                      active
+                        ? 'bg-blue-50 font-medium text-blue-700'
+                        : 'text-gray-500 hover:bg-gray-50 hover:text-gray-800'
+                    }`}
+                  >
+                    <Icon className={`h-3.5 w-3.5 shrink-0 ${active ? 'text-blue-600' : ''}`} />
+                    <span className="flex-1 truncate">{label}</span>
+                    {badge > 0 && (
+                      <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold text-white">
+                        {badge > 9 ? '9+' : badge}
+                      </span>
+                    )}
+                  </Link>
+                )
+              })}
+            </div>
+          </div>
+        ))}
       </nav>
-      <div className="border-t border-gray-100 p-2">
+
+      {/* Footer */}
+      <div className="border-t border-gray-100 px-3 py-3">
         <button
           type="button"
           onClick={() => logout.mutate({})}
           disabled={logout.isPending}
-          className="flex w-full items-center gap-2.5 rounded-md px-3 py-2 text-sm text-gray-500 hover:bg-gray-100 disabled:opacity-50"
+          className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-sm text-gray-500 hover:bg-gray-50 hover:text-gray-800 disabled:opacity-50"
         >
-          <LogOut className="h-4 w-4" />
+          <LogOut className="h-3.5 w-3.5" />
           Cerrar sesión
         </button>
       </div>
