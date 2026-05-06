@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
-import { LayoutDashboard, Users2, Activity, LogOut } from 'lucide-react'
+import { LayoutDashboard, Users2, Activity, LogOut, BellRing } from 'lucide-react'
 import { trpc } from '@/lib/trpc-client'
 import { NotificationBell } from '@/features/shared/components/NotificationBell'
 
@@ -10,6 +10,7 @@ const NAV = [
   { href: '/manager/dashboard', label: 'Resumen', icon: LayoutDashboard },
   { href: '/manager/team', label: 'Mi equipo', icon: Users2 },
   { href: '/manager/sessions', label: 'Sesiones activas', icon: Activity },
+  { href: '/manager/notifications', label: 'Notificaciones', icon: BellRing },
 ]
 
 export function ManagerNav() {

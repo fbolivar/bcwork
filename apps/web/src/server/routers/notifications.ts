@@ -1,6 +1,8 @@
 import { z } from 'zod'
 import { TRPCError } from '@trpc/server'
-import { router, protectedProcedure, adminProcedure } from '../trpc'
+import { router, protectedProcedure, adminProcedure, requireRole } from '../trpc'
+
+const managerProcedure = protectedProcedure.use(requireRole('tenant_admin', 'manager'))
 
 export const notificationsRouter = router({
   // ─── Mis notificaciones ───────────────────────────────────────────────────
@@ -15,7 +17,7 @@ export const notificationsRouter = router({
     .query(async ({ ctx, input }) => {
       if (!ctx.user!.tid) return []
 
-      let query = ctx.db
+      let alertQuery = ctx.db
         .from('alert_notifications')
         .select(
           'id, title, body, severity, read_at, created_at, subject_user_id, users!alert_notifications_subject_user_id_fkey(full_name, email)',
@@ -25,64 +27,158 @@ export const notificationsRouter = router({
         .order('created_at', { ascending: false })
         .limit(input.limit)
 
+      let msgQuery = ctx.db
+        .from('notifications')
+        .select('id, title, body, read_at, created_at')
+        .eq('tenant_id', ctx.user!.tid)
+        .eq('user_id', ctx.user!.sub)
+        .order('created_at', { ascending: false })
+        .limit(input.limit)
+
       if (input.unreadOnly) {
-        query = query.is('read_at', null)
+        alertQuery = alertQuery.is('read_at', null)
+        msgQuery = msgQuery.is('read_at', null)
       }
 
-      const { data, error } = await query
-      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      const [alertRes, msgRes] = await Promise.all([alertQuery, msgQuery])
+      if (alertRes.error)
+        throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: alertRes.error.message })
+      if (msgRes.error)
+        throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: msgRes.error.message })
 
-      return (data ?? []).map((n) => ({
+      const alerts = (alertRes.data ?? []).map((n) => ({
         id: n.id,
         title: n.title,
         body: n.body,
-        severity: n.severity as 'info' | 'warning' | 'critical',
+        severity: (n.severity ?? 'info') as 'info' | 'warning' | 'critical',
         read_at: n.read_at,
-        created_at: n.created_at,
+        created_at: n.created_at ?? '',
         subject_name:
           (n.users as unknown as { full_name: string | null } | null)?.full_name ?? null,
+        source: 'alert' as const,
       }))
+
+      const messages = (msgRes.data ?? []).map((n) => ({
+        id: n.id,
+        title: n.title,
+        body: n.body,
+        severity: 'info' as const,
+        read_at: n.read_at,
+        created_at: n.created_at ?? '',
+        subject_name: null,
+        source: 'manager' as const,
+      }))
+
+      return [...alerts, ...messages]
+        .sort((a, b) => b.created_at.localeCompare(a.created_at))
+        .slice(0, input.limit)
     }),
 
   getUnreadCount: protectedProcedure.query(async ({ ctx }) => {
     if (!ctx.user!.tid) return { count: 0 }
 
-    const { count, error } = await ctx.db
-      .from('alert_notifications')
-      .select('*', { count: 'exact', head: true })
-      .eq('tenant_id', ctx.user!.tid)
-      .eq('recipient_id', ctx.user!.sub)
-      .is('read_at', null)
+    const [alertRes, msgRes] = await Promise.all([
+      ctx.db
+        .from('alert_notifications')
+        .select('*', { count: 'exact', head: true })
+        .eq('tenant_id', ctx.user!.tid)
+        .eq('recipient_id', ctx.user!.sub)
+        .is('read_at', null),
+      ctx.db
+        .from('notifications')
+        .select('*', { count: 'exact', head: true })
+        .eq('tenant_id', ctx.user!.tid)
+        .eq('user_id', ctx.user!.sub)
+        .is('read_at', null),
+    ])
 
-    if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
-    return { count: count ?? 0 }
+    if (alertRes.error)
+      throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: alertRes.error.message })
+    if (msgRes.error)
+      throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: msgRes.error.message })
+
+    return { count: (alertRes.count ?? 0) + (msgRes.count ?? 0) }
   }),
 
   markAsRead: protectedProcedure
     .input(z.object({ ids: z.array(z.string().uuid()).min(1).max(50) }))
     .mutation(async ({ ctx, input }) => {
-      const { error } = await ctx.db
-        .from('alert_notifications')
-        .update({ read_at: new Date().toISOString() })
-        .in('id', input.ids)
-        .eq('tenant_id', ctx.user!.tid)
-        .eq('recipient_id', ctx.user!.sub)
-        .is('read_at', null)
-
-      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      const now = new Date().toISOString()
+      await Promise.all([
+        ctx.db
+          .from('alert_notifications')
+          .update({ read_at: now })
+          .in('id', input.ids)
+          .eq('tenant_id', ctx.user!.tid)
+          .eq('recipient_id', ctx.user!.sub)
+          .is('read_at', null),
+        ctx.db
+          .from('notifications')
+          .update({ read_at: now })
+          .in('id', input.ids)
+          .eq('tenant_id', ctx.user!.tid)
+          .eq('user_id', ctx.user!.sub)
+          .is('read_at', null),
+      ])
       return { ok: true }
     }),
 
   markAllAsRead: protectedProcedure.mutation(async ({ ctx }) => {
-    const { error } = await ctx.db
-      .from('alert_notifications')
-      .update({ read_at: new Date().toISOString() })
+    const now = new Date().toISOString()
+    await Promise.all([
+      ctx.db
+        .from('alert_notifications')
+        .update({ read_at: now })
+        .eq('tenant_id', ctx.user!.tid)
+        .eq('recipient_id', ctx.user!.sub)
+        .is('read_at', null),
+      ctx.db
+        .from('notifications')
+        .update({ read_at: now })
+        .eq('tenant_id', ctx.user!.tid)
+        .eq('user_id', ctx.user!.sub)
+        .is('read_at', null),
+    ])
+    return { ok: true }
+  }),
+
+  // ─── Manager envía notificación a empleado(s) ─────────────────────────────
+
+  sendNotification: managerProcedure
+    .input(
+      z.object({
+        userIds: z.array(z.string().uuid()).min(1).max(50),
+        title: z.string().min(1).max(200),
+        body: z.string().max(1000).optional(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const rows = input.userIds.map((uid) => ({
+        tenant_id: ctx.user!.tid,
+        user_id: uid,
+        channel: 'manager_message',
+        title: input.title,
+        body: input.body ?? null,
+      }))
+
+      const { error } = await ctx.db.from('notifications').insert(rows)
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      return { ok: true, sent: rows.length }
+    }),
+
+  // ─── Manager lista sus empleados del tenant para enviar notificaciones ─────
+
+  getTenantMembers: managerProcedure.query(async ({ ctx }) => {
+    const { data, error } = await ctx.db
+      .from('users')
+      .select('id, full_name, email, department, position, status')
       .eq('tenant_id', ctx.user!.tid)
-      .eq('recipient_id', ctx.user!.sub)
-      .is('read_at', null)
+      .in('role', ['employee', 'manager'])
+      .eq('status', 'active')
+      .order('full_name')
 
     if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
-    return { ok: true }
+    return data ?? []
   }),
 
   // ─── Reglas de alerta (admin) ─────────────────────────────────────────────

@@ -10,14 +10,17 @@ import {
   User,
   CalendarClock,
   ShieldCheck,
+  MonitorDown,
 } from 'lucide-react'
 import { trpc } from '@/lib/trpc-client'
+import { NotificationBell } from '@/features/shared/components/NotificationBell'
 
 const NAV = [
   { href: '/me/dashboard', label: 'Mi día', icon: LayoutDashboard },
   { href: '/me/metrics', label: 'Mi rendimiento', icon: BarChart2 },
   { href: '/me/sessions', label: 'Mis sesiones', icon: CalendarClock },
   { href: '/me/devices', label: 'Mis dispositivos', icon: Monitor },
+  { href: '/me/agent', label: 'Activar agente', icon: MonitorDown },
   { href: '/me/profile', label: 'Mi perfil', icon: User },
   { href: '/me/privacy', label: 'Mi privacidad', icon: ShieldCheck },
 ]
@@ -29,9 +32,12 @@ export function EmployeeNav() {
 
   return (
     <aside className="flex w-52 flex-col border-r border-gray-200 bg-white">
-      <div className="border-b border-gray-100 px-5 py-4">
-        <span className="text-sm font-bold tracking-tight text-blue-600">BCWork</span>
-        <p className="mt-0.5 text-xs text-gray-400">Mi espacio</p>
+      <div className="flex items-center justify-between border-b border-gray-100 px-5 py-4">
+        <div>
+          <span className="text-sm font-bold tracking-tight text-blue-600">BCWork</span>
+          <p className="mt-0.5 text-xs text-gray-400">Mi espacio</p>
+        </div>
+        <NotificationBell />
       </div>
       <nav className="flex-1 space-y-0.5 p-2">
         {NAV.map(({ href, label, icon: Icon }) => {

@@ -17,7 +17,24 @@ export default function MyMetricsPage() {
   const [days, setDays] = useState<Period>(14)
   const { data, isLoading } = trpc.employee.getMyMetrics.useQuery({ days })
 
-  const series = (data?.series ?? []).map((r) => ({
+  type MetricRow = {
+    date: string
+    active_seconds: number
+    productive_seconds: number
+    non_productive_seconds: number
+    productivity_ratio: number
+    overtime_seconds: number
+    user_count: number
+  }
+  type RawRow = {
+    metric_date: string | null
+    active_seconds: number | null
+    productive_seconds: number | null
+    non_productive_seconds: number | null
+    productivity_ratio: number
+    overtime_seconds: number | null
+  }
+  const series: MetricRow[] = ((data?.series ?? []) as RawRow[]).map((r) => ({
     date: r.metric_date ?? '',
     active_seconds: r.active_seconds ?? 0,
     productive_seconds: r.productive_seconds ?? 0,
@@ -30,8 +47,9 @@ export default function MyMetricsPage() {
   const summary = data?.summary
 
   // Top dominios de todos los días
+  type DomainRow = { domains_top: unknown }
   const domainMap = new Map<string, number>()
-  for (const row of data?.series ?? []) {
+  for (const row of (data?.series ?? []) as DomainRow[]) {
     const domains = row.domains_top as Array<{ domain: string; secs: number }> | null
     for (const d of domains ?? []) {
       domainMap.set(d.domain, (domainMap.get(d.domain) ?? 0) + d.secs)

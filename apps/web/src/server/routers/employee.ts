@@ -366,6 +366,56 @@ export const employeeRouter = router({
     return { ok: true }
   }),
 
+  // ─── Código de enrolamiento (auto-generado para el empleado) ─────────────
+
+  getOrCreateEnrollmentCode: protectedProcedure.mutation(async ({ ctx }) => {
+    const { randomBytes, createHash } = await import('crypto')
+
+    // Reutilizar código válido si existe
+    const { data: existing } = await ctx.db
+      .from('enrollment_codes')
+      .select('id, code, expires_at')
+      .eq('tenant_id', ctx.user!.tid)
+      .eq('user_id', ctx.user!.sub)
+      .is('used_at', null)
+      .gt('expires_at', new Date().toISOString())
+      .order('expires_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+
+    if (existing?.code) {
+      return { code: existing.code as string, expiresAt: existing.expires_at as string }
+    }
+
+    // Invalidar anteriores sin usar
+    await ctx.db
+      .from('enrollment_codes')
+      .update({ used_at: new Date().toISOString() })
+      .eq('tenant_id', ctx.user!.tid)
+      .eq('user_id', ctx.user!.sub)
+      .is('used_at', null)
+
+    const code = randomBytes(6).toString('base64url').toUpperCase().slice(0, 8)
+    const codeHash = createHash('sha256').update(code).digest('hex')
+    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString() // 24h
+
+    const { data, error } = await ctx.db
+      .from('enrollment_codes')
+      .insert({
+        tenant_id: ctx.user!.tid,
+        user_id: ctx.user!.sub,
+        created_by: ctx.user!.sub,
+        code,
+        code_hash: codeHash,
+        expires_at: expiresAt,
+      })
+      .select('code, expires_at')
+      .single()
+
+    if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+    return { code: data.code as string, expiresAt: data.expires_at as string }
+  }),
+
   grantConsent: protectedProcedure
     .input(z.object({ userAgent: z.string().max(500) }))
     .mutation(async ({ ctx, input }) => {
