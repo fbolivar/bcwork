@@ -36,6 +36,9 @@ import {
   GraduationCap,
   Gift,
   Video,
+  FileCheck,
+  Megaphone,
+  CalendarRange,
 } from 'lucide-react'
 import { trpc } from '@/lib/trpc-client'
 import { useRouter } from 'next/navigation'
@@ -64,6 +67,9 @@ const NAV = [
   { href: '/admin/training', label: 'Capacitación', icon: GraduationCap },
   { href: '/admin/benefits', label: 'Beneficios', icon: Gift },
   { href: '/admin/1on1s', label: 'Reuniones 1:1', icon: Video },
+  { href: '/admin/certificates', label: 'Certificados', icon: FileCheck },
+  { href: '/admin/announcements', label: 'Anuncios', icon: Megaphone },
+  { href: '/admin/company-calendar', label: 'Cal. empresa', icon: CalendarRange },
   { href: '/admin/integrations', label: 'Integraciones', icon: Plug },
   { href: '/admin/apps', label: 'Aplicaciones', icon: AppWindow },
   { href: '/admin/ips', label: 'IPs Corporativas', icon: Network },

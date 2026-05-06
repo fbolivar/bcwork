@@ -2477,6 +2477,76 @@ export const employeeRouter = router({
       return data ?? []
     }),
 
+  // ── Certificados laborales ──────────────────────────────────────────────
+  getMyCertificates: protectedProcedure.query(async ({ ctx }) => {
+    const { data, error } = await ctx.db
+      .from('labor_certificates' as any)
+      .select('*')
+      .eq('employee_id', ctx.user!.sub)
+      .eq('tenant_id', ctx.user!.tid)
+      .order('created_at', { ascending: false })
+    if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+    return data ?? []
+  }),
+
+  requestCertificate: protectedProcedure
+    .input(
+      z.object({
+        type: z.enum(['income', 'experience', 'paz_y_salvo', 'employment', 'other']),
+        reason: z.string().max(500).optional(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { error } = await ctx.db
+        .from('labor_certificates' as any)
+        .insert({
+          employee_id: ctx.user!.sub,
+          tenant_id: ctx.user!.tid,
+          type: input.type,
+          reason: input.reason ?? null,
+          status: 'pending',
+        })
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      return { ok: true }
+    }),
+
+  // ── Anuncios de empresa ──────────────────────────────────────────────────
+  getAnnouncements: protectedProcedure.query(async ({ ctx }) => {
+    const now = new Date().toISOString()
+    const { data, error } = await ctx.db
+      .from('announcements' as any)
+      .select('*, author:users!announcements_created_by_fkey(full_name)')
+      .eq('tenant_id', ctx.user!.tid)
+      .lte('published_at', now)
+      .or(`expires_at.is.null,expires_at.gt.${now}`)
+      .order('pinned', { ascending: false })
+      .order('published_at', { ascending: false })
+    if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+    return data ?? []
+  }),
+
+  // ── Calendario de empresa ────────────────────────────────────────────────
+  getCompanyCalendar: protectedProcedure
+    .input(
+      z.object({
+        year: z.number().int().min(2020).max(2100),
+        month: z.number().int().min(1).max(12),
+      }),
+    )
+    .query(async ({ ctx, input }) => {
+      const start = `${input.year}-${String(input.month).padStart(2, '0')}-01`
+      const end = new Date(input.year, input.month, 0).toISOString().slice(0, 10)
+      const { data, error } = await ctx.db
+        .from('company_events' as any)
+        .select('*')
+        .eq('tenant_id', ctx.user!.tid)
+        .gte('event_date', start)
+        .lte('event_date', end)
+        .order('event_date', { ascending: true })
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      return data ?? []
+    }),
+
   acknowledge1on1: protectedProcedure
     .input(z.object({ id: z.string().uuid(), notes: z.string().max(2000).optional() }))
     .mutation(async ({ ctx, input }) => {

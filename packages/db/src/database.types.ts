@@ -808,6 +808,57 @@ export type Database = {
           },
         ]
       }
+      announcements: {
+        Row: {
+          body: string
+          created_at: string
+          created_by: string | null
+          expires_at: string | null
+          id: string
+          pinned: boolean
+          published_at: string
+          tenant_id: string
+          title: string
+        }
+        Insert: {
+          body: string
+          created_at?: string
+          created_by?: string | null
+          expires_at?: string | null
+          id?: string
+          pinned?: boolean
+          published_at?: string
+          tenant_id: string
+          title: string
+        }
+        Update: {
+          body?: string
+          created_at?: string
+          created_by?: string | null
+          expires_at?: string | null
+          id?: string
+          pinned?: boolean
+          published_at?: string
+          tenant_id?: string
+          title?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "announcements_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "announcements_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       api_keys: {
         Row: {
           created_by: string | null
@@ -1212,6 +1263,63 @@ export type Database = {
           },
           {
             foreignKeyName: "break_sessions_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      company_events: {
+        Row: {
+          all_day: boolean
+          color: string
+          created_at: string
+          created_by: string | null
+          description: string | null
+          end_date: string | null
+          event_date: string
+          event_type: string
+          id: string
+          tenant_id: string
+          title: string
+        }
+        Insert: {
+          all_day?: boolean
+          color?: string
+          created_at?: string
+          created_by?: string | null
+          description?: string | null
+          end_date?: string | null
+          event_date: string
+          event_type?: string
+          id?: string
+          tenant_id: string
+          title: string
+        }
+        Update: {
+          all_day?: boolean
+          color?: string
+          created_at?: string
+          created_by?: string | null
+          description?: string | null
+          end_date?: string | null
+          event_date?: string
+          event_type?: string
+          id?: string
+          tenant_id?: string
+          title?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "company_events_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "company_events_tenant_id_fkey"
             columns: ["tenant_id"]
             isOneToOne: false
             referencedRelation: "tenants"
@@ -1794,6 +1902,57 @@ export type Database = {
             columns: ["to_user_id"]
             isOneToOne: false
             referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      labor_certificates: {
+        Row: {
+          created_at: string
+          employee_id: string
+          id: string
+          notes: string | null
+          ready_at: string | null
+          reason: string | null
+          status: string
+          tenant_id: string
+          type: string
+        }
+        Insert: {
+          created_at?: string
+          employee_id: string
+          id?: string
+          notes?: string | null
+          ready_at?: string | null
+          reason?: string | null
+          status?: string
+          tenant_id: string
+          type: string
+        }
+        Update: {
+          created_at?: string
+          employee_id?: string
+          id?: string
+          notes?: string | null
+          ready_at?: string | null
+          reason?: string | null
+          status?: string
+          tenant_id?: string
+          type?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "labor_certificates_employee_id_fkey"
+            columns: ["employee_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "labor_certificates_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
             referencedColumns: ["id"]
           },
         ]

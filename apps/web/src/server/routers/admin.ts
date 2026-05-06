@@ -2710,6 +2710,153 @@ export const adminRouter = router({
       return { ok: true }
     }),
 
+  // ── Certificados laborales ──────────────────────────────────────────────
+  listCertificateRequests: adminProcedure
+    .input(
+      z.object({
+        status: z.enum(['pending', 'ready', 'delivered', 'all']).default('all'),
+        employee_id: z.string().uuid().optional(),
+      }),
+    )
+    .query(async ({ ctx, input }) => {
+      let q = ctx.db
+        .from('labor_certificates' as any)
+        .select('*, employee:users!labor_certificates_employee_id_fkey(id,full_name,email)')
+        .eq('tenant_id', ctx.user!.tid)
+        .order('created_at', { ascending: false })
+      if (input.status !== 'all') q = q.eq('status', input.status)
+      if (input.employee_id) q = q.eq('employee_id', input.employee_id)
+      const { data, error } = await q
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      return data ?? []
+    }),
+
+  updateCertificateRequest: adminProcedure
+    .input(
+      z.object({
+        id: z.string().uuid(),
+        status: z.enum(['pending', 'ready', 'delivered']),
+        notes: z.string().max(1000).optional(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const patch: Record<string, unknown> = { status: input.status, notes: input.notes ?? null }
+      if (input.status === 'ready') patch.ready_at = new Date().toISOString()
+      const { error } = await ctx.db
+        .from('labor_certificates' as any)
+        .update(patch)
+        .eq('id', input.id)
+        .eq('tenant_id', ctx.user!.tid)
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      return { ok: true }
+    }),
+
+  // ── Anuncios ─────────────────────────────────────────────────────────────
+  listAnnouncements: adminProcedure.query(async ({ ctx }) => {
+    const { data, error } = await ctx.db
+      .from('announcements' as any)
+      .select('*, author:users!announcements_created_by_fkey(full_name)')
+      .eq('tenant_id', ctx.user!.tid)
+      .order('pinned', { ascending: false })
+      .order('published_at', { ascending: false })
+    if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+    return data ?? []
+  }),
+
+  createAnnouncement: adminProcedure
+    .input(
+      z.object({
+        title: z.string().min(1).max(200),
+        body: z.string().min(1).max(5000),
+        pinned: z.boolean().default(false),
+        published_at: z.string().optional(),
+        expires_at: z.string().optional(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { error } = await ctx.db
+        .from('announcements' as any)
+        .insert({
+          tenant_id: ctx.user!.tid,
+          created_by: ctx.user!.sub,
+          title: input.title,
+          body: input.body,
+          pinned: input.pinned,
+          published_at: input.published_at ?? new Date().toISOString(),
+          expires_at: input.expires_at ?? null,
+        })
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      return { ok: true }
+    }),
+
+  deleteAnnouncement: adminProcedure
+    .input(z.object({ id: z.string().uuid() }))
+    .mutation(async ({ ctx, input }) => {
+      const { error } = await ctx.db
+        .from('announcements' as any)
+        .delete()
+        .eq('id', input.id)
+        .eq('tenant_id', ctx.user!.tid)
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      return { ok: true }
+    }),
+
+  // ── Calendario de empresa ────────────────────────────────────────────────
+  listCompanyEvents: adminProcedure
+    .input(z.object({ year: z.number().int().min(2020).max(2100).optional() }))
+    .query(async ({ ctx, input }) => {
+      const year = input.year ?? new Date().getFullYear()
+      const { data, error } = await ctx.db
+        .from('company_events' as any)
+        .select('*')
+        .eq('tenant_id', ctx.user!.tid)
+        .gte('event_date', `${year}-01-01`)
+        .lte('event_date', `${year}-12-31`)
+        .order('event_date', { ascending: true })
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      return data ?? []
+    }),
+
+  createCompanyEvent: adminProcedure
+    .input(
+      z.object({
+        title: z.string().min(1).max(200),
+        description: z.string().max(1000).optional(),
+        event_date: z.string(),
+        end_date: z.string().optional(),
+        event_type: z
+          .enum(['holiday', 'corporate', 'birthday', 'payroll', 'other'])
+          .default('corporate'),
+        color: z.string().default('#3b82f6'),
+        all_day: z.boolean().default(true),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { error } = await ctx.db
+        .from('company_events' as any)
+        .insert({
+          ...input,
+          tenant_id: ctx.user!.tid,
+          created_by: ctx.user!.sub,
+          description: input.description ?? null,
+          end_date: input.end_date ?? null,
+        })
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      return { ok: true }
+    }),
+
+  deleteCompanyEvent: adminProcedure
+    .input(z.object({ id: z.string().uuid() }))
+    .mutation(async ({ ctx, input }) => {
+      const { error } = await ctx.db
+        .from('company_events' as any)
+        .delete()
+        .eq('id', input.id)
+        .eq('tenant_id', ctx.user!.tid)
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      return { ok: true }
+    }),
+
   delete1on1: adminProcedure
     .input(z.object({ id: z.string().uuid() }))
     .mutation(async ({ ctx, input }) => {
