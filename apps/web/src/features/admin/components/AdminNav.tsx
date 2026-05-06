@@ -18,6 +18,7 @@ import {
   Settings,
   LogOut,
   Download,
+  Briefcase,
 } from 'lucide-react'
 import { trpc } from '@/lib/trpc-client'
 import { useRouter } from 'next/navigation'
@@ -28,6 +29,7 @@ const NAV = [
   { href: '/admin/users', label: 'Usuarios', icon: Users },
   { href: '/admin/teams', label: 'Equipos', icon: Users2 },
   { href: '/admin/schedules', label: 'Horarios', icon: Clock },
+  { href: '/admin/projects', label: 'Proyectos', icon: Briefcase },
   { href: '/admin/apps', label: 'Aplicaciones', icon: AppWindow },
   { href: '/admin/ips', label: 'IPs Corporativas', icon: Network },
   { href: '/admin/devices', label: 'Dispositivos', icon: Monitor },

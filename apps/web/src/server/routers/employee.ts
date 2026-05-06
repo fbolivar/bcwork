@@ -886,4 +886,433 @@ export const employeeRouter = router({
       if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
       return { ok: true }
     }),
+
+  // ─── Ficha de asistencia ─────────────────────────────────────────────────
+
+  getMyTimesheet: protectedProcedure
+    .input(z.object({ year: z.number().int(), month: z.number().int().min(1).max(12) }))
+    .query(async ({ ctx, input }) => {
+      const { year, month } = input
+      const startDate = `${year}-${String(month).padStart(2, '0')}-01`
+      const endDate = new Date(year, month, 0).toISOString().slice(0, 10)
+
+      const [sessionsRes, metricsRes, scheduleRes] = await Promise.all([
+        ctx.db
+          .from('work_sessions')
+          .select('id, started_at, ended_at, active_seconds, idle_seconds, source, status')
+          .eq('user_id', ctx.user!.sub)
+          .eq('tenant_id', ctx.user!.tid)
+          .gte('started_at', `${startDate}T00:00:00`)
+          .lte('started_at', `${endDate}T23:59:59`)
+          .order('started_at', { ascending: true }),
+        ctx.db
+          .from('daily_user_metrics')
+          .select(
+            'metric_date, active_seconds, expected_seconds, overtime_seconds, productivity_ratio',
+          )
+          .eq('user_id', ctx.user!.sub)
+          .eq('tenant_id', ctx.user!.tid)
+          .gte('metric_date', startDate)
+          .lte('metric_date', endDate),
+        ctx.db
+          .from('user_schedules')
+          .select('work_schedules(days_of_week, weekly_hours, start_time, end_time)')
+          .eq('user_id', ctx.user!.sub)
+          .lte('effective_from', endDate)
+          .or(`effective_to.is.null,effective_to.gte.${startDate}`)
+          .order('effective_from', { ascending: false })
+          .limit(1)
+          .single(),
+      ])
+
+      const sessions = sessionsRes.data ?? []
+      const metrics = metricsRes.data ?? []
+      const schedule =
+        (scheduleRes.data?.work_schedules as {
+          days_of_week: number[]
+          weekly_hours: number
+          start_time: string
+          end_time: string
+        } | null) ?? null
+
+      // Group sessions by date
+      const sessionsByDate = new Map<string, typeof sessions>()
+      for (const s of sessions) {
+        const date = s.started_at.slice(0, 10)
+        if (!sessionsByDate.has(date)) sessionsByDate.set(date, [])
+        sessionsByDate.get(date)!.push(s)
+      }
+
+      // Build daily rows for each day of month
+      const daysInMonth = new Date(year, month, 0).getDate()
+      const workDays = (schedule?.days_of_week ?? [1, 2, 3, 4, 5]) as number[]
+      const expectedSecsPerDay = schedule?.weekly_hours
+        ? Math.round((schedule.weekly_hours * 3600) / workDays.length)
+        : 28800
+
+      const rows = []
+      for (let d = 1; d <= daysInMonth; d++) {
+        const date = `${year}-${String(month).padStart(2, '0')}-${String(d).padStart(2, '0')}`
+        const dow = new Date(date).getDay()
+        const isWorkDay = workDays.includes(dow)
+        const daySessions = sessionsByDate.get(date) ?? []
+        const metric = metrics.find((m) => m.metric_date === date)
+
+        const firstIn = daySessions.length > 0 ? daySessions[0]!.started_at : null
+        const lastOut =
+          daySessions.length > 0 ? daySessions[daySessions.length - 1]!.ended_at : null
+        const workedSecs =
+          metric?.active_seconds ?? daySessions.reduce((s, ws) => s + (ws.active_seconds ?? 0), 0)
+        const overtimeSecs = metric?.overtime_seconds ?? 0
+        const expectedSecs = metric?.expected_seconds ?? (isWorkDay ? expectedSecsPerDay : 0)
+        const productivityRatio = metric?.productivity_ratio ?? 0
+
+        let status: 'present' | 'partial' | 'absent' | 'non_work_day' | 'future'
+        const today = new Date().toISOString().slice(0, 10)
+        if (date > today) {
+          status = 'future'
+        } else if (!isWorkDay) {
+          status = 'non_work_day'
+        } else if (workedSecs === 0) {
+          status = 'absent'
+        } else if (expectedSecs > 0 && workedSecs / expectedSecs < 0.5) {
+          status = 'partial'
+        } else {
+          status = 'present'
+        }
+
+        rows.push({
+          date,
+          dow,
+          isWorkDay,
+          firstIn,
+          lastOut,
+          workedSecs,
+          expectedSecs,
+          overtimeSecs,
+          productivityRatio,
+          sessionCount: daySessions.length,
+          status,
+        })
+      }
+
+      return { rows, year, month }
+    }),
+
+  // ─── Check-in / Check-out manual ────────────────────────────────────────
+
+  manualCheckin: protectedProcedure.mutation(async ({ ctx }) => {
+    // Close any open manual sessions first
+    await ctx.db
+      .from('work_sessions')
+      .update({ ended_at: new Date().toISOString(), status: 'closed' })
+      .eq('user_id', ctx.user!.sub)
+      .eq('tenant_id', ctx.user!.tid)
+      .eq('source', 'manual')
+      .is('ended_at', null)
+
+    const { data, error } = await ctx.db
+      .from('work_sessions')
+      .insert({
+        tenant_id: ctx.user!.tid,
+        user_id: ctx.user!.sub,
+        started_at: new Date().toISOString(),
+        source: 'manual',
+        status: 'open',
+      })
+      .select('id, started_at')
+      .single()
+
+    if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+    return { ok: true, session: data }
+  }),
+
+  manualCheckout: protectedProcedure
+    .input(z.object({ session_id: z.string().uuid() }))
+    .mutation(async ({ ctx, input }) => {
+      const now = new Date().toISOString()
+      const { data: session, error: fetchError } = await ctx.db
+        .from('work_sessions')
+        .select('started_at')
+        .eq('id', input.session_id)
+        .eq('user_id', ctx.user!.sub)
+        .single()
+
+      if (fetchError || !session) throw new TRPCError({ code: 'NOT_FOUND' })
+
+      const durationSecs = Math.round((Date.now() - new Date(session.started_at).getTime()) / 1000)
+
+      const { error } = await ctx.db
+        .from('work_sessions')
+        .update({ ended_at: now, status: 'closed', active_seconds: durationSecs })
+        .eq('id', input.session_id)
+        .eq('user_id', ctx.user!.sub)
+
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      return { ok: true }
+    }),
+
+  getMyManualSession: protectedProcedure.query(async ({ ctx }) => {
+    const { data } = await ctx.db
+      .from('work_sessions')
+      .select('id, started_at, active_seconds')
+      .eq('user_id', ctx.user!.sub)
+      .eq('tenant_id', ctx.user!.tid)
+      .eq('source', 'manual')
+      .is('ended_at', null)
+      .order('started_at', { ascending: false })
+      .limit(1)
+      .single()
+
+    return data ?? null
+  }),
+
+  // ─── Calendario de asistencia ────────────────────────────────────────────
+
+  getMyAttendanceCalendar: protectedProcedure
+    .input(z.object({ year: z.number().int(), month: z.number().int().min(1).max(12) }))
+    .query(async ({ ctx, input }) => {
+      const { year, month } = input
+      const startDate = `${year}-${String(month).padStart(2, '0')}-01`
+      const endDate = new Date(year, month, 0).toISOString().slice(0, 10)
+
+      const [metricsRes, timeOffRes, scheduleRes] = await Promise.all([
+        ctx.db
+          .from('daily_user_metrics')
+          .select('metric_date, active_seconds, expected_seconds')
+          .eq('user_id', ctx.user!.sub)
+          .eq('tenant_id', ctx.user!.tid)
+          .gte('metric_date', startDate)
+          .lte('metric_date', endDate),
+        ctx.db
+          .from('time_off')
+          .select('starts_on, ends_on')
+          .eq('user_id', ctx.user!.sub)
+          .eq('tenant_id', ctx.user!.tid)
+          .eq('status', 'approved')
+          .lte('starts_on', endDate)
+          .gte('ends_on', startDate),
+        ctx.db
+          .from('user_schedules')
+          .select('work_schedules(days_of_week)')
+          .eq('user_id', ctx.user!.sub)
+          .lte('effective_from', endDate)
+          .or(`effective_to.is.null,effective_to.gte.${startDate}`)
+          .order('effective_from', { ascending: false })
+          .limit(1)
+          .single(),
+      ])
+
+      const metrics = metricsRes.data ?? []
+      const timeOff = timeOffRes.data ?? []
+      const workDays = ((scheduleRes.data?.work_schedules as { days_of_week: number[] } | null)
+        ?.days_of_week ?? [1, 2, 3, 4, 5]) as number[]
+
+      const timeOffDates = new Set<string>()
+      for (const to of timeOff) {
+        const start = new Date(to.starts_on)
+        const end = new Date(to.ends_on)
+        for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+          timeOffDates.add(d.toISOString().slice(0, 10))
+        }
+      }
+
+      const daysInMonth = new Date(year, month, 0).getDate()
+      const today = new Date().toISOString().slice(0, 10)
+      const days = []
+      let presentCount = 0,
+        partialCount = 0,
+        absentCount = 0,
+        timeOffCount = 0
+
+      for (let d = 1; d <= daysInMonth; d++) {
+        const date = `${year}-${String(month).padStart(2, '0')}-${String(d).padStart(2, '0')}`
+        const dow = new Date(date).getDay()
+        const isWorkDay = workDays.includes(dow)
+        const metric = metrics.find((m) => m.metric_date === date)
+        const isTimeOff = timeOffDates.has(date)
+
+        let status: 'present' | 'partial' | 'absent' | 'time_off' | 'non_work_day' | 'future'
+        if (date > today) {
+          status = 'future'
+        } else if (isTimeOff) {
+          status = 'time_off'
+          timeOffCount++
+        } else if (!isWorkDay) {
+          status = 'non_work_day'
+        } else {
+          const worked = metric?.active_seconds ?? 0
+          const expected = metric?.expected_seconds ?? 28800
+          if (worked === 0) {
+            status = 'absent'
+            absentCount++
+          } else if (worked / expected < 0.5) {
+            status = 'partial'
+            partialCount++
+          } else {
+            status = 'present'
+            presentCount++
+          }
+        }
+
+        days.push({ date, dow, status })
+      }
+
+      return {
+        days,
+        summary: { presentCount, partialCount, absentCount, timeOffCount },
+        year,
+        month,
+      }
+    }),
+
+  // ─── Bienestar laboral ───────────────────────────────────────────────────
+
+  getMyWellness: protectedProcedure
+    .input(z.object({ days: z.number().int().min(7).max(90).default(30) }))
+    .query(async ({ ctx, input }) => {
+      const since = new Date()
+      since.setDate(since.getDate() - input.days)
+      const sinceStr = since.toISOString().slice(0, 10)
+
+      const { data: metrics } = await ctx.db
+        .from('daily_user_metrics')
+        .select(
+          'metric_date, active_seconds, expected_seconds, overtime_seconds, productivity_ratio, focus_score',
+        )
+        .eq('user_id', ctx.user!.sub)
+        .eq('tenant_id', ctx.user!.tid)
+        .gte('metric_date', sinceStr)
+        .order('metric_date', { ascending: true })
+
+      const rows = metrics ?? []
+      const workDays = rows.filter((r) => (r.active_seconds ?? 0) > 0)
+      const totalDays = workDays.length
+
+      const avgDailyHours =
+        totalDays > 0
+          ? workDays.reduce((s, r) => s + (r.active_seconds ?? 0), 0) / totalDays / 3600
+          : 0
+      const avgProductivity =
+        totalDays > 0
+          ? workDays.reduce((s, r) => s + (r.productivity_ratio ?? 0), 0) / totalDays
+          : 0
+      const totalOvertime = rows.reduce((s, r) => s + (r.overtime_seconds ?? 0), 0)
+      const daysWithOvertime = rows.filter((r) => (r.overtime_seconds ?? 0) > 0).length
+      const avgFocusScore =
+        totalDays > 0 ? workDays.reduce((s, r) => s + (r.focus_score ?? 0), 0) / totalDays : 0
+
+      // Wellness score: 100 = perfect balance
+      // Factors: avg hours (ideal 7-8h), overtime frequency, productivity
+      const hoursFactor = Math.max(0, 1 - Math.abs(avgDailyHours - 7.5) / 7.5)
+      const overtimeFactor = totalDays > 0 ? Math.max(0, 1 - daysWithOvertime / totalDays) : 1
+      const productivityFactor = avgProductivity
+      const wellnessScore = Math.round(
+        (hoursFactor * 0.4 + overtimeFactor * 0.35 + productivityFactor * 0.25) * 100,
+      )
+
+      const overTimeSeries = rows.map((r) => ({
+        date: r.metric_date ?? '',
+        overtimeSecs: r.overtime_seconds ?? 0,
+        activeSecs: r.active_seconds ?? 0,
+      }))
+
+      return {
+        wellnessScore,
+        avgDailyHours: Math.round(avgDailyHours * 10) / 10,
+        avgProductivity: Math.round(avgProductivity * 100),
+        totalOvertimeSecs: totalOvertime,
+        daysWithOvertime,
+        totalDays,
+        avgFocusScore: Math.round(avgFocusScore * 10) / 10,
+        overTimeSeries,
+        days: input.days,
+      }
+    }),
+
+  // ─── Proyectos y tareas ──────────────────────────────────────────────────
+
+  getMyProjects: protectedProcedure.query(async ({ ctx }) => {
+    const { data, error } = await ctx.db
+      .from('projects')
+      .select('id, name, description, color, is_active, created_at')
+      .eq('tenant_id', ctx.user!.tid)
+      .eq('is_active', true)
+      .order('name')
+
+    if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+    return data ?? []
+  }),
+
+  getProjectTasks: protectedProcedure
+    .input(z.object({ project_id: z.string().uuid() }))
+    .query(async ({ ctx, input }) => {
+      const { data, error } = await ctx.db
+        .from('project_tasks')
+        .select('id, name, description, is_active')
+        .eq('project_id', input.project_id)
+        .eq('tenant_id', ctx.user!.tid)
+        .eq('is_active', true)
+        .order('name')
+
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      return data ?? []
+    }),
+
+  logProjectTime: protectedProcedure
+    .input(
+      z.object({
+        project_id: z.string().uuid(),
+        task_id: z.string().uuid().optional(),
+        started_at: z.string().datetime(),
+        ended_at: z.string().datetime(),
+        notes: z.string().max(500).optional(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const start = new Date(input.started_at)
+      const end = new Date(input.ended_at)
+      if (end <= start)
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'La hora de fin debe ser posterior al inicio',
+        })
+
+      const { data, error } = await ctx.db
+        .from('project_time_entries')
+        .insert({
+          tenant_id: ctx.user!.tid,
+          user_id: ctx.user!.sub,
+          project_id: input.project_id,
+          task_id: input.task_id ?? null,
+          started_at: input.started_at,
+          ended_at: input.ended_at,
+          notes: input.notes ?? null,
+        })
+        .select('id')
+        .single()
+
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      return { ok: true, id: data.id }
+    }),
+
+  getMyProjectEntries: protectedProcedure
+    .input(z.object({ days: z.number().int().min(1).max(90).default(30) }))
+    .query(async ({ ctx, input }) => {
+      const since = new Date()
+      since.setDate(since.getDate() - input.days)
+
+      const { data, error } = await ctx.db
+        .from('project_time_entries')
+        .select(
+          'id, started_at, ended_at, duration_seconds, notes, project_id, task_id, projects(name, color), project_tasks(name)',
+        )
+        .eq('user_id', ctx.user!.sub)
+        .eq('tenant_id', ctx.user!.tid)
+        .gte('started_at', since.toISOString())
+        .order('started_at', { ascending: false })
+
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      return data ?? []
+    }),
 })

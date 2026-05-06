@@ -19,12 +19,20 @@ import {
   CalendarDays,
   ActivitySquare,
   PenLine,
+  ClipboardList,
+  CalendarCheck,
+  Heart,
+  Briefcase,
 } from 'lucide-react'
 import { trpc } from '@/lib/trpc-client'
 
 const NAV = [
   { href: '/me/dashboard', label: 'Mi día', icon: LayoutDashboard },
   { href: '/me/metrics', label: 'Mi rendimiento', icon: BarChart2 },
+  { href: '/me/timesheet', label: 'Asistencia', icon: ClipboardList },
+  { href: '/me/attendance', label: 'Calendario', icon: CalendarCheck },
+  { href: '/me/wellness', label: 'Mi bienestar', icon: Heart },
+  { href: '/me/projects', label: 'Proyectos', icon: Briefcase },
   { href: '/me/sessions', label: 'Mis sesiones', icon: CalendarClock },
   { href: '/me/activity', label: 'Mi actividad', icon: ActivitySquare },
   { href: '/me/screenshots', label: 'Mis capturas', icon: Camera },

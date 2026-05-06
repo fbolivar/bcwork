@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { trpc } from '@/lib/trpc-client'
-import { Clock, Zap, Coffee, Shield } from 'lucide-react'
+import { Clock, Zap, Coffee, Shield, LogIn, LogOut } from 'lucide-react'
 
 function fmtHours(secs: number) {
   const h = Math.floor(secs / 3600)
@@ -15,9 +15,27 @@ function fmtTime(iso: string) {
 }
 
 export function MyDayPanel() {
+  const utils = trpc.useUtils()
   const { data: session, refetch: refetchSession } = trpc.employee.getActiveSession.useQuery()
   const { data: today, refetch: refetchToday } = trpc.employee.getTodayActivity.useQuery()
   const { data: schedule } = trpc.employee.getMySchedule.useQuery()
+  const { data: manualSession, refetch: refetchManual } =
+    trpc.employee.getMyManualSession.useQuery()
+
+  const checkin = trpc.employee.manualCheckin.useMutation({
+    onSuccess: () => {
+      void refetchManual()
+      void refetchSession()
+      void utils.employee.getTodayActivity.invalidate()
+    },
+  })
+  const checkout = trpc.employee.manualCheckout.useMutation({
+    onSuccess: () => {
+      void refetchManual()
+      void refetchSession()
+      void utils.employee.getTodayActivity.invalidate()
+    },
+  })
 
   // Reloj en vivo
   const [now, setNow] = useState(Date.now())
@@ -75,6 +93,49 @@ export function MyDayPanel() {
           </div>
         )}
       </div>
+
+      {/* Check-in / Check-out manual — solo visible si no hay sesión activa del agente */}
+      {!session && (
+        <div className="rounded-xl border border-gray-200 bg-white p-4">
+          <h3 className="mb-3 text-sm font-semibold text-gray-700">Check-in manual</h3>
+          {manualSession ? (
+            <div className="space-y-3">
+              <div className="flex items-center gap-2">
+                <div className="h-2 w-2 animate-pulse rounded-full bg-green-500" />
+                <span className="text-sm text-gray-700">
+                  Sesión manual activa desde las{' '}
+                  <strong>{fmtTime(manualSession.started_at)}</strong>
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => checkout.mutate({ session_id: manualSession.id })}
+                disabled={checkout.isPending}
+                className="flex w-full items-center justify-center gap-2 rounded-lg border border-red-200 py-2.5 text-sm font-medium text-red-600 hover:bg-red-50 disabled:opacity-50"
+              >
+                <LogOut className="h-4 w-4" />
+                {checkout.isPending ? 'Registrando salida…' : 'Registrar salida'}
+              </button>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              <p className="text-xs text-gray-500">
+                El agente no está activo. Puedes registrar tu entrada manualmente para que quede
+                constancia de tu jornada.
+              </p>
+              <button
+                type="button"
+                onClick={() => checkin.mutate()}
+                disabled={checkin.isPending}
+                className="flex w-full items-center justify-center gap-2 rounded-lg bg-blue-600 py-2.5 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+              >
+                <LogIn className="h-4 w-4" />
+                {checkin.isPending ? 'Registrando…' : 'Registrar entrada'}
+              </button>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Resumen del día */}
       <div className="grid gap-4 sm:grid-cols-3">

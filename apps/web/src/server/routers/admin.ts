@@ -1481,4 +1481,142 @@ export const adminRouter = router({
 
       return { ok: true, date, rows: totalRows }
     }),
+
+  // ─── Proyectos ────────────────────────────────────────────────────────────
+
+  listProjects: adminProcedure.query(async ({ ctx }) => {
+    const { data, error } = await ctx.db
+      .from('projects')
+      .select('id, name, description, color, is_active, created_at, created_by')
+      .eq('tenant_id', ctx.user!.tid)
+      .order('name')
+
+    if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+    return data ?? []
+  }),
+
+  createProject: adminProcedure
+    .input(
+      z.object({
+        name: z.string().min(1).max(100),
+        description: z.string().max(500).optional(),
+        color: z
+          .string()
+          .regex(/^#[0-9a-fA-F]{6}$/)
+          .default('#3b82f6'),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { data, error } = await ctx.db
+        .from('projects')
+        .insert({
+          tenant_id: ctx.user!.tid,
+          name: input.name,
+          description: input.description ?? null,
+          color: input.color,
+          created_by: ctx.user!.sub,
+        })
+        .select('id')
+        .single()
+
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      return { ok: true, id: data.id }
+    }),
+
+  updateProject: adminProcedure
+    .input(
+      z.object({
+        id: z.string().uuid(),
+        name: z.string().min(1).max(100).optional(),
+        description: z.string().max(500).optional(),
+        color: z
+          .string()
+          .regex(/^#[0-9a-fA-F]{6}$/)
+          .optional(),
+        is_active: z.boolean().optional(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { id, ...fields } = input
+      const { error } = await ctx.db
+        .from('projects')
+        .update({ ...fields, updated_at: new Date().toISOString() })
+        .eq('id', id)
+        .eq('tenant_id', ctx.user!.tid)
+
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      return { ok: true }
+    }),
+
+  deleteProject: adminProcedure
+    .input(z.object({ id: z.string().uuid() }))
+    .mutation(async ({ ctx, input }) => {
+      const { error } = await ctx.db
+        .from('projects')
+        .delete()
+        .eq('id', input.id)
+        .eq('tenant_id', ctx.user!.tid)
+
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      return { ok: true }
+    }),
+
+  listProjectTasks: adminProcedure
+    .input(z.object({ project_id: z.string().uuid() }))
+    .query(async ({ ctx, input }) => {
+      const { data, error } = await ctx.db
+        .from('project_tasks')
+        .select('id, name, description, is_active, created_at')
+        .eq('project_id', input.project_id)
+        .eq('tenant_id', ctx.user!.tid)
+        .order('name')
+
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      return data ?? []
+    }),
+
+  createProjectTask: adminProcedure
+    .input(
+      z.object({
+        project_id: z.string().uuid(),
+        name: z.string().min(1).max(100),
+        description: z.string().max(500).optional(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { data, error } = await ctx.db
+        .from('project_tasks')
+        .insert({
+          tenant_id: ctx.user!.tid,
+          project_id: input.project_id,
+          name: input.name,
+          description: input.description ?? null,
+        })
+        .select('id')
+        .single()
+
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      return { ok: true, id: data.id }
+    }),
+
+  updateProjectTask: adminProcedure
+    .input(
+      z.object({
+        id: z.string().uuid(),
+        name: z.string().min(1).max(100).optional(),
+        description: z.string().max(500).optional(),
+        is_active: z.boolean().optional(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { id, ...fields } = input
+      const { error } = await ctx.db
+        .from('project_tasks')
+        .update(fields)
+        .eq('id', id)
+        .eq('tenant_id', ctx.user!.tid)
+
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      return { ok: true }
+    }),
 })

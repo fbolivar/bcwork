@@ -1248,6 +1248,79 @@ export type Database = {
           },
         ]
       }
+      manual_time_entries: {
+        Row: {
+          approved_by: string | null
+          created_at: string | null
+          description: string
+          duration_minutes: number | null
+          ended_at: string
+          entry_date: string
+          entry_type: string
+          id: string
+          review_note: string | null
+          reviewed_at: string | null
+          started_at: string
+          status: string
+          tenant_id: string
+          user_id: string
+        }
+        Insert: {
+          approved_by?: string | null
+          created_at?: string | null
+          description: string
+          duration_minutes?: number | null
+          ended_at: string
+          entry_date: string
+          entry_type?: string
+          id?: string
+          review_note?: string | null
+          reviewed_at?: string | null
+          started_at: string
+          status?: string
+          tenant_id: string
+          user_id: string
+        }
+        Update: {
+          approved_by?: string | null
+          created_at?: string | null
+          description?: string
+          duration_minutes?: number | null
+          ended_at?: string
+          entry_date?: string
+          entry_type?: string
+          id?: string
+          review_note?: string | null
+          reviewed_at?: string | null
+          started_at?: string
+          status?: string
+          tenant_id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "manual_time_entries_approved_by_fkey"
+            columns: ["approved_by"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "manual_time_entries_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "manual_time_entries_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       notifications: {
         Row: {
           body: string | null
@@ -1287,6 +1360,13 @@ export type Database = {
         }
         Relationships: [
           {
+            foreignKeyName: "notifications_sent_by_fkey"
+            columns: ["sent_by"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "notifications_tenant_id_fkey"
             columns: ["tenant_id"]
             isOneToOne: false
@@ -1296,13 +1376,6 @@ export type Database = {
           {
             foreignKeyName: "notifications_user_id_fkey"
             columns: ["user_id"]
-            isOneToOne: false
-            referencedRelation: "users"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "notifications_sent_by_fkey"
-            columns: ["sent_by"]
             isOneToOne: false
             referencedRelation: "users"
             referencedColumns: ["id"]
@@ -1378,6 +1451,156 @@ export type Database = {
         }
         Relationships: []
       }
+      project_tasks: {
+        Row: {
+          created_at: string | null
+          description: string | null
+          id: string
+          is_active: boolean | null
+          name: string
+          project_id: string
+          tenant_id: string
+        }
+        Insert: {
+          created_at?: string | null
+          description?: string | null
+          id?: string
+          is_active?: boolean | null
+          name: string
+          project_id: string
+          tenant_id: string
+        }
+        Update: {
+          created_at?: string | null
+          description?: string | null
+          id?: string
+          is_active?: boolean | null
+          name?: string
+          project_id?: string
+          tenant_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "project_tasks_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "project_tasks_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      project_time_entries: {
+        Row: {
+          created_at: string | null
+          duration_seconds: number | null
+          ended_at: string | null
+          id: string
+          notes: string | null
+          project_id: string
+          started_at: string
+          task_id: string | null
+          tenant_id: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string | null
+          duration_seconds?: number | null
+          ended_at?: string | null
+          id?: string
+          notes?: string | null
+          project_id: string
+          started_at: string
+          task_id?: string | null
+          tenant_id: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string | null
+          duration_seconds?: number | null
+          ended_at?: string | null
+          id?: string
+          notes?: string | null
+          project_id?: string
+          started_at?: string
+          task_id?: string | null
+          tenant_id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "project_time_entries_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "project_time_entries_task_id_fkey"
+            columns: ["task_id"]
+            isOneToOne: false
+            referencedRelation: "project_tasks"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "project_time_entries_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      projects: {
+        Row: {
+          color: string | null
+          created_at: string | null
+          created_by: string | null
+          description: string | null
+          id: string
+          is_active: boolean | null
+          name: string
+          tenant_id: string
+          updated_at: string | null
+        }
+        Insert: {
+          color?: string | null
+          created_at?: string | null
+          created_by?: string | null
+          description?: string | null
+          id?: string
+          is_active?: boolean | null
+          name: string
+          tenant_id: string
+          updated_at?: string | null
+        }
+        Update: {
+          color?: string | null
+          created_at?: string | null
+          created_by?: string | null
+          description?: string | null
+          id?: string
+          is_active?: boolean | null
+          name?: string
+          tenant_id?: string
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "projects_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       scheduled_reports: {
         Row: {
           created_by: string
@@ -1434,6 +1657,77 @@ export type Database = {
             columns: ["tenant_id"]
             isOneToOne: false
             referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      screenshots: {
+        Row: {
+          created_at: string | null
+          device_id: string | null
+          height: number | null
+          id: string
+          session_id: string | null
+          storage_path: string
+          taken_at: string
+          tenant_id: string
+          thumbnail_path: string | null
+          user_id: string
+          width: number | null
+        }
+        Insert: {
+          created_at?: string | null
+          device_id?: string | null
+          height?: number | null
+          id?: string
+          session_id?: string | null
+          storage_path: string
+          taken_at?: string
+          tenant_id: string
+          thumbnail_path?: string | null
+          user_id: string
+          width?: number | null
+        }
+        Update: {
+          created_at?: string | null
+          device_id?: string | null
+          height?: number | null
+          id?: string
+          session_id?: string | null
+          storage_path?: string
+          taken_at?: string
+          tenant_id?: string
+          thumbnail_path?: string | null
+          user_id?: string
+          width?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "screenshots_device_id_fkey"
+            columns: ["device_id"]
+            isOneToOne: false
+            referencedRelation: "agent_devices"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "screenshots_session_id_fkey"
+            columns: ["session_id"]
+            isOneToOne: false
+            referencedRelation: "work_sessions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "screenshots_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "screenshots_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
             referencedColumns: ["id"]
           },
         ]
@@ -1577,97 +1871,6 @@ export type Database = {
           timezone?: string | null
           trade_name?: string | null
           updated_at?: string | null
-        }
-        Relationships: []
-      }
-      manual_time_entries: {
-        Row: {
-          id: string
-          tenant_id: string
-          user_id: string
-          entry_date: string
-          started_at: string
-          ended_at: string
-          duration_minutes: number | null
-          entry_type: string
-          description: string
-          status: string
-          approved_by: string | null
-          review_note: string | null
-          reviewed_at: string | null
-          created_at: string | null
-        }
-        Insert: {
-          id?: string
-          tenant_id: string
-          user_id: string
-          entry_date: string
-          started_at: string
-          ended_at: string
-          entry_type?: string
-          description: string
-          status?: string
-          approved_by?: string | null
-          review_note?: string | null
-          reviewed_at?: string | null
-          created_at?: string | null
-        }
-        Update: {
-          id?: string
-          tenant_id?: string
-          user_id?: string
-          entry_date?: string
-          started_at?: string
-          ended_at?: string
-          entry_type?: string
-          description?: string
-          status?: string
-          approved_by?: string | null
-          review_note?: string | null
-          reviewed_at?: string | null
-          created_at?: string | null
-        }
-        Relationships: []
-      }
-      screenshots: {
-        Row: {
-          id: string
-          tenant_id: string
-          user_id: string
-          device_id: string | null
-          session_id: string | null
-          taken_at: string
-          storage_path: string
-          thumbnail_path: string | null
-          width: number | null
-          height: number | null
-          created_at: string | null
-        }
-        Insert: {
-          id?: string
-          tenant_id: string
-          user_id: string
-          device_id?: string | null
-          session_id?: string | null
-          taken_at?: string
-          storage_path: string
-          thumbnail_path?: string | null
-          width?: number | null
-          height?: number | null
-          created_at?: string | null
-        }
-        Update: {
-          id?: string
-          tenant_id?: string
-          user_id?: string
-          device_id?: string | null
-          session_id?: string | null
-          taken_at?: string
-          storage_path?: string
-          thumbnail_path?: string | null
-          width?: number | null
-          height?: number | null
-          created_at?: string | null
         }
         Relationships: []
       }
@@ -2295,4 +2498,3 @@ export const Constants = {
     Enums: {},
   },
 } as const
-
