@@ -381,15 +381,12 @@ export function MySessionsPanel() {
                     </p>
                     {e.reason && <p className="mt-0.5 text-xs text-gray-500">{e.reason}</p>}
                     {/* #9 — motivo de rechazo */}
-                    {e.status === 'rejected' &&
-                      (e as { review_note?: string | null }).review_note && (
-                        <div className="mt-1.5 flex items-start gap-1.5 rounded-md bg-red-50 px-2.5 py-1.5">
-                          <XCircle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-red-500" />
-                          <p className="text-xs text-red-700">
-                            {(e as { review_note?: string | null }).review_note}
-                          </p>
-                        </div>
-                      )}
+                    {e.status === 'rejected' && e.review_note && (
+                      <div className="mt-1.5 flex items-start gap-1.5 rounded-md bg-red-50 px-2.5 py-1.5">
+                        <XCircle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-red-500" />
+                        <p className="text-xs text-red-700">{e.review_note}</p>
+                      </div>
+                    )}
                   </div>
                   <span
                     className={`shrink-0 rounded-full px-2.5 py-0.5 text-xs font-medium ${STATUS_COLORS[e.status ?? 'pending'] ?? 'bg-gray-100 text-gray-600'}`}

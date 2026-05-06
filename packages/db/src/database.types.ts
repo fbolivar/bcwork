@@ -23,6 +23,7 @@ export type Database = {
           payload: Json
           proposed_by: string
           reason: string | null
+          review_note: string | null
           reviewed_at: string | null
           reviewed_by: string | null
           status: string | null
@@ -37,6 +38,7 @@ export type Database = {
           payload: Json
           proposed_by: string
           reason?: string | null
+          review_note?: string | null
           reviewed_at?: string | null
           reviewed_by?: string | null
           status?: string | null
@@ -51,6 +53,7 @@ export type Database = {
           payload?: Json
           proposed_by?: string
           reason?: string | null
+          review_note?: string | null
           reviewed_at?: string | null
           reviewed_by?: string | null
           status?: string | null
