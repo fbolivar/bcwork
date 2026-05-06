@@ -768,4 +768,115 @@ export const employeeRouter = router({
       correction_requests: editsRes.data ?? [],
     }
   }),
+
+  // ─── Registro de tiempo manual ────────────────────────────────────────────
+
+  getMyManualTimeEntries: protectedProcedure
+    .input(
+      z.object({
+        days: z.number().int().min(1).max(90).default(30),
+      }),
+    )
+    .query(async ({ ctx, input }) => {
+      const from = new Date(Date.now() - input.days * 86400000).toISOString().slice(0, 10)
+
+      const { data, error } = await ctx.db
+        .from('manual_time_entries')
+        .select(
+          'id, entry_date, started_at, ended_at, duration_minutes, entry_type, description, status, review_note, reviewed_at, created_at',
+        )
+        .eq('tenant_id', ctx.user!.tid)
+        .eq('user_id', ctx.user!.sub)
+        .gte('entry_date', from)
+        .order('entry_date', { ascending: false })
+        .order('started_at', { ascending: false })
+        .limit(100)
+
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      return data ?? []
+    }),
+
+  createManualTimeEntry: protectedProcedure
+    .input(
+      z.object({
+        entry_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+        started_at: z.string().regex(/^\d{2}:\d{2}$/),
+        ended_at: z.string().regex(/^\d{2}:\d{2}$/),
+        entry_type: z.enum(['meeting', 'call', 'travel', 'training', 'offline_work', 'other']),
+        description: z.string().min(5).max(500),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      if (input.ended_at <= input.started_at) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'La hora de fin debe ser posterior a la de inicio',
+        })
+      }
+
+      // No permitir entradas en el futuro
+      const today = new Date().toISOString().slice(0, 10)
+      if (input.entry_date > today) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'No puedes registrar tiempo en el futuro',
+        })
+      }
+
+      const { data, error } = await ctx.db
+        .from('manual_time_entries')
+        .insert({
+          tenant_id: ctx.user!.tid,
+          user_id: ctx.user!.sub,
+          entry_date: input.entry_date,
+          started_at: input.started_at,
+          ended_at: input.ended_at,
+          entry_type: input.entry_type,
+          description: input.description,
+          status: 'pending',
+        } as import('@bcwork/db').Database['public']['Tables']['manual_time_entries']['Insert'])
+        .select('id')
+        .single()
+
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+
+      // Notificar a managers
+      const { data: managers } = await ctx.db
+        .from('users')
+        .select('id')
+        .eq('tenant_id', ctx.user!.tid)
+        .in('role', ['manager', 'tenant_admin'])
+        .eq('status', 'active')
+
+      if (managers && managers.length > 0) {
+        await ctx.db.from('notifications').insert(
+          managers.map((m) => ({
+            tenant_id: ctx.user!.tid,
+            user_id: m.id,
+            channel: 'in_app' as const,
+            title: 'Nueva entrada de tiempo manual',
+            body: `Un empleado registró tiempo manual (${input.entry_type}) para el ${input.entry_date}.`,
+            sent_by: ctx.user!.sub,
+          })),
+        )
+        broadcastNotificationToMany(managers.map((m) => m.id))
+      }
+
+      return { ok: true, id: data.id }
+    }),
+
+  cancelManualTimeEntry: protectedProcedure
+    .input(z.object({ id: z.string().uuid() }))
+    .mutation(async ({ ctx, input }) => {
+      const { error } = await ctx.db
+        .from('manual_time_entries')
+        .delete()
+        .eq('id', input.id)
+        .eq('user_id', ctx.user!.sub)
+        .eq('tenant_id', ctx.user!.tid)
+        .eq('status', 'pending')
+
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      return { ok: true }
+    }),
 })

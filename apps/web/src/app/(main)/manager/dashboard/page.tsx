@@ -5,6 +5,7 @@ import { trpc } from '@/lib/trpc-client'
 import { ActiveSessionsPanel } from '@/features/manager/components/ActiveSessionsPanel'
 import { TeamOverview } from '@/features/manager/components/TeamOverview'
 import { TimeOffPanel } from '@/features/manager/components/TimeOffPanel'
+import { ManualTimePanel } from '@/features/manager/components/ManualTimePanel'
 
 const GeoLocationWidget = dynamic(
   () =>
@@ -290,6 +291,10 @@ export default function ManagerDashboard() {
 
       <section>
         <TimeOffPanel />
+      </section>
+
+      <section>
+        <ManualTimePanel />
       </section>
 
       <section>

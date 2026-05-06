@@ -1580,6 +1580,55 @@ export type Database = {
         }
         Relationships: []
       }
+      manual_time_entries: {
+        Row: {
+          id: string
+          tenant_id: string
+          user_id: string
+          entry_date: string
+          started_at: string
+          ended_at: string
+          duration_minutes: number | null
+          entry_type: string
+          description: string
+          status: string
+          approved_by: string | null
+          review_note: string | null
+          reviewed_at: string | null
+          created_at: string | null
+        }
+        Insert: {
+          id?: string
+          tenant_id: string
+          user_id: string
+          entry_date: string
+          started_at: string
+          ended_at: string
+          entry_type?: string
+          description: string
+          status?: string
+          approved_by?: string | null
+          review_note?: string | null
+          reviewed_at?: string | null
+          created_at?: string | null
+        }
+        Update: {
+          id?: string
+          tenant_id?: string
+          user_id?: string
+          entry_date?: string
+          started_at?: string
+          ended_at?: string
+          entry_type?: string
+          description?: string
+          status?: string
+          approved_by?: string | null
+          review_note?: string | null
+          reviewed_at?: string | null
+          created_at?: string | null
+        }
+        Relationships: []
+      }
       screenshots: {
         Row: {
           id: string

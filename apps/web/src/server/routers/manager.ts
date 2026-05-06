@@ -718,6 +718,92 @@ export const managerRouter = router({
       }))
     }),
 
+  // ─── Tiempo manual ────────────────────────────────────────────────────────
+
+  getManualTimeEntries: managerProcedure
+    .input(
+      z.object({ status: z.enum(['pending', 'approved', 'rejected', 'all']).default('pending') }),
+    )
+    .query(async ({ ctx, input }) => {
+      let q = ctx.db
+        .from('manual_time_entries')
+        .select(
+          'id, entry_date, started_at, ended_at, duration_minutes, entry_type, description, status, review_note, created_at, user_id, users!manual_time_entries_user_id_fkey(full_name, email)',
+        )
+        .eq('tenant_id', ctx.user!.tid)
+        .order('entry_date', { ascending: false })
+        .limit(100)
+
+      if (input.status !== 'all') q = q.eq('status', input.status)
+
+      const { data, error } = await q
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+
+      return (data ?? []).map((r) => ({
+        id: r.id,
+        entry_date: r.entry_date,
+        started_at: r.started_at,
+        ended_at: r.ended_at,
+        duration_minutes: r.duration_minutes,
+        entry_type: r.entry_type,
+        description: r.description,
+        status: r.status,
+        review_note: r.review_note,
+        created_at: r.created_at,
+        user_id: r.user_id,
+        user_name: (r.users as unknown as { full_name: string | null } | null)?.full_name ?? null,
+        user_email: (r.users as unknown as { email: string } | null)?.email ?? null,
+      }))
+    }),
+
+  reviewManualTimeEntry: managerProcedure
+    .input(
+      z.object({
+        id: z.string().uuid(),
+        status: z.enum(['approved', 'rejected']),
+        review_note: z.string().max(500).optional(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { data: existing, error: fetchErr } = await ctx.db
+        .from('manual_time_entries')
+        .select('user_id, entry_date, entry_type, status')
+        .eq('id', input.id)
+        .eq('tenant_id', ctx.user!.tid)
+        .single()
+
+      if (fetchErr || !existing)
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Entrada no encontrada' })
+      if (existing.status !== 'pending')
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Esta entrada ya fue revisada' })
+
+      const { error } = await ctx.db
+        .from('manual_time_entries')
+        .update({
+          status: input.status,
+          approved_by: ctx.user!.sub,
+          review_note: input.review_note ?? null,
+          reviewed_at: new Date().toISOString(),
+        })
+        .eq('id', input.id)
+        .eq('tenant_id', ctx.user!.tid)
+
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+
+      const label = input.status === 'approved' ? 'aprobada' : 'rechazada'
+      await ctx.db.from('notifications').insert({
+        tenant_id: ctx.user!.tid,
+        user_id: existing.user_id,
+        channel: 'in_app',
+        title: `Entrada de tiempo manual ${label}`,
+        body: `Tu registro de ${existing.entry_type} del ${existing.entry_date} fue ${label}.`,
+        sent_by: ctx.user!.sub,
+      })
+      broadcastNotificationToMany([existing.user_id])
+
+      return { ok: true }
+    }),
+
   reviewTimeOff: managerProcedure
     .input(
       z.object({
