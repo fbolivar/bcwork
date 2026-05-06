@@ -28,26 +28,31 @@ async function maybeUpdateUserGeo(
   if (Date.now() - last < GEO_REFRESH_MS) return
   _userGeoTs.set(userId, Date.now())
   try {
-    const res = await fetch(`http://ip-api.com/json/${ip}?fields=status,country,city,lat,lon`, {
-      signal: AbortSignal.timeout(4000),
+    // ipinfo.io: HTTPS, free 50k/month, no key needed
+    const res = await fetch(`https://ipinfo.io/${ip}/json`, {
+      signal: AbortSignal.timeout(5000),
     })
     const geo = (await res.json()) as {
-      status: string
-      country: string
-      city: string
-      lat: number
-      lon: number
+      city?: string
+      country?: string
+      loc?: string // "lat,lon"
     }
-    if (geo.status === 'success') {
-      void db
-        .from('users')
-        .update({
-          geo_country: geo.country,
-          geo_city: geo.city,
-          geo_lat: geo.lat,
-          geo_lon: geo.lon,
-        })
-        .eq('id', userId)
+    if (geo.loc) {
+      const [latStr, lonStr] = geo.loc.split(',')
+      const lat = parseFloat(latStr ?? '')
+      const lon = parseFloat(lonStr ?? '')
+      if (!isNaN(lat) && !isNaN(lon)) {
+        // Must await — Supabase JS v2 only executes when .then() / await is called
+        await db
+          .from('users')
+          .update({
+            geo_country: geo.country ?? null,
+            geo_city: geo.city ?? null,
+            geo_lat: lat,
+            geo_lon: lon,
+          })
+          .eq('id', userId)
+      }
     }
   } catch {
     /* fail silently */

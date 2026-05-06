@@ -34,42 +34,36 @@ async function geolocateBatch(ips: string[]): Promise<Map<string, GeoInfo>> {
     else toFetch.push(ip)
   }
   if (toFetch.length > 0) {
-    try {
-      const res = await fetch(
-        'http://ip-api.com/batch?fields=status,query,countryCode,country,city,lat,lon',
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(toFetch.slice(0, 100)),
-          signal: AbortSignal.timeout(5000),
-        },
-      )
-      const data = (await res.json()) as Array<{
-        status: string
-        query: string
-        countryCode: string
-        country: string
-        city: string
-        lat: number
-        lon: number
-      }>
-      for (const g of data) {
-        if (g.status === 'success') {
-          const info: GeoInfo = {
-            countryCode: g.countryCode,
-            country: g.country,
-            city: g.city,
-            lat: g.lat,
-            lon: g.lon,
-            ts: Date.now(),
+    // ipinfo.io: HTTPS, free 50k/month, no key needed
+    await Promise.allSettled(
+      toFetch.slice(0, 20).map(async (ip) => {
+        try {
+          const res = await fetch(`https://ipinfo.io/${ip}/json`, {
+            signal: AbortSignal.timeout(5000),
+          })
+          const geo = (await res.json()) as { city?: string; country?: string; loc?: string }
+          if (geo.loc) {
+            const [latStr, lonStr] = geo.loc.split(',')
+            const lat = parseFloat(latStr ?? '')
+            const lon = parseFloat(lonStr ?? '')
+            if (!isNaN(lat) && !isNaN(lon)) {
+              const info: GeoInfo = {
+                countryCode: geo.country ?? '',
+                country: geo.country ?? '',
+                city: geo.city ?? '',
+                lat,
+                lon,
+                ts: Date.now(),
+              }
+              _geoCache.set(ip, info)
+              result.set(ip, info)
+            }
           }
-          _geoCache.set(g.query, info)
-          result.set(g.query, info)
+        } catch {
+          /* fail silently */
         }
-      }
-    } catch {
-      /* fail silently */
-    }
+      }),
+    )
   }
   return result
 }
