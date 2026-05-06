@@ -13,9 +13,93 @@ import {
   UserPlus,
   Crown,
   Check,
+  CalendarDays,
 } from 'lucide-react'
 
 // ── TeamCard ──────────────────────────────────────────────────────────────────
+
+function AssignTeamScheduleModal({
+  team,
+  onClose,
+}: {
+  team: { id: string; name: string }
+  onClose: () => void
+}) {
+  const [scheduleId, setScheduleId] = useState('')
+  const { data: schedules } = trpc.admin.listSchedules.useQuery()
+  const assign = trpc.admin.assignScheduleToTeam.useMutation({ onSuccess: onClose })
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <div className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-xl">
+        <div className="mb-5 flex items-center justify-between">
+          <div>
+            <h2 className="text-base font-semibold text-gray-900">Asignar horario al equipo</h2>
+            <p className="mt-0.5 text-xs text-gray-400">{team.name}</p>
+          </div>
+          <button
+            type="button"
+            title="Cerrar"
+            onClick={onClose}
+            className="rounded-lg p-1.5 text-gray-400 hover:bg-gray-100"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        <div>
+          <label
+            htmlFor="team-schedule-select"
+            className="mb-1.5 block text-xs font-medium text-gray-600"
+          >
+            Horario laboral
+          </label>
+          <select
+            id="team-schedule-select"
+            value={scheduleId}
+            onChange={(e) => setScheduleId(e.target.value)}
+            className="w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+          >
+            <option value="">Seleccionar horario...</option>
+            {(schedules ?? []).map((s) => (
+              <option key={s.id} value={s.id}>
+                {s.name} — {s.start_time} a {s.end_time}
+              </option>
+            ))}
+          </select>
+          <p className="mt-1.5 text-[11px] text-gray-400">
+            Se asignará este horario a todos los miembros actuales del equipo.
+          </p>
+        </div>
+
+        {assign.isError && <p className="mt-3 text-xs text-red-500">{assign.error.message}</p>}
+        {assign.data && (
+          <p className="mt-3 text-xs text-green-600">
+            ✓ Horario asignado a {assign.data.count} miembros
+          </p>
+        )}
+
+        <div className="mt-5 flex gap-2">
+          <button
+            type="button"
+            onClick={() => assign.mutate({ teamId: team.id, scheduleId: scheduleId || null })}
+            disabled={assign.isPending || !scheduleId}
+            className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+          >
+            {assign.isPending ? 'Asignando...' : 'Asignar a todo el equipo'}
+          </button>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-lg border border-gray-200 px-4 py-2 text-sm text-gray-500 hover:bg-gray-50"
+          >
+            Cancelar
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
 
 function TeamCard({
   team,
@@ -32,6 +116,7 @@ function TeamCard({
   const [editDesc, setEditDesc] = useState(team.description ?? '')
   const [addUserId, setAddUserId] = useState('')
   const [addRole, setAddRole] = useState<'lead' | 'member'>('member')
+  const [assigningSchedule, setAssigningSchedule] = useState(false)
 
   const utils = trpc.useUtils()
 
@@ -133,6 +218,15 @@ function TeamCard({
           <div className="flex items-center gap-1">
             <button
               type="button"
+              onClick={() => setAssigningSchedule(true)}
+              className="flex items-center gap-1 rounded px-2 py-1 text-xs font-medium text-blue-600 hover:bg-blue-50"
+              title="Asignar horario al equipo"
+            >
+              <CalendarDays className="h-3.5 w-3.5" />
+              Horario
+            </button>
+            <button
+              type="button"
               onClick={() => setEditing(true)}
               className="rounded p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-700"
               title="Editar"
@@ -160,6 +254,9 @@ function TeamCard({
               {expanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
             </button>
           </div>
+        )}
+        {assigningSchedule && (
+          <AssignTeamScheduleModal team={team} onClose={() => setAssigningSchedule(false)} />
         )}
       </div>
 

@@ -506,6 +506,67 @@ export const adminRouter = router({
       return { ok: true }
     }),
 
+  getScheduleAssignments: adminProcedure.query(async ({ ctx }) => {
+    const tenantId = ctx.user!.tid
+    const today = new Date().toISOString().split('T')[0]!
+    const { data, error } = await ctx.db
+      .from('user_schedules')
+      .select('user_id, schedule_id, work_schedules(id, name)')
+      .eq('tenant_id', tenantId)
+      .lte('effective_from', today)
+      .or('effective_to.is.null,effective_to.gte.' + today)
+
+    if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+
+    return (data ?? []).map((row) => {
+      const ws = Array.isArray(row.work_schedules)
+        ? (row.work_schedules[0] ?? null)
+        : (row.work_schedules ?? null)
+      return {
+        userId: row.user_id,
+        scheduleId: row.schedule_id,
+        scheduleName: (ws as { name: string } | null)?.name ?? null,
+      }
+    })
+  }),
+
+  assignScheduleToTeam: adminProcedure
+    .input(z.object({ teamId: z.string().uuid(), scheduleId: z.string().uuid().nullable() }))
+    .mutation(async ({ ctx, input }) => {
+      const tenantId = ctx.user!.tid
+      const today = new Date().toISOString().split('T')[0]!
+
+      const { data: members, error } = await ctx.db
+        .from('team_members')
+        .select('user_id')
+        .eq('team_id', input.teamId)
+        .eq('tenant_id', tenantId)
+
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      if (!members || members.length === 0) return { ok: true, count: 0 }
+
+      const userIds = members.map((m) => m.user_id)
+
+      await ctx.db
+        .from('user_schedules')
+        .update({ effective_to: today })
+        .in('user_id', userIds)
+        .eq('tenant_id', tenantId)
+        .is('effective_to', null)
+
+      if (input.scheduleId) {
+        await ctx.db.from('user_schedules').insert(
+          userIds.map((userId) => ({
+            user_id: userId,
+            tenant_id: tenantId,
+            schedule_id: input.scheduleId!,
+            effective_from: today,
+          })),
+        )
+      }
+      return { ok: true, count: userIds.length }
+    }),
+
   // ─── Catálogo de apps ─────────────────────────────────────────────────────
 
   listAppRules: adminProcedure.query(async ({ ctx }) => {
