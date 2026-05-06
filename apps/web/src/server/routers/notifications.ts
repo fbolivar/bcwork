@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import { TRPCError } from '@trpc/server'
 import { router, protectedProcedure, adminProcedure, requireRole } from '../trpc'
+import { broadcastNotificationToMany } from '@/lib/realtime-broadcast'
 
 const managerProcedure = protectedProcedure.use(requireRole('tenant_admin', 'manager'))
 
@@ -163,6 +164,7 @@ export const notificationsRouter = router({
 
       const { error } = await ctx.db.from('notifications').insert(rows)
       if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      broadcastNotificationToMany(input.userIds)
       return { ok: true, sent: rows.length }
     }),
 

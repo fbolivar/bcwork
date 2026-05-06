@@ -3,6 +3,7 @@ import { createHash } from 'crypto'
 import { TRPCError } from '@trpc/server'
 import { router, protectedProcedure } from '../trpc'
 import { hashPassword, verifyPassword, validatePasswordPolicy } from '@/lib/auth/password'
+import { broadcastNotificationToMany } from '@/lib/realtime-broadcast'
 
 const POLICY_VERSION = '1.0'
 const CONSENT_TYPE = 'monitoring_basic'
@@ -324,6 +325,7 @@ export const employeeRouter = router({
             body: `Un empleado solicitó corrección de actividad para el ${input.applies_to_date}.`,
           })),
         )
+        broadcastNotificationToMany(managers.map((m) => m.id))
       }
 
       return { ok: true }

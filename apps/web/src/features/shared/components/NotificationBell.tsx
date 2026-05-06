@@ -4,6 +4,7 @@ import { useState, useRef, useEffect } from 'react'
 import { Bell, X, Check } from 'lucide-react'
 import { trpc } from '@/lib/trpc-client'
 import { formatDate } from '@/lib/format'
+import { getSupabaseBrowserClient } from '@/lib/supabase-browser'
 
 const SEVERITY_STYLES = {
   critical: 'border-l-4 border-red-500 bg-red-50',
@@ -21,9 +22,12 @@ export function NotificationBell() {
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
 
+  const { data: meData } = trpc.auth.me.useQuery()
+  const userId = meData?.id
+
   const { data: countData, refetch: refetchCount } = trpc.notifications.getUnreadCount.useQuery(
     undefined,
-    { refetchInterval: 60000 },
+    { refetchInterval: 30000, refetchOnWindowFocus: true },
   )
   const {
     data: notifications,
@@ -44,6 +48,7 @@ export function NotificationBell() {
     },
   })
 
+  // Close on outside click
   useEffect(() => {
     function handleClick(e: MouseEvent) {
       if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
@@ -52,12 +57,29 @@ export function NotificationBell() {
     return () => document.removeEventListener('mousedown', handleClick)
   }, [])
 
+  // Supabase Realtime broadcast subscription
+  useEffect(() => {
+    if (!userId) return
+    const supabase = getSupabaseBrowserClient()
+    const channel = supabase
+      .channel(`notifications:${userId}`)
+      .on('broadcast', { event: 'new_notification' }, () => {
+        void refetchCount()
+        if (open) void refetchList()
+      })
+      .subscribe()
+    return () => {
+      void supabase.removeChannel(channel)
+    }
+  }, [userId, open, refetchCount, refetchList])
+
   const unread = countData?.count ?? 0
 
   return (
     <div ref={ref} className="relative">
       <button
         type="button"
+        title="Ver notificaciones"
         onClick={() => setOpen((v) => !v)}
         className="relative rounded-md p-1.5 text-gray-500 hover:bg-gray-100"
       >
@@ -83,8 +105,13 @@ export function NotificationBell() {
                   <Check className="h-3 w-3" /> Marcar todas
                 </button>
               )}
-              <button type="button" onClick={() => setOpen(false)}>
-                <X className="h-4 w-4 text-gray-400" />
+              <button
+                type="button"
+                title="Cerrar notificaciones"
+                onClick={() => setOpen(false)}
+                className="rounded p-0.5 text-gray-400 hover:bg-gray-100"
+              >
+                <X className="h-4 w-4" />
               </button>
             </div>
           </div>
@@ -122,6 +149,7 @@ export function NotificationBell() {
                       {!n.read_at && (
                         <button
                           type="button"
+                          title="Marcar como leída"
                           onClick={() => markAsRead.mutate({ ids: [n.id] })}
                           className="shrink-0 rounded p-0.5 hover:bg-white/60"
                         >

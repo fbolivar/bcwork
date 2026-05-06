@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import { TRPCError } from '@trpc/server'
 import { router, protectedProcedure, requireRole } from '../trpc'
+import { broadcastNotification, broadcastNotificationToMany } from '@/lib/realtime-broadcast'
 
 const managerProcedure = protectedProcedure.use(requireRole('tenant_admin', 'manager'))
 
@@ -317,6 +318,7 @@ export const managerRouter = router({
         title: `Solicitud de corrección ${statusText}`,
         body: input.review_note ?? `Tu solicitud del ${edit.applies_to_date} fue ${statusText}.`,
       })
+      broadcastNotification(edit.user_id)
 
       return { ok: true }
     }),
