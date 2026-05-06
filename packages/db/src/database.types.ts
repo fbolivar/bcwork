@@ -1062,6 +1062,70 @@ export type Database = {
           },
         ]
       }
+      benefits: {
+        Row: {
+          category: string
+          created_at: string
+          created_by: string | null
+          currency: string
+          description: string | null
+          employee_id: string | null
+          expires_at: string | null
+          id: string
+          tenant_id: string
+          title: string
+          value: number | null
+        }
+        Insert: {
+          category?: string
+          created_at?: string
+          created_by?: string | null
+          currency?: string
+          description?: string | null
+          employee_id?: string | null
+          expires_at?: string | null
+          id?: string
+          tenant_id: string
+          title: string
+          value?: number | null
+        }
+        Update: {
+          category?: string
+          created_at?: string
+          created_by?: string | null
+          currency?: string
+          description?: string | null
+          employee_id?: string | null
+          expires_at?: string | null
+          id?: string
+          tenant_id?: string
+          title?: string
+          value?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "benefits_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "benefits_employee_id_fkey"
+            columns: ["employee_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "benefits_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       billing_events: {
         Row: {
           amount_cop: number | null
@@ -1977,6 +2041,137 @@ export type Database = {
           },
         ]
       }
+      onboarding_tasks: {
+        Row: {
+          category: string
+          completed_at: string | null
+          created_at: string
+          created_by: string | null
+          description: string | null
+          due_date: string | null
+          employee_id: string
+          id: string
+          order_index: number
+          task_type: string
+          tenant_id: string
+          title: string
+        }
+        Insert: {
+          category?: string
+          completed_at?: string | null
+          created_at?: string
+          created_by?: string | null
+          description?: string | null
+          due_date?: string | null
+          employee_id: string
+          id?: string
+          order_index?: number
+          task_type?: string
+          tenant_id: string
+          title: string
+        }
+        Update: {
+          category?: string
+          completed_at?: string | null
+          created_at?: string
+          created_by?: string | null
+          description?: string | null
+          due_date?: string | null
+          employee_id?: string
+          id?: string
+          order_index?: number
+          task_type?: string
+          tenant_id?: string
+          title?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "onboarding_tasks_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "onboarding_tasks_employee_id_fkey"
+            columns: ["employee_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "onboarding_tasks_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      one_on_ones: {
+        Row: {
+          action_items: Json
+          agenda: string | null
+          created_at: string
+          duration_minutes: number
+          employee_id: string
+          id: string
+          manager_id: string
+          notes: string | null
+          scheduled_at: string
+          status: string
+          tenant_id: string
+        }
+        Insert: {
+          action_items?: Json
+          agenda?: string | null
+          created_at?: string
+          duration_minutes?: number
+          employee_id: string
+          id?: string
+          manager_id: string
+          notes?: string | null
+          scheduled_at: string
+          status?: string
+          tenant_id: string
+        }
+        Update: {
+          action_items?: Json
+          agenda?: string | null
+          created_at?: string
+          duration_minutes?: number
+          employee_id?: string
+          id?: string
+          manager_id?: string
+          notes?: string | null
+          scheduled_at?: string
+          status?: string
+          tenant_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "one_on_ones_employee_id_fkey"
+            columns: ["employee_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "one_on_ones_manager_id_fkey"
+            columns: ["manager_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "one_on_ones_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       overtime_requests: {
         Row: {
           created_at: string
@@ -2855,6 +3050,118 @@ export type Database = {
             columns: ["user_id"]
             isOneToOne: false
             referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      training_courses: {
+        Row: {
+          category: string
+          content_url: string | null
+          created_at: string
+          created_by: string | null
+          description: string | null
+          duration_minutes: number | null
+          id: string
+          is_required: boolean
+          tenant_id: string
+          thumbnail_url: string | null
+          title: string
+        }
+        Insert: {
+          category?: string
+          content_url?: string | null
+          created_at?: string
+          created_by?: string | null
+          description?: string | null
+          duration_minutes?: number | null
+          id?: string
+          is_required?: boolean
+          tenant_id: string
+          thumbnail_url?: string | null
+          title: string
+        }
+        Update: {
+          category?: string
+          content_url?: string | null
+          created_at?: string
+          created_by?: string | null
+          description?: string | null
+          duration_minutes?: number | null
+          id?: string
+          is_required?: boolean
+          tenant_id?: string
+          thumbnail_url?: string | null
+          title?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "training_courses_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "training_courses_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      training_enrollments: {
+        Row: {
+          completed_at: string | null
+          course_id: string
+          created_at: string
+          employee_id: string
+          id: string
+          progress_pct: number
+          status: string
+          tenant_id: string
+        }
+        Insert: {
+          completed_at?: string | null
+          course_id: string
+          created_at?: string
+          employee_id: string
+          id?: string
+          progress_pct?: number
+          status?: string
+          tenant_id: string
+        }
+        Update: {
+          completed_at?: string | null
+          course_id?: string
+          created_at?: string
+          employee_id?: string
+          id?: string
+          progress_pct?: number
+          status?: string
+          tenant_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "training_enrollments_course_id_fkey"
+            columns: ["course_id"]
+            isOneToOne: false
+            referencedRelation: "training_courses"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "training_enrollments_employee_id_fkey"
+            columns: ["employee_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "training_enrollments_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
             referencedColumns: ["id"]
           },
         ]

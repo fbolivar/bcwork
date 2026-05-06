@@ -2451,4 +2451,274 @@ export const adminRouter = router({
       if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
       return { ok: true }
     }),
+
+  // ─── Onboarding admin ─────────────────────────────────────────────────────
+
+  getOnboardingTasks: adminProcedure
+    .input(
+      z.object({
+        employee_id: z.string().uuid().optional(),
+        task_type: z.enum(['onboarding', 'offboarding']).default('onboarding'),
+      }),
+    )
+    .query(async ({ ctx, input }) => {
+      let q = ctx.db
+        .from('onboarding_tasks')
+        .select('*, users!onboarding_tasks_employee_id_fkey(id, full_name, email)')
+        .eq('tenant_id', ctx.user!.tid)
+        .eq('task_type', input.task_type)
+        .order('order_index')
+      if (input.employee_id) q = q.eq('employee_id', input.employee_id)
+      const { data, error } = await q
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      return data ?? []
+    }),
+
+  createOnboardingTask: adminProcedure
+    .input(
+      z.object({
+        employee_id: z.string().uuid(),
+        title: z.string().min(1).max(200),
+        description: z.string().max(1000).optional(),
+        category: z.string().max(50).default('general'),
+        due_date: z.string().optional(),
+        task_type: z.enum(['onboarding', 'offboarding']).default('onboarding'),
+        order_index: z.number().int().default(0),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { data, error } = await ctx.db
+        .from('onboarding_tasks')
+        .insert({ ...input, tenant_id: ctx.user!.tid, created_by: ctx.user!.sub })
+        .select()
+        .single()
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      return data
+    }),
+
+  deleteOnboardingTask: adminProcedure
+    .input(z.object({ id: z.string().uuid() }))
+    .mutation(async ({ ctx, input }) => {
+      const { error } = await ctx.db
+        .from('onboarding_tasks')
+        .delete()
+        .eq('id', input.id)
+        .eq('tenant_id', ctx.user!.tid)
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      return { ok: true }
+    }),
+
+  // ─── Training admin ───────────────────────────────────────────────────────
+
+  listTrainingCourses: adminProcedure.query(async ({ ctx }) => {
+    const { data, error } = await ctx.db
+      .from('training_courses')
+      .select('*')
+      .eq('tenant_id', ctx.user!.tid)
+      .order('created_at', { ascending: false })
+    if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+    return data ?? []
+  }),
+
+  createTrainingCourse: adminProcedure
+    .input(
+      z.object({
+        title: z.string().min(1).max(200),
+        description: z.string().max(2000).optional(),
+        content_url: z.string().url().optional(),
+        category: z.string().max(50).default('general'),
+        duration_minutes: z.number().int().min(1).optional(),
+        is_required: z.boolean().default(false),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { data, error } = await ctx.db
+        .from('training_courses')
+        .insert({ ...input, tenant_id: ctx.user!.tid, created_by: ctx.user!.sub })
+        .select()
+        .single()
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      return data
+    }),
+
+  deleteTrainingCourse: adminProcedure
+    .input(z.object({ id: z.string().uuid() }))
+    .mutation(async ({ ctx, input }) => {
+      const { error } = await ctx.db
+        .from('training_courses')
+        .delete()
+        .eq('id', input.id)
+        .eq('tenant_id', ctx.user!.tid)
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      return { ok: true }
+    }),
+
+  enrollEmployeeInCourse: adminProcedure
+    .input(z.object({ course_id: z.string().uuid(), employee_id: z.string().uuid() }))
+    .mutation(async ({ ctx, input }) => {
+      const { error } = await ctx.db
+        .from('training_enrollments')
+        .upsert(
+          { ...input, tenant_id: ctx.user!.tid, status: 'enrolled', progress_pct: 0 },
+          { onConflict: 'course_id,employee_id' },
+        )
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      return { ok: true }
+    }),
+
+  getTrainingEnrollments: adminProcedure
+    .input(
+      z.object({
+        course_id: z.string().uuid().optional(),
+        employee_id: z.string().uuid().optional(),
+      }),
+    )
+    .query(async ({ ctx, input }) => {
+      let q = ctx.db
+        .from('training_enrollments')
+        .select(
+          '*, training_courses(*), users!training_enrollments_employee_id_fkey(id, full_name, email)',
+        )
+        .eq('tenant_id', ctx.user!.tid)
+        .order('created_at', { ascending: false })
+      if (input.course_id) q = q.eq('course_id', input.course_id)
+      if (input.employee_id) q = q.eq('employee_id', input.employee_id)
+      const { data, error } = await q
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      return data ?? []
+    }),
+
+  // ─── Benefits admin ───────────────────────────────────────────────────────
+
+  listBenefits: adminProcedure
+    .input(z.object({ employee_id: z.string().uuid().optional() }))
+    .query(async ({ ctx, input }) => {
+      let q = ctx.db
+        .from('benefits')
+        .select('*, users!benefits_employee_id_fkey(id, full_name, email)')
+        .eq('tenant_id', ctx.user!.tid)
+        .order('created_at', { ascending: false })
+      if (input.employee_id) q = q.eq('employee_id', input.employee_id)
+      const { data, error } = await q
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      return data ?? []
+    }),
+
+  createBenefit: adminProcedure
+    .input(
+      z.object({
+        title: z.string().min(1).max(200),
+        description: z.string().max(1000).optional(),
+        category: z.enum([
+          'health',
+          'transport',
+          'food',
+          'equipment',
+          'insurance',
+          'bonus',
+          'other',
+        ]),
+        value: z.number().min(0).optional(),
+        currency: z.string().length(3).default('COP'),
+        employee_id: z.string().uuid().optional(),
+        expires_at: z.string().optional(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { data, error } = await ctx.db
+        .from('benefits')
+        .insert({ ...input, tenant_id: ctx.user!.tid, created_by: ctx.user!.sub })
+        .select()
+        .single()
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      return data
+    }),
+
+  deleteBenefit: adminProcedure
+    .input(z.object({ id: z.string().uuid() }))
+    .mutation(async ({ ctx, input }) => {
+      const { error } = await ctx.db
+        .from('benefits')
+        .delete()
+        .eq('id', input.id)
+        .eq('tenant_id', ctx.user!.tid)
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      return { ok: true }
+    }),
+
+  // ─── 1:1 Meetings admin ───────────────────────────────────────────────────
+
+  list1on1s: adminProcedure
+    .input(
+      z.object({
+        employee_id: z.string().uuid().optional(),
+        status: z.enum(['scheduled', 'completed', 'cancelled', 'all']).default('all'),
+      }),
+    )
+    .query(async ({ ctx, input }) => {
+      let q = ctx.db
+        .from('one_on_ones')
+        .select(
+          '*, employee:users!one_on_ones_employee_id_fkey(id, full_name, email), manager:users!one_on_ones_manager_id_fkey(id, full_name, email)',
+        )
+        .eq('tenant_id', ctx.user!.tid)
+        .order('scheduled_at', { ascending: false })
+      if (input.employee_id) q = q.eq('employee_id', input.employee_id)
+      if (input.status !== 'all') q = q.eq('status', input.status)
+      const { data, error } = await q
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      return data ?? []
+    }),
+
+  create1on1: adminProcedure
+    .input(
+      z.object({
+        employee_id: z.string().uuid(),
+        manager_id: z.string().uuid(),
+        scheduled_at: z.string(),
+        duration_minutes: z.number().int().min(15).max(120).default(30),
+        agenda: z.string().max(2000).optional(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { data, error } = await ctx.db
+        .from('one_on_ones')
+        .insert({ ...input, tenant_id: ctx.user!.tid })
+        .select()
+        .single()
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      return data
+    }),
+
+  update1on1: adminProcedure
+    .input(
+      z.object({
+        id: z.string().uuid(),
+        status: z.enum(['scheduled', 'completed', 'cancelled']).optional(),
+        notes: z.string().max(2000).optional(),
+        action_items: z.array(z.object({ text: z.string(), done: z.boolean() })).optional(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { id, ...patch } = input
+      const { error } = await ctx.db
+        .from('one_on_ones')
+        .update(patch as any)
+        .eq('id', id)
+        .eq('tenant_id', ctx.user!.tid)
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      return { ok: true }
+    }),
+
+  delete1on1: adminProcedure
+    .input(z.object({ id: z.string().uuid() }))
+    .mutation(async ({ ctx, input }) => {
+      const { error } = await ctx.db
+        .from('one_on_ones')
+        .delete()
+        .eq('id', input.id)
+        .eq('tenant_id', ctx.user!.tid)
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      return { ok: true }
+    }),
 })

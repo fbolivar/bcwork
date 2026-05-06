@@ -38,6 +38,10 @@ import {
   DollarSign,
   Star,
   Wallet,
+  Rocket,
+  GraduationCap,
+  Gift,
+  Video,
 } from 'lucide-react'
 import { trpc } from '@/lib/trpc-client'
 
@@ -70,6 +74,10 @@ const NAV = [
   { href: '/me/performance-reviews', label: 'Evaluaciones', icon: Star },
   { href: '/me/expenses', label: 'Mis gastos', icon: Wallet },
   { href: '/me/org-chart', label: 'Directorio', icon: Users },
+  { href: '/me/onboarding', label: 'Onboarding', icon: Rocket },
+  { href: '/me/training', label: 'Capacitación', icon: GraduationCap },
+  { href: '/me/benefits', label: 'Mis beneficios', icon: Gift },
+  { href: '/me/1on1s', label: 'Reuniones 1:1', icon: Video },
   { href: '/me/manual-time', label: 'Tiempo manual', icon: PenLine },
   { href: '/me/notifications', label: 'Notificaciones', icon: Bell },
   { href: '/me/devices', label: 'Mis dispositivos', icon: Monitor },

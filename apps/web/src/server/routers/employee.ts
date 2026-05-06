@@ -2383,4 +2383,109 @@ export const employeeRouter = router({
     if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
     return data ?? []
   }),
+
+  // ─── Onboarding ───────────────────────────────────────────────────────────
+
+  getMyOnboardingTasks: protectedProcedure
+    .input(z.object({ task_type: z.enum(['onboarding', 'offboarding']).default('onboarding') }))
+    .query(async ({ ctx, input }) => {
+      const { data, error } = await ctx.db
+        .from('onboarding_tasks')
+        .select('*')
+        .eq('employee_id', ctx.user!.sub)
+        .eq('task_type', input.task_type)
+        .order('order_index')
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      return data ?? []
+    }),
+
+  completeOnboardingTask: protectedProcedure
+    .input(z.object({ id: z.string().uuid(), completed: z.boolean() }))
+    .mutation(async ({ ctx, input }) => {
+      const { error } = await ctx.db
+        .from('onboarding_tasks')
+        .update({ completed_at: input.completed ? new Date().toISOString() : null })
+        .eq('id', input.id)
+        .eq('employee_id', ctx.user!.sub)
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      return { ok: true }
+    }),
+
+  // ─── Training ─────────────────────────────────────────────────────────────
+
+  getMyTraining: protectedProcedure.query(async ({ ctx }) => {
+    const { data: enrollments, error } = await ctx.db
+      .from('training_enrollments')
+      .select('*, training_courses(*)')
+      .eq('employee_id', ctx.user!.sub)
+      .order('created_at', { ascending: false })
+    if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+
+    const { data: required } = await ctx.db
+      .from('training_courses')
+      .select('*')
+      .eq('tenant_id', ctx.user!.tid)
+      .eq('is_required', true)
+    return { enrollments: enrollments ?? [], required_courses: required ?? [] }
+  }),
+
+  updateTrainingProgress: protectedProcedure
+    .input(z.object({ enrollment_id: z.string().uuid(), progress_pct: z.number().min(0).max(100) }))
+    .mutation(async ({ ctx, input }) => {
+      const completed = input.progress_pct === 100
+      const { error } = await ctx.db
+        .from('training_enrollments')
+        .update({
+          progress_pct: input.progress_pct,
+          status: completed ? 'completed' : 'in_progress',
+          completed_at: completed ? new Date().toISOString() : null,
+        })
+        .eq('id', input.enrollment_id)
+        .eq('employee_id', ctx.user!.sub)
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      return { ok: true }
+    }),
+
+  // ─── Benefits ─────────────────────────────────────────────────────────────
+
+  getMyBenefits: protectedProcedure.query(async ({ ctx }) => {
+    const { data, error } = await ctx.db
+      .from('benefits')
+      .select('*')
+      .eq('tenant_id', ctx.user!.tid)
+      .or(`employee_id.eq.${ctx.user!.sub},employee_id.is.null`)
+      .order('created_at', { ascending: false })
+    if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+    return data ?? []
+  }),
+
+  // ─── 1:1 Meetings ─────────────────────────────────────────────────────────
+
+  getMy1on1s: protectedProcedure
+    .input(
+      z.object({ status: z.enum(['scheduled', 'completed', 'cancelled', 'all']).default('all') }),
+    )
+    .query(async ({ ctx, input }) => {
+      let q = ctx.db
+        .from('one_on_ones')
+        .select('*, manager:users!one_on_ones_manager_id_fkey(id, full_name, email, position)')
+        .eq('employee_id', ctx.user!.sub)
+        .order('scheduled_at', { ascending: false })
+      if (input.status !== 'all') q = q.eq('status', input.status)
+      const { data, error } = await q
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      return data ?? []
+    }),
+
+  acknowledge1on1: protectedProcedure
+    .input(z.object({ id: z.string().uuid(), notes: z.string().max(2000).optional() }))
+    .mutation(async ({ ctx, input }) => {
+      const { error } = await ctx.db
+        .from('one_on_ones')
+        .update({ status: 'completed', notes: input.notes ?? null })
+        .eq('id', input.id)
+        .eq('employee_id', ctx.user!.sub)
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      return { ok: true }
+    }),
 })
