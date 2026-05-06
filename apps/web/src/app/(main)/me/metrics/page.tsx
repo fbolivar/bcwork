@@ -1,10 +1,11 @@
 'use client'
 
 import { useState, useMemo } from 'react'
+import Link from 'next/link'
 import { trpc } from '@/lib/trpc-client'
 import { TrendChart } from '@/features/admin/components/charts/TrendChart'
 import { BarChart } from '@/features/admin/components/charts/BarChart'
-import { HelpCircle } from 'lucide-react'
+import { HelpCircle, BarChart3 } from 'lucide-react'
 
 function fmtHours(secs: number) {
   const h = Math.floor(secs / 3600)
@@ -34,6 +35,20 @@ function InfoTooltip({ text }: { text: string }) {
           <span className="absolute left-1/2 top-full -translate-x-1/2 border-4 border-transparent border-t-gray-900" />
         </span>
       )}
+    </span>
+  )
+}
+
+function DeltaBadge({ delta }: { delta: number | null }) {
+  if (delta === null) return null
+  const up = delta > 0
+  const neutral = delta === 0
+  const cls = neutral ? 'text-gray-400' : up ? 'text-green-600' : 'text-red-500'
+  const arrow = neutral ? '→' : up ? '↑' : '↓'
+  return (
+    <span className={`ml-1 text-[10px] font-semibold tabular-nums ${cls}`}>
+      {arrow}
+      {Math.abs(delta)}%
     </span>
   )
 }
@@ -105,7 +120,6 @@ function ActivityHeatmap({
     return w
   }, [byDate, startDate, today])
 
-  // Month labels: show when week starts a new month
   const monthLabels = weeks.map((week) => {
     const firstDay = new Date(week[0]!.date)
     if (firstDay.getDate() <= 7) return MONTH_ABBR[firstDay.getMonth()] ?? ''
@@ -115,7 +129,6 @@ function ActivityHeatmap({
   return (
     <div>
       <div className="flex gap-1">
-        {/* Day labels */}
         <div className="flex w-7 shrink-0 flex-col gap-1 pt-5">
           {DOW_ABBR.map((d) => (
             <div key={d} className="flex h-4 items-center text-right text-[10px] text-gray-400">
@@ -123,9 +136,7 @@ function ActivityHeatmap({
             </div>
           ))}
         </div>
-        {/* Weeks grid */}
         <div className="flex flex-1 flex-col gap-0.5">
-          {/* Month labels */}
           <div className="flex gap-1">
             {weeks.map((_, wi) => (
               <div key={wi} className="flex h-4 w-4 shrink-0 items-end">
@@ -133,7 +144,6 @@ function ActivityHeatmap({
               </div>
             ))}
           </div>
-          {/* Day rows */}
           {Array.from({ length: 7 }).map((_, di) => (
             <div key={di} className="flex gap-1">
               {weeks.map((week, wi) => {
@@ -156,7 +166,6 @@ function ActivityHeatmap({
           ))}
         </div>
       </div>
-      {/* Legend */}
       <div className="mt-2 flex items-center gap-2">
         <span className="text-[10px] text-gray-400">Menos</span>
         {['bg-gray-100', 'bg-blue-100', 'bg-blue-300', 'bg-blue-500'].map((c) => (
@@ -170,29 +179,29 @@ function ActivityHeatmap({
 
 type Period = 7 | 14 | 30
 
+type RawRow = {
+  metric_date: string | null
+  active_seconds: number | null
+  productive_seconds: number | null
+  non_productive_seconds: number | null
+  productivity_ratio: number
+  overtime_seconds: number | null
+}
+
+function pctDelta(curr: number, prev: number): number | null {
+  if (prev === 0) return null
+  return Math.round(((curr - prev) / prev) * 100)
+}
+
 export default function MyMetricsPage() {
   const [days, setDays] = useState<Period>(14)
   const { data, isLoading } = trpc.employee.getMyMetrics.useQuery({ days })
   const { data: heatData } = trpc.employee.getMyMetrics.useQuery({ days: 84 })
+  const { data: prevPeriodData } = trpc.employee.getMyMetrics.useQuery({
+    days: (days * 2) as 14 | 28 | 60,
+  })
 
-  type MetricRow = {
-    date: string
-    active_seconds: number
-    productive_seconds: number
-    non_productive_seconds: number
-    productivity_ratio: number
-    overtime_seconds: number
-    user_count: number
-  }
-  type RawRow = {
-    metric_date: string | null
-    active_seconds: number | null
-    productive_seconds: number | null
-    non_productive_seconds: number | null
-    productivity_ratio: number
-    overtime_seconds: number | null
-  }
-  const series: MetricRow[] = ((data?.series ?? []) as RawRow[]).map((r) => ({
+  const series = ((data?.series ?? []) as RawRow[]).map((r) => ({
     date: r.metric_date ?? '',
     active_seconds: r.active_seconds ?? 0,
     productive_seconds: r.productive_seconds ?? 0,
@@ -203,6 +212,23 @@ export default function MyMetricsPage() {
   }))
 
   const summary = data?.summary
+
+  const prevSummary = useMemo(() => {
+    const cutoff = new Date()
+    cutoff.setDate(cutoff.getDate() - days)
+    const cutoffStr = cutoff.toISOString().slice(0, 10)
+    const prevRows = ((prevPeriodData?.series ?? []) as RawRow[]).filter(
+      (r) => r.metric_date != null && r.metric_date < cutoffStr,
+    )
+    if (prevRows.length === 0) return null
+    return {
+      total_active_seconds: prevRows.reduce((s, r) => s + (r.active_seconds ?? 0), 0),
+      total_productive_seconds: prevRows.reduce((s, r) => s + (r.productive_seconds ?? 0), 0),
+      avg_productivity_ratio:
+        prevRows.reduce((s, r) => s + r.productivity_ratio, 0) / prevRows.length,
+      days_with_activity: prevRows.filter((r) => (r.active_seconds ?? 0) > 0).length,
+    }
+  }, [prevPeriodData, days])
 
   type DomainRow = { domains_top: unknown }
   const domainMap = new Map<string, number>()
@@ -229,24 +255,39 @@ export default function MyMetricsPage() {
       value: fmtHours(summary?.total_active_seconds ?? 0),
       color: 'bg-blue-50 text-blue-600',
       tip: 'Total de tiempo que el agente detectó actividad en tu computador durante el período.',
+      delta: prevSummary
+        ? pctDelta(summary?.total_active_seconds ?? 0, prevSummary.total_active_seconds)
+        : null,
     },
     {
       label: 'Tiempo productivo',
       value: fmtHours(summary?.total_productive_seconds ?? 0),
       color: 'bg-green-50 text-green-600',
       tip: 'Tiempo dedicado a apps y sitios clasificados como productivos por tu empresa.',
+      delta: prevSummary
+        ? pctDelta(summary?.total_productive_seconds ?? 0, prevSummary.total_productive_seconds)
+        : null,
     },
     {
       label: 'Productividad',
       value: `${Math.round((summary?.avg_productivity_ratio ?? 0) * 100)}%`,
       color: 'bg-purple-50 text-purple-600',
       tip: 'Ratio de tiempo productivo sobre tiempo activo total. Promedio diario del período.',
+      delta: prevSummary
+        ? pctDelta(
+            Math.round((summary?.avg_productivity_ratio ?? 0) * 100),
+            Math.round(prevSummary.avg_productivity_ratio * 100),
+          )
+        : null,
     },
     {
       label: 'Días activos',
       value: `${summary?.days_with_activity ?? 0}`,
       color: 'bg-gray-50 text-gray-600',
       tip: 'Días en que el agente registró al menos una sesión de trabajo.',
+      delta: prevSummary
+        ? pctDelta(summary?.days_with_activity ?? 0, prevSummary.days_with_activity)
+        : null,
     },
   ]
 
@@ -311,7 +352,12 @@ export default function MyMetricsPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-xl font-semibold text-gray-900">Mi rendimiento</h1>
-          <p className="mt-1 text-sm text-gray-500">Tu productividad histórica</p>
+          <p className="mt-1 text-sm text-gray-500">
+            Tu productividad histórica
+            {prevSummary && (
+              <span className="ml-2 text-xs text-gray-400">· comparado con período anterior</span>
+            )}
+          </p>
         </div>
         <div className="flex gap-1 rounded-lg border border-gray-200 bg-white p-1">
           {([7, 14, 30] as Period[]).map((d) => (
@@ -329,7 +375,27 @@ export default function MyMetricsPage() {
         </div>
       </div>
 
-      {/* KPIs con tooltips */}
+      {/* Empty state global */}
+      {!isLoading && !summary && (
+        <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-gray-300 px-6 py-20 text-center">
+          <div className="mb-4 rounded-full bg-gray-100 p-5">
+            <BarChart3 className="h-10 w-10 text-gray-300" />
+          </div>
+          <p className="text-base font-semibold text-gray-600">Sin datos de rendimiento</p>
+          <p className="mt-2 max-w-sm text-sm text-gray-400">
+            El agente BCWork registrará automáticamente tu actividad laboral. Asegúrate de que esté
+            instalado y activo en tu computador.
+          </p>
+          <Link
+            href="/me/privacy"
+            className="mt-5 rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm text-gray-600 hover:bg-gray-50"
+          >
+            Ver mi configuración de privacidad
+          </Link>
+        </div>
+      )}
+
+      {/* KPIs con tooltips y comparativa */}
       {summary && (
         <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
           {kpis.map((k) => (
@@ -337,6 +403,7 @@ export default function MyMetricsPage() {
               <div className="flex items-center text-xs font-medium opacity-70">
                 {k.label}
                 <InfoTooltip text={k.tip} />
+                <DeltaBadge delta={k.delta} />
               </div>
               <p className="mt-1 text-2xl font-bold tabular-nums">{k.value}</p>
             </div>
@@ -362,16 +429,18 @@ export default function MyMetricsPage() {
       )}
 
       {/* Gráfica de tendencia */}
-      <div className="rounded-xl border border-gray-200 bg-white p-5">
-        <h3 className="mb-4 text-sm font-semibold text-gray-700">Tendencia de actividad</h3>
-        {isLoading ? (
-          <div className="h-48 animate-pulse rounded-lg bg-gray-100" />
-        ) : series.length === 0 ? (
-          <p className="py-8 text-center text-sm text-gray-400">Sin datos para el período</p>
-        ) : (
-          <TrendChart data={series} />
-        )}
-      </div>
+      {summary && (
+        <div className="rounded-xl border border-gray-200 bg-white p-5">
+          <h3 className="mb-4 text-sm font-semibold text-gray-700">Tendencia de actividad</h3>
+          {isLoading ? (
+            <div className="h-48 animate-pulse rounded-lg bg-gray-100" />
+          ) : series.length === 0 ? (
+            <p className="py-8 text-center text-sm text-gray-400">Sin datos para el período</p>
+          ) : (
+            <TrendChart data={series} />
+          )}
+        </div>
+      )}
 
       {/* Dominios */}
       {topDomains.length > 0 && (

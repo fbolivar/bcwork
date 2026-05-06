@@ -133,6 +133,8 @@ const EDIT_TYPES = [
 ]
 
 type DaysPeriod = 7 | 14 | 30 | 60
+type LocFilter = 'all' | 'home' | 'office' | 'mixed'
+type MinDur = 0 | 3600 | 14400
 
 type ModalSession = {
   date: string
@@ -145,6 +147,8 @@ type ModalSession = {
 export function MySessionsPanel() {
   const [days, setDays] = useState<DaysPeriod>(30)
   const [expandedDate, setExpandedDate] = useState<string | null>(null)
+  const [locFilter, setLocFilter] = useState<LocFilter>('all')
+  const [minDur, setMinDur] = useState<MinDur>(0)
   const [modalSession, setModalSession] = useState<ModalSession | null>(null)
   const [editType, setEditType] = useState('missed_session')
   const [reason, setReason] = useState('')
@@ -167,7 +171,7 @@ export function MySessionsPanel() {
   })
 
   function handlePrint() {
-    const rows = sessions
+    const rows = filteredSessions
       .map((s) => {
         const isActive = !s.ended_at
         const dur = sessionDuration(s.started_at, s.ended_at)
@@ -233,6 +237,16 @@ export function MySessionsPanel() {
     return { totalActive, uniqueDays, avgDaily }
   }, [sessions])
 
+  // Filtros client-side
+  const filteredSessions = useMemo(() => {
+    return sessions.filter((s) => {
+      if (locFilter !== 'all' && s.location_type !== locFilter) return false
+      const dur = sessionDuration(s.started_at, s.ended_at)
+      if (minDur > 0 && dur < minDur) return false
+      return true
+    })
+  }, [sessions, locFilter, minDur])
+
   // Índice de edits por fecha
   type EditRow = NonNullable<typeof edits>[number]
   const editsByDate = useMemo(() => {
@@ -267,7 +281,7 @@ export function MySessionsPanel() {
         </div>
         {/* #3 — Selector de período + exportar */}
         <div className="flex items-center gap-2">
-          {sessions.length > 0 && (
+          {filteredSessions.length > 0 && (
             <button
               type="button"
               title="Exportar como PDF"
@@ -323,18 +337,88 @@ export function MySessionsPanel() {
         </div>
       )}
 
-      {isLoading && <div className="h-64 animate-pulse rounded-2xl bg-gray-100" />}
-
-      {!isLoading && sessions.length === 0 && (
-        <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-gray-300 py-16">
-          <CalendarClock className="mb-2 h-8 w-8 text-gray-300" />
-          <p className="text-sm text-gray-400">
-            Sin sesiones registradas en los últimos {days} días.
-          </p>
+      {/* Filtros */}
+      {sessions.length > 0 && (
+        <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
+          <div className="flex items-center gap-1.5">
+            <span className="text-xs font-medium text-gray-500">Ubicación:</span>
+            {(['all', 'home', 'office', 'mixed'] as LocFilter[]).map((loc) => (
+              <button
+                key={loc}
+                type="button"
+                title={loc === 'all' ? 'Todas las ubicaciones' : (LOCATION_LABELS[loc] ?? loc)}
+                onClick={() => setLocFilter(loc)}
+                className={`rounded-full px-2.5 py-0.5 text-xs font-medium transition-colors ${
+                  locFilter === loc
+                    ? 'bg-blue-600 text-white'
+                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                }`}
+              >
+                {loc === 'all' ? 'Todas' : (LOCATION_LABELS[loc] ?? loc)}
+              </button>
+            ))}
+          </div>
+          <div className="flex items-center gap-1.5">
+            <span className="text-xs font-medium text-gray-500">Duración:</span>
+            {([0, 3600, 14400] as MinDur[]).map((d) => (
+              <button
+                key={d}
+                type="button"
+                title={
+                  d === 0 ? 'Todas las duraciones' : d === 3600 ? 'Más de 1 hora' : 'Más de 4 horas'
+                }
+                onClick={() => setMinDur(d)}
+                className={`rounded-full px-2.5 py-0.5 text-xs font-medium transition-colors ${
+                  minDur === d
+                    ? 'bg-blue-600 text-white'
+                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                }`}
+              >
+                {d === 0 ? 'Todas' : d === 3600 ? '>1h' : '>4h'}
+              </button>
+            ))}
+          </div>
         </div>
       )}
 
-      {sessions.length > 0 && (
+      {isLoading && <div className="h-64 animate-pulse rounded-2xl bg-gray-100" />}
+
+      {!isLoading && sessions.length === 0 && (
+        <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-gray-300 px-6 py-20 text-center">
+          <div className="mb-4 rounded-full bg-gray-100 p-5">
+            <CalendarClock className="h-10 w-10 text-gray-300" />
+          </div>
+          <p className="text-base font-semibold text-gray-600">Sin sesiones registradas</p>
+          <p className="mt-2 max-w-sm text-sm text-gray-400">
+            El agente BCWork registra automáticamente tu actividad laboral cuando está activo en tu
+            computador. Verifica que esté instalado y ejecutándose.
+          </p>
+          <Link
+            href="/me/privacy"
+            className="mt-5 rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm text-gray-600 hover:bg-gray-50"
+          >
+            Ver configuración de privacidad
+          </Link>
+        </div>
+      )}
+
+      {!isLoading && sessions.length > 0 && filteredSessions.length === 0 && (
+        <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-gray-200 py-12">
+          <p className="text-sm text-gray-500">Sin sesiones con los filtros actuales.</p>
+          <button
+            type="button"
+            onClick={() => {
+              setLocFilter('all')
+              setMinDur(0)
+            }}
+            className="mt-2 text-sm text-blue-600 hover:underline"
+          >
+            Limpiar filtros
+          </button>
+        </div>
+      )}
+
+      {filteredSessions.length > 0 && (
         <div className="overflow-x-auto rounded-2xl border border-gray-200 bg-white">
           <table className="w-full text-sm">
             <thead>
@@ -354,7 +438,7 @@ export function MySessionsPanel() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50">
-              {sessions.map((s) => {
+              {filteredSessions.map((s) => {
                 const sessionDate = s.started_at.slice(0, 10)
                 const isActive = !s.ended_at
                 const dur = sessionDuration(s.started_at, s.ended_at)
@@ -500,8 +584,8 @@ export function MySessionsPanel() {
         </div>
       )}
 
-      {/* #10 — Enlace cruzado a métricas */}
-      {sessions.length > 0 && (
+      {/* Enlace cruzado a métricas */}
+      {filteredSessions.length > 0 && (
         <div className="flex justify-end">
           <Link
             href="/me/metrics"

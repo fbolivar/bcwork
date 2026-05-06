@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, Fragment } from 'react'
+import { useState, useMemo, Fragment } from 'react'
 import { trpc } from '@/lib/trpc-client'
 import { Activity, Clock, TrendingUp, X, Monitor, Download } from 'lucide-react'
 
@@ -242,6 +242,8 @@ function exportTeamCSV(users: UserStat[], days: number) {
 
 // ── TeamOverview ──────────────────────────────────────────────────────────────
 
+type SortKey = 'name' | 'active_seconds' | 'productivity_ratio' | 'overtime_seconds' | 'days_active'
+
 interface Props {
   teamId?: string
 }
@@ -249,6 +251,8 @@ interface Props {
 export function TeamOverview({ teamId }: Props) {
   const [days, setDays] = useState(7)
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null)
+  const [sortKey, setSortKey] = useState<SortKey>('active_seconds')
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc')
 
   const metrics = trpc.manager.getTeamMetrics.useQuery(
     { teamId, days },
@@ -258,6 +262,42 @@ export function TeamOverview({ teamId }: Props) {
 
   const { users = [], summary } = metrics.data ?? {}
   const activeSessions = sessions.data ?? []
+
+  function handleSort(key: SortKey) {
+    if (sortKey === key) {
+      setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'))
+    } else {
+      setSortKey(key)
+      setSortDir('desc')
+    }
+  }
+
+  const sortedUsers = useMemo(() => {
+    return [...users].sort((a, b) => {
+      let va: number | string = 0
+      let vb: number | string = 0
+      if (sortKey === 'name') {
+        va = a.full_name ?? a.email ?? ''
+        vb = b.full_name ?? b.email ?? ''
+      } else if (sortKey === 'active_seconds') {
+        va = a.active_seconds
+        vb = b.active_seconds
+      } else if (sortKey === 'productivity_ratio') {
+        va = a.productivity_ratio
+        vb = b.productivity_ratio
+      } else if (sortKey === 'overtime_seconds') {
+        va = a.overtime_seconds
+        vb = b.overtime_seconds
+      } else if (sortKey === 'days_active') {
+        va = a.days_active
+        vb = b.days_active
+      }
+      if (typeof va === 'string') {
+        return sortDir === 'asc' ? va.localeCompare(vb as string) : (vb as string).localeCompare(va)
+      }
+      return sortDir === 'asc' ? (va as number) - (vb as number) : (vb as number) - (va as number)
+    })
+  }, [users, sortKey, sortDir])
 
   return (
     <div className="space-y-5">
@@ -358,28 +398,42 @@ export function TeamOverview({ teamId }: Props) {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-gray-100 bg-gray-50">
-                <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-400">
-                  Colaborador
-                </th>
-                <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-400">
-                  Tiempo activo
-                </th>
-                <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-400">
-                  Productividad
-                </th>
-                <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-400">
-                  Focus
-                </th>
-                <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-400">
-                  Horas extra
-                </th>
-                <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-400">
-                  Días
-                </th>
+                {(
+                  [
+                    { label: 'Colaborador', col: 'name' as SortKey },
+                    { label: 'Tiempo activo', col: 'active_seconds' as SortKey },
+                    { label: 'Productividad', col: 'productivity_ratio' as SortKey },
+                    { label: 'Focus', col: null },
+                    { label: 'Horas extra', col: 'overtime_seconds' as SortKey },
+                    { label: 'Días', col: 'days_active' as SortKey },
+                  ] as Array<{ label: string; col: SortKey | null }>
+                ).map(({ label, col }) =>
+                  col ? (
+                    <th
+                      key={label}
+                      className="cursor-pointer select-none px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-400 hover:text-gray-600"
+                      onClick={() => handleSort(col)}
+                    >
+                      <span className="flex items-center gap-1">
+                        {label}
+                        <span className="tabular-nums">
+                          {sortKey === col ? (sortDir === 'asc' ? ' ↑' : ' ↓') : ' ↕'}
+                        </span>
+                      </span>
+                    </th>
+                  ) : (
+                    <th
+                      key={label}
+                      className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-400"
+                    >
+                      {label}
+                    </th>
+                  ),
+                )}
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50">
-              {users.map((u) => {
+              {sortedUsers.map((u) => {
                 const isSelected = selectedUserId === u.user_id
                 return (
                   <Fragment key={u.user_id}>

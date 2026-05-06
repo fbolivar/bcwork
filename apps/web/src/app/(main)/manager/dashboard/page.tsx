@@ -12,6 +12,7 @@ import {
   Trophy,
   TrendingUp,
   Timer,
+  Download,
 } from 'lucide-react'
 import Link from 'next/link'
 
@@ -19,6 +20,49 @@ function fmtHours(secs: number) {
   const h = Math.floor(secs / 3600)
   const m = Math.floor((secs % 3600) / 60)
   return h > 0 ? `${h}h ${m}m` : `${m}m`
+}
+
+type MonthUser = {
+  full_name: string | null
+  email: string
+  department: string | null
+  active_seconds: number
+  productivity_ratio: number
+  overtime_seconds: number
+  days_active: number
+}
+
+function exportMonthCSV(users: MonthUser[]) {
+  const headers = [
+    'Nombre',
+    'Email',
+    'Departamento',
+    'Tiempo activo',
+    'Productividad',
+    'Horas extra',
+    'Días activos',
+  ]
+  const rows = users.map((u) => [
+    u.full_name ?? '',
+    u.email,
+    u.department ?? '',
+    fmtHours(u.active_seconds),
+    `${Math.round(u.productivity_ratio * 100)}%`,
+    u.overtime_seconds > 60 ? fmtHours(u.overtime_seconds) : '0',
+    String(u.days_active),
+  ])
+  const csv =
+    '﻿' +
+    [headers, ...rows].map((r) => r.map((c) => `"${c.replace(/"/g, '""')}"`).join(',')).join('\r\n')
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `equipo-mes-${new Date().toISOString().slice(0, 7)}.csv`
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+  URL.revokeObjectURL(url)
 }
 
 export default function ManagerDashboard() {
@@ -114,10 +158,21 @@ export default function ManagerDashboard() {
       {/* Resumen del mes */}
       {monthUsers.length > 0 && (
         <section>
-          <h2 className="mb-3 text-sm font-semibold text-gray-700">
-            Resumen del mes —{' '}
-            {new Date().toLocaleDateString('es-CO', { month: 'long', year: 'numeric' })}
-          </h2>
+          <div className="mb-3 flex items-center justify-between">
+            <h2 className="text-sm font-semibold text-gray-700">
+              Resumen del mes —{' '}
+              {new Date().toLocaleDateString('es-CO', { month: 'long', year: 'numeric' })}
+            </h2>
+            <button
+              type="button"
+              title="Exportar CSV del mes"
+              onClick={() => exportMonthCSV(monthUsers as MonthUser[])}
+              className="flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs text-gray-600 hover:bg-gray-50"
+            >
+              <Download className="h-3.5 w-3.5" />
+              CSV
+            </button>
+          </div>
           <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
             <div className="rounded-xl border border-indigo-200 bg-indigo-50 p-4">
               <div className="flex items-center gap-1.5 text-xs font-medium text-indigo-600">
