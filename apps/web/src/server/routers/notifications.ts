@@ -2,6 +2,57 @@ import { z } from 'zod'
 import { TRPCError } from '@trpc/server'
 import { router, protectedProcedure, adminProcedure, requireRole } from '../trpc'
 import { broadcastNotificationToMany } from '@/lib/realtime-broadcast'
+import type { getDb } from '@/lib/db'
+
+// ─── Geo auto-update (piggybacked on getUnreadCount) ─────────────────────────
+
+function _isPrivateIP(ip: string): boolean {
+  if (ip === '127.0.0.1' || ip === '::1' || ip === '0.0.0.0') return true
+  const p = ip.split('.').map(Number)
+  if (p.length !== 4) return false
+  const a = p[0] ?? 0
+  const b = p[1] ?? 0
+  return a === 10 || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168)
+}
+
+const _userGeoTs = new Map<string, number>()
+const GEO_REFRESH_MS = 6 * 3600 * 1000
+
+async function maybeUpdateUserGeo(
+  db: ReturnType<typeof getDb>,
+  userId: string,
+  ip: string,
+): Promise<void> {
+  if (_isPrivateIP(ip)) return
+  const last = _userGeoTs.get(userId) ?? 0
+  if (Date.now() - last < GEO_REFRESH_MS) return
+  _userGeoTs.set(userId, Date.now())
+  try {
+    const res = await fetch(`http://ip-api.com/json/${ip}?fields=status,country,city,lat,lon`, {
+      signal: AbortSignal.timeout(4000),
+    })
+    const geo = (await res.json()) as {
+      status: string
+      country: string
+      city: string
+      lat: number
+      lon: number
+    }
+    if (geo.status === 'success') {
+      void db
+        .from('users')
+        .update({
+          geo_country: geo.country,
+          geo_city: geo.city,
+          geo_lat: geo.lat,
+          geo_lon: geo.lon,
+        })
+        .eq('id', userId)
+    }
+  } catch {
+    /* fail silently */
+  }
+}
 
 const managerProcedure = protectedProcedure.use(requireRole('tenant_admin', 'manager'))
 
@@ -81,6 +132,9 @@ export const notificationsRouter = router({
 
   getUnreadCount: protectedProcedure.query(async ({ ctx }) => {
     if (!ctx.user!.tid) return { count: 0 }
+
+    // Auto-update user geo from their real public IP (throttled to once per 6h)
+    if (ctx.ip) void maybeUpdateUserGeo(ctx.db, ctx.user!.sub, ctx.ip)
 
     const [alertRes, msgRes] = await Promise.all([
       ctx.db
