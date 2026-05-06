@@ -5,7 +5,7 @@ import { keepPreviousData } from '@tanstack/react-query'
 import { trpc } from '@/lib/trpc-client'
 import { formatDate } from '@/lib/format'
 import { InviteUserModal } from './InviteUserModal'
-import { UserPlus, ShieldCheck, AlertTriangle } from 'lucide-react'
+import { UserPlus, ShieldCheck, AlertTriangle, MapPin, X, Check, Loader2 } from 'lucide-react'
 
 type Role = 'tenant_admin' | 'manager' | 'employee' | 'all'
 type Status = 'active' | 'disabled' | 'all'
@@ -16,12 +16,132 @@ const ROLE_LABELS: Record<string, string> = {
   employee: 'Empleado',
 }
 
+type UserRow = {
+  id: string
+  full_name: string
+  email: string
+  role: string
+  status: string | null
+  department: string | null
+  mfa_enabled: boolean | null
+  must_change_password: boolean | null
+  last_login_at: string | null
+}
+
+function LocationModal({ user, onClose }: { user: UserRow; onClose: () => void }) {
+  const [city, setCity] = useState('')
+  const [country, setCountry] = useState('')
+  const utils = trpc.useUtils()
+
+  const setLocation = trpc.manager.setUserLocation.useMutation({
+    onSuccess: (data) => {
+      void utils.manager.getTeamGeoLocations.invalidate()
+      if (data.resolved) {
+        onClose()
+      }
+    },
+  })
+
+  const handleSave = () => {
+    if (!city && !country) return
+    setLocation.mutate({ userId: user.id, city: city || undefined, country: country || undefined })
+  }
+
+  const handleClear = () => {
+    setLocation.mutate({ userId: user.id, city: undefined, country: undefined })
+    onClose()
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <div className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-xl">
+        <div className="mb-4 flex items-center justify-between">
+          <div>
+            <h2 className="text-base font-semibold text-gray-900">Ubicación del usuario</h2>
+            <p className="mt-0.5 text-xs text-gray-400">{user.full_name || user.email}</p>
+          </div>
+          <button
+            type="button"
+            title="Cerrar"
+            onClick={onClose}
+            className="rounded-lg p-1.5 text-gray-400 hover:bg-gray-100"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        <div className="space-y-3">
+          <div>
+            <label className="mb-1 block text-xs font-medium text-gray-600">Ciudad</label>
+            <input
+              type="text"
+              placeholder="Ej: Bogotá, Medellín, Ciudad de México..."
+              value={city}
+              onChange={(e) => setCity(e.target.value)}
+              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-medium text-gray-600">País</label>
+            <input
+              type="text"
+              placeholder="Ej: Colombia, México, España..."
+              value={country}
+              onChange={(e) => setCountry(e.target.value)}
+              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+        </div>
+
+        {setLocation.data && !setLocation.data.resolved && !setLocation.isPending && (
+          <p className="mt-3 text-xs text-amber-600">
+            No se encontraron coordenadas para esa ciudad. Intenta ser más específico (ej:
+            &quot;Bogotá, Colombia&quot;).
+          </p>
+        )}
+
+        {setLocation.isError && (
+          <p className="mt-3 text-xs text-red-500">Error al guardar. Intenta de nuevo.</p>
+        )}
+
+        <div className="mt-5 flex gap-2">
+          <button
+            type="button"
+            onClick={handleSave}
+            disabled={setLocation.isPending || (!city && !country)}
+            className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+          >
+            {setLocation.isPending ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <Check className="h-3.5 w-3.5" />
+            )}
+            Guardar y geolocalizar
+          </button>
+          <button
+            type="button"
+            onClick={handleClear}
+            className="rounded-lg border border-gray-200 px-3 py-2 text-xs text-gray-500 hover:bg-gray-50"
+          >
+            Limpiar
+          </button>
+        </div>
+
+        <p className="mt-3 text-center text-[10px] text-gray-400">
+          Las coordenadas se obtienen de OpenStreetMap Nominatim
+        </p>
+      </div>
+    </div>
+  )
+}
+
 export function UserTable() {
   const [search, setSearch] = useState('')
   const [role, setRole] = useState<Role>('all')
   const [status, setStatus] = useState<Status>('all')
   const [page, setPage] = useState(1)
   const [showInvite, setShowInvite] = useState(false)
+  const [locationUser, setLocationUser] = useState<UserRow | null>(null)
 
   const utils = trpc.useUtils()
   const { data, isLoading } = trpc.admin.listUsers.useQuery(
@@ -150,25 +270,36 @@ export function UserTable() {
                   {user.last_login_at ? formatDate(user.last_login_at) : 'Nunca'}
                 </td>
                 <td className="px-4 py-3">
-                  {user.role !== 'tenant_admin' && (
+                  <div className="flex items-center gap-2">
                     <button
                       type="button"
-                      onClick={() =>
-                        updateMutation.mutate({
-                          id: user.id,
-                          status: user.status === 'active' ? 'disabled' : 'active',
-                        })
-                      }
-                      disabled={updateMutation.isPending}
-                      className={`rounded px-2 py-1 text-xs font-medium disabled:opacity-50 ${
-                        user.status === 'active'
-                          ? 'bg-yellow-50 text-yellow-700 hover:bg-yellow-100'
-                          : 'bg-green-50 text-green-700 hover:bg-green-100'
-                      }`}
+                      title="Asignar ubicación geográfica"
+                      onClick={() => setLocationUser(user as UserRow)}
+                      className="flex items-center gap-1 rounded px-2 py-1 text-xs font-medium text-blue-600 hover:bg-blue-50"
                     >
-                      {user.status === 'active' ? 'Deshabilitar' : 'Habilitar'}
+                      <MapPin className="h-3.5 w-3.5" />
+                      Ubicación
                     </button>
-                  )}
+                    {user.role !== 'tenant_admin' && (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          updateMutation.mutate({
+                            id: user.id,
+                            status: user.status === 'active' ? 'disabled' : 'active',
+                          })
+                        }
+                        disabled={updateMutation.isPending}
+                        className={`rounded px-2 py-1 text-xs font-medium disabled:opacity-50 ${
+                          user.status === 'active'
+                            ? 'bg-yellow-50 text-yellow-700 hover:bg-yellow-100'
+                            : 'bg-green-50 text-green-700 hover:bg-green-100'
+                        }`}
+                      >
+                        {user.status === 'active' ? 'Deshabilitar' : 'Habilitar'}
+                      </button>
+                    )}
+                  </div>
                 </td>
               </tr>
             ))}
@@ -205,6 +336,7 @@ export function UserTable() {
       )}
 
       {showInvite && <InviteUserModal onClose={() => setShowInvite(false)} />}
+      {locationUser && <LocationModal user={locationUser} onClose={() => setLocationUser(null)} />}
     </div>
   )
 }

@@ -116,6 +116,13 @@ export async function POST(req: NextRequest) {
         .eq('id', sessionId)
         .eq('tenant_id', tenantId)
     } else {
+      // Use the server-side public IP (x-forwarded-for) so it's geolocatable
+      const publicIp =
+        req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ??
+        req.headers.get('x-real-ip') ??
+        session_state.ip ??
+        null
+
       const { data: newSession } = await db
         .from('work_sessions')
         .insert({
@@ -125,7 +132,7 @@ export async function POST(req: NextRequest) {
           started_at: session_state.started_at,
           active_seconds: session_state.active_seconds,
           idle_seconds: session_state.idle_seconds,
-          ip_inet: session_state.ip ?? null,
+          ip_inet: publicIp,
         })
         .select('id')
         .single()

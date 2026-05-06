@@ -549,11 +549,11 @@ export const managerRouter = router({
 
     const { data: users } = await ctx.db
       .from('users')
-      .select('id, full_name')
+      .select('id, full_name, geo_city, geo_country, geo_lat, geo_lon')
       .in('id', userIds)
       .eq('tenant_id', ctx.user!.tid)
 
-    const nameMap = new Map((users ?? []).map((u) => [u.id, u.full_name]))
+    const usersMap = new Map((users ?? []).map((u) => [u.id, u]))
 
     const publicIPs = [...latestPerUser.values()]
       .filter((u) => u.ip && !isPrivateIP(u.ip))
@@ -563,10 +563,24 @@ export const managerRouter = router({
       publicIPs.length > 0 ? await geolocateBatch(publicIPs) : new Map<string, GeoInfo>()
 
     return [...latestPerUser.values()].map((u) => {
+      const user = usersMap.get(u.user_id)
+      // Manual location set by admin/manager takes priority
+      if (user?.geo_lat != null && user?.geo_lon != null) {
+        return {
+          user_id: u.user_id,
+          full_name: user.full_name ?? 'Usuario',
+          country: user.geo_country ?? null,
+          country_code: null as string | null,
+          city: user.geo_city ?? null,
+          lat: user.geo_lat,
+          lon: user.geo_lon,
+        }
+      }
+      // Fall back to IP-based geolocation
       const geo = u.ip ? geoMap.get(u.ip) : undefined
       return {
         user_id: u.user_id,
-        full_name: nameMap.get(u.user_id) ?? 'Usuario',
+        full_name: user?.full_name ?? 'Usuario',
         country: geo?.country ?? null,
         country_code: geo?.countryCode ?? null,
         city: geo?.city ?? null,
@@ -575,6 +589,55 @@ export const managerRouter = router({
       }
     })
   }),
+
+  // ─── Asignar ubicación manual ─────────────────────────────────────────────
+
+  setUserLocation: managerProcedure
+    .input(
+      z.object({
+        userId: z.string().uuid(),
+        city: z.string().max(150).optional(),
+        country: z.string().max(100).optional(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      let lat: number | null = null
+      let lon: number | null = null
+
+      if (input.city || input.country) {
+        const q = encodeURIComponent([input.city, input.country].filter(Boolean).join(', '))
+        try {
+          const res = await fetch(
+            `https://nominatim.openstreetmap.org/search?q=${q}&format=json&limit=1`,
+            {
+              headers: { 'User-Agent': 'BCWork/1.0 (soporte@bcwork.app)' },
+              signal: AbortSignal.timeout(6000),
+            },
+          )
+          const data = (await res.json()) as Array<{ lat: string; lon: string }>
+          if (data[0]) {
+            lat = parseFloat(data[0].lat)
+            lon = parseFloat(data[0].lon)
+          }
+        } catch {
+          /* fail silently — user can retry */
+        }
+      }
+
+      const { error } = await ctx.db
+        .from('users')
+        .update({
+          geo_city: input.city ?? null,
+          geo_country: input.country ?? null,
+          geo_lat: lat,
+          geo_lon: lon,
+        })
+        .eq('id', input.userId)
+        .eq('tenant_id', ctx.user!.tid)
+
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      return { ok: true, lat, lon, resolved: lat !== null }
+    }),
 
   getUserDetail: managerProcedure
     .input(

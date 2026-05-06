@@ -1695,6 +1695,10 @@ export type Database = {
           email: string
           failed_login_attempts: number | null
           full_name: string
+          geo_city: string | null
+          geo_country: string | null
+          geo_lat: number | null
+          geo_lon: number | null
           id: string
           last_login_at: string | null
           locked_until: string | null
@@ -1717,6 +1721,10 @@ export type Database = {
           email: string
           failed_login_attempts?: number | null
           full_name: string
+          geo_city?: string | null
+          geo_country?: string | null
+          geo_lat?: number | null
+          geo_lon?: number | null
           id?: string
           last_login_at?: string | null
           locked_until?: string | null
@@ -1739,6 +1747,10 @@ export type Database = {
           email?: string
           failed_login_attempts?: number | null
           full_name?: string
+          geo_city?: string | null
+          geo_country?: string | null
+          geo_lat?: number | null
+          geo_lon?: number | null
           id?: string
           last_login_at?: string | null
           locked_until?: string | null
