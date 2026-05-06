@@ -15,6 +15,7 @@ import {
   XCircle,
   ChevronDown,
   ChevronRight,
+  Printer,
 } from 'lucide-react'
 
 function DayActivity({ date }: { date: string }) {
@@ -165,6 +166,57 @@ export function MySessionsPanel() {
     },
   })
 
+  function handlePrint() {
+    const rows = sessions
+      .map((s) => {
+        const isActive = !s.ended_at
+        const dur = sessionDuration(s.started_at, s.ended_at)
+        const totalSecs = (s.active_seconds ?? 0) + (s.idle_seconds ?? 0)
+        const activePct =
+          totalSecs > 0 ? Math.round(((s.active_seconds ?? 0) / totalSecs) * 100) : 0
+        return `<tr>
+          <td>${fmtDate(s.started_at)}</td>
+          <td>${fmtTime(s.started_at)}</td>
+          <td>${isActive ? 'Activa' : s.ended_at ? fmtTime(s.ended_at) : '—'}</td>
+          <td>${fmtHours(dur)}</td>
+          <td>${fmtHours(s.active_seconds)} activo / ${fmtHours(s.idle_seconds)} inact. (${activePct}%)</td>
+          <td>${LOCATION_LABELS[s.location_type ?? ''] ?? s.location_type ?? '—'}</td>
+        </tr>`
+      })
+      .join('')
+
+    const exportDate = new Date().toLocaleDateString('es-CO', {
+      day: 'numeric',
+      month: 'long',
+      year: 'numeric',
+    })
+
+    const win = window.open('', '_blank', 'width=900,height=700')
+    if (!win) return
+    win.document.write(`<!DOCTYPE html><html><head>
+      <meta charset="UTF-8">
+      <title>Mis sesiones — BCWork</title>
+      <style>
+        body{font-family:system-ui,sans-serif;padding:24px;color:#111}
+        h1{font-size:18px;margin:0 0 4px}
+        p{font-size:12px;color:#555;margin:0 0 16px}
+        table{border-collapse:collapse;width:100%;font-size:13px}
+        th{background:#f3f4f6;padding:8px 12px;text-align:left;border-bottom:2px solid #e5e7eb}
+        td{padding:7px 12px;border-bottom:1px solid #f3f4f6}
+        @media print{body{padding:0}}
+      </style>
+    </head><body>
+      <h1>Mis sesiones</h1>
+      <p>Últimos ${days} días · Exportado el ${exportDate}</p>
+      <table><thead><tr>
+        <th>Fecha</th><th>Entrada</th><th>Salida</th>
+        <th>Duración</th><th>Actividad</th><th>Ubicación</th>
+      </tr></thead><tbody>${rows}</tbody></table>
+    </body></html>`)
+    win.document.close()
+    win.print()
+  }
+
   // #1 — Auto-refresh cada 60s si hay sesión activa
   const hasActive = sessions.some((s) => !s.ended_at)
   useEffect(() => {
@@ -213,20 +265,33 @@ export function MySessionsPanel() {
             Historial de actividad registrada por el agente
           </p>
         </div>
-        {/* #3 — Selector de período */}
-        <div className="flex gap-1 rounded-lg border border-gray-200 bg-white p-1">
-          {([7, 14, 30, 60] as DaysPeriod[]).map((d) => (
+        {/* #3 — Selector de período + exportar */}
+        <div className="flex items-center gap-2">
+          {sessions.length > 0 && (
             <button
-              key={d}
               type="button"
-              onClick={() => setDays(d)}
-              className={`rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
-                days === d ? 'bg-blue-600 text-white' : 'text-gray-500 hover:bg-gray-100'
-              }`}
+              title="Exportar como PDF"
+              onClick={handlePrint}
+              className="flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-50"
             >
-              {d}d
+              <Printer className="h-4 w-4" />
+              PDF
             </button>
-          ))}
+          )}
+          <div className="flex gap-1 rounded-lg border border-gray-200 bg-white p-1">
+            {([7, 14, 30, 60] as DaysPeriod[]).map((d) => (
+              <button
+                key={d}
+                type="button"
+                onClick={() => setDays(d)}
+                className={`rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
+                  days === d ? 'bg-blue-600 text-white' : 'text-gray-500 hover:bg-gray-100'
+                }`}
+              >
+                {d}d
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 

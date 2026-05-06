@@ -3,7 +3,16 @@
 import { trpc } from '@/lib/trpc-client'
 import { ActiveSessionsPanel } from '@/features/manager/components/ActiveSessionsPanel'
 import { TeamOverview } from '@/features/manager/components/TeamOverview'
-import { Users, UserCheck, UserX, ClipboardEdit, Clock } from 'lucide-react'
+import {
+  Users,
+  UserCheck,
+  UserX,
+  ClipboardEdit,
+  Clock,
+  Trophy,
+  TrendingUp,
+  Timer,
+} from 'lucide-react'
 import Link from 'next/link'
 
 function fmtHours(secs: number) {
@@ -20,12 +29,24 @@ export default function ManagerDashboard() {
   const { data: status } = trpc.manager.getTeamStatus.useQuery({ teamId })
   const { data: pending } = trpc.manager.getPendingCorrectionsCount.useQuery()
   const { data: metrics } = trpc.manager.getTeamMetrics.useQuery({ teamId, days: 7 })
+  const { data: monthMetrics } = trpc.manager.getTeamMetrics.useQuery({ teamId, days: 30 })
 
   const activeCount = status?.active.length ?? 0
   const inactiveCount = status?.inactive.length ?? 0
   const totalMembers = activeCount + inactiveCount
   const pendingCount = pending?.count ?? 0
   const weekOvertime = metrics?.users.reduce((s, u) => s + u.overtime_seconds, 0) ?? 0
+
+  const monthUsers = monthMetrics?.users ?? []
+  const monthTotalActive = monthUsers.reduce((s, u) => s + u.active_seconds, 0)
+  const monthTotalOvertime = monthUsers.reduce((s, u) => s + u.overtime_seconds, 0)
+  const monthAvgProd =
+    monthUsers.length > 0
+      ? Math.round(
+          (monthUsers.reduce((s, u) => s + u.productivity_ratio, 0) / monthUsers.length) * 100,
+        )
+      : 0
+  const topEmployee = [...monthUsers].sort((a, b) => b.active_seconds - a.active_seconds)[0] ?? null
 
   return (
     <div className="space-y-8">
@@ -89,6 +110,74 @@ export default function ManagerDashboard() {
           <p className="mt-0.5 text-xs text-blue-500">total equipo</p>
         </div>
       </div>
+
+      {/* Resumen del mes */}
+      {monthUsers.length > 0 && (
+        <section>
+          <h2 className="mb-3 text-sm font-semibold text-gray-700">
+            Resumen del mes —{' '}
+            {new Date().toLocaleDateString('es-CO', { month: 'long', year: 'numeric' })}
+          </h2>
+          <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+            <div className="rounded-xl border border-indigo-200 bg-indigo-50 p-4">
+              <div className="flex items-center gap-1.5 text-xs font-medium text-indigo-600">
+                <Timer className="h-3.5 w-3.5" />
+                Horas equipo
+              </div>
+              <p className="mt-1 text-2xl font-bold tabular-nums text-indigo-700">
+                {fmtHours(monthTotalActive)}
+              </p>
+              <p className="mt-0.5 text-xs text-indigo-400">{monthUsers.length} miembros activos</p>
+            </div>
+            <div className="rounded-xl border border-green-200 bg-green-50 p-4">
+              <div className="flex items-center gap-1.5 text-xs font-medium text-green-600">
+                <TrendingUp className="h-3.5 w-3.5" />
+                Productividad
+              </div>
+              <p className="mt-1 text-2xl font-bold tabular-nums text-green-700">{monthAvgProd}%</p>
+              <p className="mt-0.5 text-xs text-green-400">promedio del equipo</p>
+            </div>
+            <div
+              className={`rounded-xl border p-4 ${monthTotalOvertime > 0 ? 'border-orange-200 bg-orange-50' : 'border-gray-200 bg-gray-50'}`}
+            >
+              <div
+                className={`flex items-center gap-1.5 text-xs font-medium ${monthTotalOvertime > 0 ? 'text-orange-600' : 'text-gray-500'}`}
+              >
+                <Clock className="h-3.5 w-3.5" />
+                Horas extra
+              </div>
+              <p
+                className={`mt-1 text-2xl font-bold tabular-nums ${monthTotalOvertime > 0 ? 'text-orange-700' : 'text-gray-700'}`}
+              >
+                {fmtHours(monthTotalOvertime)}
+              </p>
+              <p
+                className={`mt-0.5 text-xs ${monthTotalOvertime > 0 ? 'text-orange-400' : 'text-gray-400'}`}
+              >
+                total equipo
+              </p>
+            </div>
+            <div className="rounded-xl border border-yellow-200 bg-yellow-50 p-4">
+              <div className="flex items-center gap-1.5 text-xs font-medium text-yellow-600">
+                <Trophy className="h-3.5 w-3.5" />
+                Top empleado
+              </div>
+              {topEmployee ? (
+                <>
+                  <p className="mt-1 truncate text-sm font-bold text-yellow-800">
+                    {topEmployee.full_name ?? topEmployee.email}
+                  </p>
+                  <p className="mt-0.5 text-xs text-yellow-500">
+                    {fmtHours(topEmployee.active_seconds)} activo
+                  </p>
+                </>
+              ) : (
+                <p className="mt-1 text-sm text-yellow-600">—</p>
+              )}
+            </div>
+          </div>
+        </section>
+      )}
 
       {/* Estado hoy: inactivos */}
       {inactiveCount > 0 && (

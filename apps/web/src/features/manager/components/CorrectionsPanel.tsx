@@ -2,7 +2,7 @@
 
 import { useState, useMemo } from 'react'
 import { trpc } from '@/lib/trpc-client'
-import { CheckCircle2, XCircle, Clock, AlertCircle, CheckSquare } from 'lucide-react'
+import { CheckCircle2, XCircle, AlertCircle, CheckSquare, Search } from 'lucide-react'
 
 const EDIT_TYPE_LABELS: Record<string, string> = {
   missed_session: 'Sesión no registrada',
@@ -48,6 +48,7 @@ function getDateRange(preset: DatePreset): { dateFrom?: string; dateTo?: string 
 export function CorrectionsPanel() {
   const [filter, setFilter] = useState<Filter>('pending')
   const [datePreset, setDatePreset] = useState<DatePreset>('all')
+  const [search, setSearch] = useState('')
   const [selectedIds, setSelectedIds] = useState<string[]>([])
   const [modal, setModal] = useState<ReviewModal | null>(null)
   const [reviewNote, setReviewNote] = useState('')
@@ -56,10 +57,18 @@ export function CorrectionsPanel() {
   const utils = trpc.useUtils()
   const dateRange = useMemo(() => getDateRange(datePreset), [datePreset])
 
-  const { data: edits = [], isLoading } = trpc.manager.getActivityEdits.useQuery({
+  const { data: rawEdits = [], isLoading } = trpc.manager.getActivityEdits.useQuery({
     status: filter,
     ...dateRange,
   })
+
+  const edits = useMemo(() => {
+    const q = search.trim().toLowerCase()
+    if (!q) return rawEdits
+    return rawEdits.filter(
+      (e) => (e.full_name ?? '').toLowerCase().includes(q) || e.email.toLowerCase().includes(q),
+    )
+  }, [rawEdits, search])
 
   const pendingEdits = useMemo(() => edits.filter((e) => e.status === 'pending'), [edits])
   const allPendingSelected =
@@ -163,6 +172,18 @@ export function CorrectionsPanel() {
         <p className="mt-1 text-sm text-gray-500">
           Revisa y aprueba o rechaza las solicitudes de tus empleados
         </p>
+      </div>
+
+      {/* Buscador */}
+      <div className="relative max-w-xs">
+        <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+        <input
+          type="search"
+          placeholder="Buscar empleado..."
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          className="w-full rounded-lg border border-gray-200 bg-white py-2 pl-9 pr-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+        />
       </div>
 
       {/* Filtros */}
