@@ -1,5 +1,6 @@
 'use client'
 
+import { useState } from 'react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import {
@@ -44,6 +45,7 @@ import {
   Megaphone,
   CalendarRange,
   Monitor,
+  ChevronDown,
 } from 'lucide-react'
 import { trpc } from '@/lib/trpc-client'
 
@@ -55,12 +57,14 @@ type NavItem = {
 
 type NavGroup = {
   label: string
+  defaultOpen?: boolean
   items: NavItem[]
 }
 
 const NAV_GROUPS: NavGroup[] = [
   {
     label: 'Inicio',
+    defaultOpen: true,
     items: [
       { href: '/me/dashboard', label: 'Mi día', icon: LayoutDashboard },
       { href: '/me/messages', label: 'Mensajes', icon: MessageSquare },
@@ -70,6 +74,7 @@ const NAV_GROUPS: NavGroup[] = [
   },
   {
     label: 'Tiempo y trabajo',
+    defaultOpen: false,
     items: [
       { href: '/me/sessions', label: 'Mis sesiones', icon: CalendarClock },
       { href: '/me/activity', label: 'Mi actividad', icon: ActivitySquare },
@@ -84,6 +89,7 @@ const NAV_GROUPS: NavGroup[] = [
   },
   {
     label: 'Rendimiento',
+    defaultOpen: false,
     items: [
       { href: '/me/metrics', label: 'Mi rendimiento', icon: BarChart2 },
       { href: '/me/goals', label: 'Mis objetivos', icon: Target },
@@ -95,6 +101,7 @@ const NAV_GROUPS: NavGroup[] = [
   },
   {
     label: 'Equipo y empresa',
+    defaultOpen: false,
     items: [
       { href: '/me/org-chart', label: 'Directorio', icon: Users },
       { href: '/me/team-presence', label: 'Equipo en línea', icon: MapPin },
@@ -106,6 +113,7 @@ const NAV_GROUPS: NavGroup[] = [
   },
   {
     label: 'Laboral',
+    defaultOpen: false,
     items: [
       { href: '/me/absences', label: 'Mis ausencias', icon: CalendarOff },
       { href: '/me/overtime-requests', label: 'Horas extra', icon: Clock4 },
@@ -120,6 +128,7 @@ const NAV_GROUPS: NavGroup[] = [
   },
   {
     label: 'Crecimiento',
+    defaultOpen: false,
     items: [
       { href: '/me/onboarding', label: 'Onboarding', icon: Rocket },
       { href: '/me/training', label: 'Capacitación', icon: GraduationCap },
@@ -128,6 +137,7 @@ const NAV_GROUPS: NavGroup[] = [
   },
   {
     label: 'Ajustes',
+    defaultOpen: false,
     items: [
       { href: '/me/profile', label: 'Mi perfil', icon: User },
       { href: '/me/devices', label: 'Mis dispositivos', icon: Monitor },
@@ -138,10 +148,78 @@ const NAV_GROUPS: NavGroup[] = [
   },
 ]
 
+function NavGroupSection({
+  group,
+  pathname,
+  badges,
+  onClose,
+}: {
+  group: NavGroup
+  pathname: string
+  badges: Record<string, number>
+  onClose?: () => void
+}) {
+  const hasActive = group.items.some((i) => pathname.startsWith(i.href))
+  const [open, setOpen] = useState(group.defaultOpen || hasActive)
+  const groupBadge = group.items.reduce((sum, i) => sum + (badges[i.href] ?? 0), 0)
+
+  return (
+    <div className="mb-1">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="flex w-full items-center gap-1.5 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-gray-50"
+      >
+        <span className="flex-1 text-[10px] font-semibold uppercase tracking-widest text-gray-400">
+          {group.label}
+        </span>
+        {!open && groupBadge > 0 && (
+          <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold text-white">
+            {groupBadge > 9 ? '9+' : groupBadge}
+          </span>
+        )}
+        <ChevronDown
+          className={`h-3 w-3 shrink-0 text-gray-300 transition-transform duration-200 ${open ? 'rotate-0' : '-rotate-90'}`}
+        />
+      </button>
+
+      {open && (
+        <div className="mt-0.5 space-y-0.5">
+          {group.items.map(({ href, label, icon: Icon }) => {
+            const active = pathname.startsWith(href)
+            const badge = badges[href] ?? 0
+            return (
+              <Link
+                key={href}
+                href={href}
+                onClick={onClose}
+                className={`flex items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-sm transition-colors ${
+                  active
+                    ? 'bg-blue-50 font-medium text-blue-700'
+                    : 'text-gray-500 hover:bg-gray-50 hover:text-gray-800'
+                }`}
+              >
+                <Icon className={`h-3.5 w-3.5 shrink-0 ${active ? 'text-blue-600' : ''}`} />
+                <span className="flex-1 truncate">{label}</span>
+                {badge > 0 && (
+                  <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold text-white">
+                    {badge > 9 ? '9+' : badge}
+                  </span>
+                )}
+              </Link>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
+
 export function EmployeeNav({ onClose }: { onClose?: () => void } = {}) {
   const pathname = usePathname()
   const router = useRouter()
   const logout = trpc.auth.logout.useMutation({ onSuccess: () => router.push('/login') })
+
   const { data: countData } = trpc.notifications.getUnreadCount.useQuery(undefined, {
     refetchInterval: 30000,
   })
@@ -185,37 +263,13 @@ export function EmployeeNav({ onClose }: { onClose?: () => void } = {}) {
       {/* Nav */}
       <nav className="flex-1 overflow-y-auto px-3 pb-4">
         {NAV_GROUPS.map((group) => (
-          <div key={group.label} className="mb-4">
-            <p className="mb-1 px-2 text-[10px] font-semibold uppercase tracking-widest text-gray-400">
-              {group.label}
-            </p>
-            <div className="space-y-0.5">
-              {group.items.map(({ href, label, icon: Icon }) => {
-                const active = pathname.startsWith(href)
-                const badge = badges[href] ?? 0
-                return (
-                  <Link
-                    key={href}
-                    href={href}
-                    onClick={onClose}
-                    className={`flex items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-sm transition-colors ${
-                      active
-                        ? 'bg-blue-50 font-medium text-blue-700'
-                        : 'text-gray-500 hover:bg-gray-50 hover:text-gray-800'
-                    }`}
-                  >
-                    <Icon className={`h-3.5 w-3.5 shrink-0 ${active ? 'text-blue-600' : ''}`} />
-                    <span className="flex-1 truncate">{label}</span>
-                    {badge > 0 && (
-                      <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold text-white">
-                        {badge > 9 ? '9+' : badge}
-                      </span>
-                    )}
-                  </Link>
-                )
-              })}
-            </div>
-          </div>
+          <NavGroupSection
+            key={group.label}
+            group={group}
+            pathname={pathname}
+            badges={badges}
+            onClose={onClose}
+          />
         ))}
       </nav>
 
