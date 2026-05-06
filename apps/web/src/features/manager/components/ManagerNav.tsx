@@ -2,21 +2,29 @@
 
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
-import { LayoutDashboard, Users2, Activity, LogOut, BellRing } from 'lucide-react'
+import { LayoutDashboard, Users2, Activity, LogOut, BellRing, ClipboardEdit } from 'lucide-react'
 import { trpc } from '@/lib/trpc-client'
 import { NotificationBell } from '@/features/shared/components/NotificationBell'
-
-const NAV = [
-  { href: '/manager/dashboard', label: 'Resumen', icon: LayoutDashboard },
-  { href: '/manager/team', label: 'Mi equipo', icon: Users2 },
-  { href: '/manager/sessions', label: 'Sesiones activas', icon: Activity },
-  { href: '/manager/notifications', label: 'Notificaciones', icon: BellRing },
-]
 
 export function ManagerNav() {
   const pathname = usePathname()
   const router = useRouter()
   const logout = trpc.auth.logout.useMutation({ onSuccess: () => router.push('/login') })
+  const { data: pending } = trpc.manager.getPendingCorrectionsCount.useQuery()
+  const pendingCount = pending?.count ?? 0
+
+  const NAV = [
+    { href: '/manager/dashboard', label: 'Resumen', icon: LayoutDashboard, badge: 0 },
+    { href: '/manager/team', label: 'Mi equipo', icon: Users2, badge: 0 },
+    { href: '/manager/sessions', label: 'Sesiones activas', icon: Activity, badge: 0 },
+    {
+      href: '/manager/corrections',
+      label: 'Correcciones',
+      icon: ClipboardEdit,
+      badge: pendingCount,
+    },
+    { href: '/manager/notifications', label: 'Notificaciones', icon: BellRing, badge: 0 },
+  ]
 
   return (
     <aside className="flex w-52 flex-col border-r border-gray-200 bg-white">
@@ -28,7 +36,7 @@ export function ManagerNav() {
         <NotificationBell />
       </div>
       <nav className="flex-1 space-y-0.5 p-2">
-        {NAV.map(({ href, label, icon: Icon }) => {
+        {NAV.map(({ href, label, icon: Icon, badge }) => {
           const active = pathname.startsWith(href)
           return (
             <Link
@@ -41,7 +49,12 @@ export function ManagerNav() {
               }`}
             >
               <Icon className="h-4 w-4 shrink-0" />
-              {label}
+              <span className="flex-1">{label}</span>
+              {badge > 0 && (
+                <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-red-500 px-1.5 text-xs font-bold text-white">
+                  {badge > 99 ? '99+' : badge}
+                </span>
+              )}
             </Link>
           )
         })}

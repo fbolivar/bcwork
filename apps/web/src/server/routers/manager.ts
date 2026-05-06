@@ -236,6 +236,147 @@ export const managerRouter = router({
       }
     }),
 
+  // ─── Solicitudes de corrección ───────────────────────────────────────────
+
+  getActivityEdits: managerProcedure
+    .input(
+      z.object({
+        status: z.enum(['pending', 'approved', 'rejected', 'all']).default('pending'),
+      }),
+    )
+    .query(async ({ ctx, input }) => {
+      let query = ctx.db
+        .from('activity_edits')
+        .select(
+          'id, applies_to_date, edit_type, reason, review_note, status, created_at, reviewed_at, user_id, users!activity_edits_user_id_fkey(full_name, email)',
+        )
+        .eq('tenant_id', ctx.user!.tid)
+        .order('created_at', { ascending: false })
+        .limit(100)
+
+      if (input.status !== 'all') {
+        query = query.eq('status', input.status)
+      }
+
+      const { data, error } = await query
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+
+      return (data ?? []).map((e) => ({
+        id: e.id,
+        applies_to_date: e.applies_to_date,
+        edit_type: e.edit_type,
+        reason: e.reason,
+        review_note: e.review_note,
+        status: e.status,
+        created_at: e.created_at,
+        reviewed_at: e.reviewed_at,
+        user_id: e.user_id,
+        full_name: (e.users as unknown as { full_name: string | null } | null)?.full_name ?? null,
+        email: (e.users as unknown as { email: string } | null)?.email ?? '',
+      }))
+    }),
+
+  reviewActivityEdit: managerProcedure
+    .input(
+      z.object({
+        id: z.string().uuid(),
+        status: z.enum(['approved', 'rejected']),
+        review_note: z.string().max(500).optional(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { data: edit, error: fetchError } = await ctx.db
+        .from('activity_edits')
+        .select('user_id, applies_to_date')
+        .eq('id', input.id)
+        .eq('tenant_id', ctx.user!.tid)
+        .single()
+
+      if (fetchError || !edit)
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Solicitud no encontrada' })
+
+      const { error } = await ctx.db
+        .from('activity_edits')
+        .update({
+          status: input.status,
+          review_note: input.review_note ?? null,
+          reviewed_by: ctx.user!.sub,
+          reviewed_at: new Date().toISOString(),
+        })
+        .eq('id', input.id)
+        .eq('tenant_id', ctx.user!.tid)
+
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+
+      // Notificar al empleado
+      const statusText = input.status === 'approved' ? 'aprobada' : 'rechazada'
+      await ctx.db.from('notifications').insert({
+        tenant_id: ctx.user!.tid,
+        user_id: edit.user_id,
+        channel: 'manager_message' as const,
+        title: `Solicitud de corrección ${statusText}`,
+        body: input.review_note ?? `Tu solicitud del ${edit.applies_to_date} fue ${statusText}.`,
+      })
+
+      return { ok: true }
+    }),
+
+  getPendingCorrectionsCount: managerProcedure.query(async ({ ctx }) => {
+    const { count, error } = await ctx.db
+      .from('activity_edits')
+      .select('id', { count: 'exact', head: true })
+      .eq('tenant_id', ctx.user!.tid)
+      .eq('status', 'pending')
+
+    if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+    return { count: count ?? 0 }
+  }),
+
+  // ─── Estado del equipo hoy ────────────────────────────────────────────────
+
+  getTeamStatus: managerProcedure
+    .input(z.object({ teamId: z.string().uuid().optional() }))
+    .query(async ({ ctx, input }) => {
+      const tenantId = ctx.user!.tid
+      const today = new Date().toISOString().slice(0, 10)
+
+      let membersQuery = ctx.db
+        .from('users')
+        .select('id, full_name, email, department')
+        .eq('tenant_id', tenantId)
+        .in('role', ['employee', 'manager'])
+        .eq('status', 'active')
+
+      if (input.teamId) {
+        const { data: teamMembers } = await ctx.db
+          .from('team_members')
+          .select('user_id')
+          .eq('team_id', input.teamId)
+          .eq('tenant_id', tenantId)
+        const ids = (teamMembers ?? []).map((m) => m.user_id)
+        if (ids.length === 0) return { active: [], inactive: [] }
+        membersQuery = membersQuery.in('id', ids)
+      }
+
+      const [membersRes, activeSessionsRes] = await Promise.all([
+        membersQuery,
+        ctx.db
+          .from('work_sessions')
+          .select('user_id, started_at, active_seconds')
+          .eq('tenant_id', tenantId)
+          .gte('started_at', today)
+          .is('ended_at', null),
+      ])
+
+      const activeUserIds = new Set((activeSessionsRes.data ?? []).map((s) => s.user_id))
+      const members = membersRes.data ?? []
+
+      return {
+        active: members.filter((m) => activeUserIds.has(m.id)),
+        inactive: members.filter((m) => !activeUserIds.has(m.id)),
+      }
+    }),
+
   getUserDetail: managerProcedure
     .input(
       z.object({ userId: z.string().uuid(), days: z.number().int().min(1).max(90).default(14) }),

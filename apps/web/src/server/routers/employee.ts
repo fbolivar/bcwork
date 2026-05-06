@@ -305,6 +305,27 @@ export const employeeRouter = router({
       })
 
       if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+
+      // Notificar a managers y tenant_admins del tenant
+      const { data: managers } = await ctx.db
+        .from('users')
+        .select('id')
+        .eq('tenant_id', ctx.user!.tid)
+        .in('role', ['manager', 'tenant_admin'])
+        .eq('status', 'active')
+
+      if (managers && managers.length > 0) {
+        await ctx.db.from('notifications').insert(
+          managers.map((m) => ({
+            tenant_id: ctx.user!.tid,
+            user_id: m.id,
+            channel: 'manager_message' as const,
+            title: 'Nueva solicitud de corrección',
+            body: `Un empleado solicitó corrección de actividad para el ${input.applies_to_date}.`,
+          })),
+        )
+      }
+
       return { ok: true }
     }),
 
