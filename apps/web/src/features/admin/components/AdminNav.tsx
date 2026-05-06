@@ -22,6 +22,8 @@ import {
   Clock4,
   Target,
   MessageSquare,
+  CalendarOff,
+  CalendarDays,
 } from 'lucide-react'
 import { trpc } from '@/lib/trpc-client'
 import { useRouter } from 'next/navigation'
@@ -36,12 +38,14 @@ const NAV = [
   { href: '/admin/overtime', label: 'Horas extra', icon: Clock4 },
   { href: '/admin/goals', label: 'Objetivos', icon: Target },
   { href: '/admin/messages', label: 'Mensajes', icon: MessageSquare },
+  { href: '/admin/absences', label: 'Ausencias', icon: CalendarOff },
+  { href: '/admin/pto', label: 'Balance PTO', icon: CalendarDays },
+  { href: '/admin/integrations', label: 'Integraciones', icon: Plug },
   { href: '/admin/apps', label: 'Aplicaciones', icon: AppWindow },
   { href: '/admin/ips', label: 'IPs Corporativas', icon: Network },
   { href: '/admin/devices', label: 'Dispositivos', icon: Monitor },
   { href: '/admin/metrics', label: 'Métricas', icon: BarChart2 },
   { href: '/admin/alerts', label: 'Alertas', icon: Bell },
-  { href: '/admin/api', label: 'Integraciones', icon: Plug },
   { href: '/admin/audit', label: 'Auditoría', icon: Shield },
   { href: '/admin/settings', label: 'Configuración', icon: Settings },
   { href: '/admin/downloads', label: 'Descargas', icon: Download },

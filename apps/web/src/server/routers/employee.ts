@@ -1706,4 +1706,354 @@ export const employeeRouter = router({
     if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
     return { count: count ?? 0 }
   }),
+
+  // ─── Ausencias / PTO ──────────────────────────────────────────────────────
+
+  requestAbsence: protectedProcedure
+    .input(
+      z.object({
+        type: z.enum(['vacation', 'sick', 'personal', 'other']),
+        start_date: z.string(),
+        end_date: z.string(),
+        days_count: z.number().min(0.5).max(365),
+        reason: z.string().max(1000).optional(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { data, error } = await ctx.db
+        .from('absence_requests')
+        .insert({
+          tenant_id: ctx.user!.tid,
+          employee_id: ctx.user!.sub,
+          type: input.type,
+          start_date: input.start_date,
+          end_date: input.end_date,
+          days_count: input.days_count,
+          reason: input.reason ?? null,
+          status: 'pending',
+        })
+        .select()
+        .single()
+
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+
+      // Notify managers
+      const { data: managers } = await ctx.db
+        .from('users')
+        .select('id')
+        .eq('tenant_id', ctx.user!.tid)
+        .in('role', ['tenant_admin', 'manager'])
+        .eq('status', 'active')
+
+      if (managers && managers.length > 0) {
+        broadcastNotificationToMany(managers.map((m) => m.id))
+      }
+
+      return data
+    }),
+
+  getMyAbsences: protectedProcedure
+    .input(
+      z.object({
+        status: z.enum(['all', 'pending', 'approved', 'rejected', 'cancelled']).default('all'),
+      }),
+    )
+    .query(async ({ ctx, input }) => {
+      let q = ctx.db
+        .from('absence_requests')
+        .select('*')
+        .eq('employee_id', ctx.user!.sub)
+        .order('created_at', { ascending: false })
+
+      if (input.status !== 'all') q = q.eq('status', input.status)
+
+      const { data, error } = await q
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      return data ?? []
+    }),
+
+  getMyPTOBalance: protectedProcedure.query(async ({ ctx }) => {
+    const year = new Date().getFullYear()
+    const { data, error } = await ctx.db
+      .from('absence_balances')
+      .select('*')
+      .eq('employee_id', ctx.user!.sub)
+      .eq('year', year)
+      .maybeSingle()
+
+    if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+
+    // Return defaults if no balance row yet
+    return (
+      data ?? {
+        vacation_days_total: 15,
+        vacation_days_used: 0,
+        sick_days_total: 15,
+        sick_days_used: 0,
+        year,
+      }
+    )
+  }),
+
+  cancelAbsenceRequest: protectedProcedure
+    .input(z.object({ id: z.string().uuid() }))
+    .mutation(async ({ ctx, input }) => {
+      const { error } = await ctx.db
+        .from('absence_requests')
+        .update({ status: 'cancelled' })
+        .eq('id', input.id)
+        .eq('employee_id', ctx.user!.sub)
+        .eq('status', 'pending')
+
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      return { ok: true }
+    }),
+
+  // ─── Pausas (Breaks) ──────────────────────────────────────────────────────
+
+  startBreak: protectedProcedure
+    .input(
+      z.object({
+        type: z.enum(['lunch', 'rest', 'personal', 'other']),
+        note: z.string().max(200).optional(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      // End any active break first
+      await ctx.db
+        .from('break_sessions')
+        .update({ ended_at: new Date().toISOString() })
+        .eq('employee_id', ctx.user!.sub)
+        .is('ended_at', null)
+
+      const { data, error } = await ctx.db
+        .from('break_sessions')
+        .insert({
+          tenant_id: ctx.user!.tid,
+          employee_id: ctx.user!.sub,
+          type: input.type,
+          note: input.note ?? null,
+        })
+        .select()
+        .single()
+
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      return data
+    }),
+
+  endBreak: protectedProcedure.mutation(async ({ ctx }) => {
+    const { error } = await ctx.db
+      .from('break_sessions')
+      .update({ ended_at: new Date().toISOString() })
+      .eq('employee_id', ctx.user!.sub)
+      .is('ended_at', null)
+
+    if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+    return { ok: true }
+  }),
+
+  getActiveBreak: protectedProcedure.query(async ({ ctx }) => {
+    const { data, error } = await ctx.db
+      .from('break_sessions')
+      .select('*')
+      .eq('employee_id', ctx.user!.sub)
+      .is('ended_at', null)
+      .order('started_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+
+    if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+    return data
+  }),
+
+  getBreakHistory: protectedProcedure
+    .input(z.object({ date: z.string().optional() }))
+    .query(async ({ ctx, input }) => {
+      const date = input.date ?? new Date().toISOString().slice(0, 10)
+      const { data, error } = await ctx.db
+        .from('break_sessions')
+        .select('*')
+        .eq('employee_id', ctx.user!.sub)
+        .gte('started_at', `${date}T00:00:00Z`)
+        .lte('started_at', `${date}T23:59:59Z`)
+        .order('started_at', { ascending: false })
+
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      return data ?? []
+    }),
+
+  // ─── Presencia del equipo ─────────────────────────────────────────────────
+
+  getTeamPresence: protectedProcedure.query(async ({ ctx }) => {
+    const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
+
+    const [sessionsRes, usersRes] = await Promise.all([
+      ctx.db
+        .from('work_sessions')
+        .select('user_id, started_at, ended_at')
+        .eq('tenant_id', ctx.user!.tid)
+        .gte('started_at', since),
+      ctx.db
+        .from('users')
+        .select('id, full_name, department, position, status')
+        .eq('tenant_id', ctx.user!.tid)
+        .eq('status', 'active')
+        .neq('id', ctx.user!.sub),
+    ])
+
+    const sessions = sessionsRes.data ?? []
+    const users = usersRes.data ?? []
+
+    return users
+      .map((u) => {
+        const userSessions = sessions.filter((s) => s.user_id === u.id)
+        const activeSession = userSessions.find((s) => !s.ended_at)
+        const lastSession = userSessions.sort(
+          (a, b) => new Date(b.started_at).getTime() - new Date(a.started_at).getTime(),
+        )[0]
+        return {
+          id: u.id,
+          full_name: u.full_name,
+          department: u.department,
+          position: u.position,
+          is_online: !!activeSession,
+          last_seen: lastSession?.ended_at ?? lastSession?.started_at ?? null,
+        }
+      })
+      .sort((a, b) => (b.is_online ? 1 : 0) - (a.is_online ? 1 : 0))
+  }),
+
+  // ─── Benchmarking del equipo ──────────────────────────────────────────────
+
+  getTeamBenchmark: protectedProcedure
+    .input(z.object({ days: z.number().min(7).max(90).default(30) }))
+    .query(async ({ ctx, input }) => {
+      const since = new Date(Date.now() - input.days * 24 * 60 * 60 * 1000).toISOString()
+
+      const { data: sessions, error } = await ctx.db
+        .from('work_sessions')
+        .select('user_id, started_at, ended_at, productive_seconds, active_seconds')
+        .eq('tenant_id', ctx.user!.tid)
+        .gte('started_at', since)
+        .not('ended_at', 'is', null)
+
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+
+      const byUser = new Map<
+        string,
+        { total: number; productive: number; days: Set<string>; active: number }
+      >()
+      for (const s of sessions ?? []) {
+        if (!byUser.has(s.user_id))
+          byUser.set(s.user_id, { total: 0, productive: 0, days: new Set(), active: 0 })
+        const u = byUser.get(s.user_id)!
+        const dur = s.ended_at
+          ? (new Date(s.ended_at).getTime() - new Date(s.started_at).getTime()) / 1000
+          : 0
+        u.total += dur
+        u.productive += s.productive_seconds ?? 0
+        u.active += s.active_seconds ?? 0
+        u.days.add(s.started_at.slice(0, 10))
+      }
+
+      const allUsers = Array.from(byUser.values())
+      const avgProductivity =
+        allUsers.length > 0
+          ? (allUsers.reduce((s, u) => s + (u.total > 0 ? u.productive / u.total : 0), 0) /
+              allUsers.length) *
+            100
+          : 0
+      const avgDailyHours =
+        allUsers.length > 0
+          ? allUsers.reduce((s, u) => s + (u.days.size > 0 ? u.total / u.days.size / 3600 : 0), 0) /
+            allUsers.length
+          : 0
+
+      const mine = byUser.get(ctx.user!.sub)
+      const myProductivity = mine && mine.total > 0 ? (mine.productive / mine.total) * 100 : 0
+      const myDailyHours = mine && mine.days.size > 0 ? mine.total / mine.days.size / 3600 : 0
+
+      return {
+        team_avg_productivity: Math.round(avgProductivity),
+        team_avg_daily_hours: Math.round(avgDailyHours * 10) / 10,
+        my_productivity: Math.round(myProductivity),
+        my_daily_hours: Math.round(myDailyHours * 10) / 10,
+        team_size: allUsers.length,
+        days: input.days,
+      }
+    }),
+
+  // ─── Facturas (Invoices) ──────────────────────────────────────────────────
+
+  getMyInvoices: protectedProcedure.query(async ({ ctx }) => {
+    const { data, error } = await ctx.db
+      .from('invoices')
+      .select('*')
+      .eq('employee_id', ctx.user!.sub)
+      .order('created_at', { ascending: false })
+
+    if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+    return data ?? []
+  }),
+
+  createInvoice: protectedProcedure
+    .input(
+      z.object({
+        period_start: z.string(),
+        period_end: z.string(),
+        hours_worked: z.number().min(0),
+        rate_per_hour: z.number().min(0),
+        currency: z.string().default('COP'),
+        tax_rate: z.number().min(0).max(100).default(0),
+        notes: z.string().max(2000).optional(),
+        client_name: z.string().max(200).optional(),
+        client_email: z.string().email().optional().or(z.literal('')),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const subtotal = input.hours_worked * input.rate_per_hour
+      const tax_amount = subtotal * (input.tax_rate / 100)
+      const total_amount = subtotal + tax_amount
+      const invoice_number = `INV-${Date.now().toString().slice(-8)}`
+
+      const { data, error } = await ctx.db
+        .from('invoices')
+        .insert({
+          tenant_id: ctx.user!.tid,
+          employee_id: ctx.user!.sub,
+          invoice_number,
+          period_start: input.period_start,
+          period_end: input.period_end,
+          hours_worked: input.hours_worked,
+          rate_per_hour: input.rate_per_hour,
+          currency: input.currency,
+          subtotal,
+          tax_rate: input.tax_rate,
+          tax_amount,
+          total_amount,
+          notes: input.notes ?? null,
+          client_name: input.client_name ?? null,
+          client_email: input.client_email ?? null,
+        })
+        .select()
+        .single()
+
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      return data
+    }),
+
+  updateInvoiceStatus: protectedProcedure
+    .input(
+      z.object({ id: z.string().uuid(), status: z.enum(['draft', 'sent', 'paid', 'cancelled']) }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { error } = await ctx.db
+        .from('invoices')
+        .update({ status: input.status, updated_at: new Date().toISOString() })
+        .eq('id', input.id)
+        .eq('employee_id', ctx.user!.sub)
+
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      return { ok: true }
+    }),
 })

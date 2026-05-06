@@ -14,6 +14,127 @@ export type Database = {
   }
   public: {
     Tables: {
+      absence_balances: {
+        Row: {
+          employee_id: string
+          id: string
+          sick_days_total: number
+          sick_days_used: number
+          tenant_id: string
+          updated_at: string
+          vacation_days_total: number
+          vacation_days_used: number
+          year: number
+        }
+        Insert: {
+          employee_id: string
+          id?: string
+          sick_days_total?: number
+          sick_days_used?: number
+          tenant_id: string
+          updated_at?: string
+          vacation_days_total?: number
+          vacation_days_used?: number
+          year?: number
+        }
+        Update: {
+          employee_id?: string
+          id?: string
+          sick_days_total?: number
+          sick_days_used?: number
+          tenant_id?: string
+          updated_at?: string
+          vacation_days_total?: number
+          vacation_days_used?: number
+          year?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "absence_balances_employee_id_fkey"
+            columns: ["employee_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "absence_balances_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      absence_requests: {
+        Row: {
+          created_at: string
+          days_count: number
+          employee_id: string
+          end_date: string
+          id: string
+          manager_note: string | null
+          reason: string | null
+          reviewed_at: string | null
+          reviewed_by: string | null
+          start_date: string
+          status: string
+          tenant_id: string
+          type: string
+        }
+        Insert: {
+          created_at?: string
+          days_count?: number
+          employee_id: string
+          end_date: string
+          id?: string
+          manager_note?: string | null
+          reason?: string | null
+          reviewed_at?: string | null
+          reviewed_by?: string | null
+          start_date: string
+          status?: string
+          tenant_id: string
+          type: string
+        }
+        Update: {
+          created_at?: string
+          days_count?: number
+          employee_id?: string
+          end_date?: string
+          id?: string
+          manager_note?: string | null
+          reason?: string | null
+          reviewed_at?: string | null
+          reviewed_by?: string | null
+          start_date?: string
+          status?: string
+          tenant_id?: string
+          type?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "absence_requests_employee_id_fkey"
+            columns: ["employee_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "absence_requests_reviewed_by_fkey"
+            columns: ["reviewed_by"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "absence_requests_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       activity_edits: {
         Row: {
           applies_to_date: string
@@ -986,6 +1107,54 @@ export type Database = {
           },
         ]
       }
+      break_sessions: {
+        Row: {
+          created_at: string
+          employee_id: string
+          ended_at: string | null
+          id: string
+          note: string | null
+          started_at: string
+          tenant_id: string
+          type: string
+        }
+        Insert: {
+          created_at?: string
+          employee_id: string
+          ended_at?: string | null
+          id?: string
+          note?: string | null
+          started_at?: string
+          tenant_id: string
+          type?: string
+        }
+        Update: {
+          created_at?: string
+          employee_id?: string
+          ended_at?: string | null
+          id?: string
+          note?: string | null
+          started_at?: string
+          tenant_id?: string
+          type?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "break_sessions_employee_id_fkey"
+            columns: ["employee_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "break_sessions_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       consents: {
         Row: {
           consent_type: string
@@ -1257,6 +1426,128 @@ export type Database = {
             columns: ["user_id"]
             isOneToOne: false
             referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      integrations: {
+        Row: {
+          active: boolean
+          config: Json
+          created_at: string
+          id: string
+          label: string | null
+          tenant_id: string
+          type: string
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          config?: Json
+          created_at?: string
+          id?: string
+          label?: string | null
+          tenant_id: string
+          type: string
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          config?: Json
+          created_at?: string
+          id?: string
+          label?: string | null
+          tenant_id?: string
+          type?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "integrations_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      invoices: {
+        Row: {
+          client_email: string | null
+          client_name: string | null
+          created_at: string
+          currency: string
+          employee_id: string
+          hours_worked: number
+          id: string
+          invoice_number: string | null
+          notes: string | null
+          period_end: string
+          period_start: string
+          rate_per_hour: number
+          status: string
+          subtotal: number
+          tax_amount: number
+          tax_rate: number
+          tenant_id: string
+          total_amount: number
+          updated_at: string
+        }
+        Insert: {
+          client_email?: string | null
+          client_name?: string | null
+          created_at?: string
+          currency?: string
+          employee_id: string
+          hours_worked?: number
+          id?: string
+          invoice_number?: string | null
+          notes?: string | null
+          period_end: string
+          period_start: string
+          rate_per_hour?: number
+          status?: string
+          subtotal?: number
+          tax_amount?: number
+          tax_rate?: number
+          tenant_id: string
+          total_amount?: number
+          updated_at?: string
+        }
+        Update: {
+          client_email?: string | null
+          client_name?: string | null
+          created_at?: string
+          currency?: string
+          employee_id?: string
+          hours_worked?: number
+          id?: string
+          invoice_number?: string | null
+          notes?: string | null
+          period_end?: string
+          period_start?: string
+          rate_per_hour?: number
+          status?: string
+          subtotal?: number
+          tax_amount?: number
+          tax_rate?: number
+          tenant_id?: string
+          total_amount?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "invoices_employee_id_fkey"
+            columns: ["employee_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "invoices_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
             referencedColumns: ["id"]
           },
         ]

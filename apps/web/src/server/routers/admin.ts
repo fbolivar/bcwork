@@ -3,6 +3,7 @@ import { TRPCError } from '@trpc/server'
 import { router, adminProcedure, protectedProcedure } from '../trpc'
 import { hashPassword, generateRandomPassword } from '@/lib/auth/password'
 import { logAudit } from '@/lib/auth/audit'
+import { broadcastNotificationToMany } from '@/lib/realtime-broadcast'
 import type { Database } from '@bcwork/db'
 
 type UserInsert = Database['public']['Tables']['users']['Insert']
@@ -1857,5 +1858,243 @@ export const adminRouter = router({
     return Array.from(convMap.values()).sort(
       (a, b) => new Date(b.lastAt).getTime() - new Date(a.lastAt).getTime(),
     )
+  }),
+
+  // ─── Ausencias ────────────────────────────────────────────────────────────
+
+  getAbsenceRequests: adminProcedure
+    .input(
+      z.object({
+        status: z.enum(['all', 'pending', 'approved', 'rejected', 'cancelled']).default('all'),
+      }),
+    )
+    .query(async ({ ctx, input }) => {
+      let q = ctx.db
+        .from('absence_requests')
+        .select(
+          '*, users!absence_requests_employee_id_fkey(id, full_name, email, department, position)',
+        )
+        .eq('tenant_id', ctx.user!.tid)
+        .order('created_at', { ascending: false })
+
+      if (input.status !== 'all') q = q.eq('status', input.status)
+
+      const { data, error } = await q
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      return data ?? []
+    }),
+
+  updateAbsenceRequest: adminProcedure
+    .input(
+      z.object({
+        id: z.string().uuid(),
+        status: z.enum(['approved', 'rejected']),
+        manager_note: z.string().max(1000).optional(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { data: req } = await ctx.db
+        .from('absence_requests')
+        .select('employee_id, days_count, type')
+        .eq('id', input.id)
+        .eq('tenant_id', ctx.user!.tid)
+        .single()
+
+      const { error } = await ctx.db
+        .from('absence_requests')
+        .update({
+          status: input.status,
+          manager_note: input.manager_note ?? null,
+          reviewed_by: ctx.user!.sub,
+          reviewed_at: new Date().toISOString(),
+        })
+        .eq('id', input.id)
+        .eq('tenant_id', ctx.user!.tid)
+
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+
+      // Update PTO balance if approved
+      if (input.status === 'approved' && req) {
+        const year = new Date().getFullYear()
+        const field = req.type === 'vacation' ? 'vacation_days_used' : 'sick_days_used'
+        const { data: bal } = await ctx.db
+          .from('absence_balances')
+          .select('*')
+          .eq('employee_id', req.employee_id)
+          .eq('year', year)
+          .maybeSingle()
+
+        const daysUsed = Number(req.days_count)
+        if (bal) {
+          const currentVal = Number(bal[field as 'vacation_days_used' | 'sick_days_used'] ?? 0)
+          const patch =
+            field === 'vacation_days_used'
+              ? { vacation_days_used: currentVal + daysUsed, updated_at: new Date().toISOString() }
+              : { sick_days_used: currentVal + daysUsed, updated_at: new Date().toISOString() }
+          await ctx.db.from('absence_balances').update(patch).eq('id', bal.id)
+        } else {
+          const insertData =
+            field === 'vacation_days_used'
+              ? {
+                  tenant_id: ctx.user!.tid,
+                  employee_id: req.employee_id,
+                  year,
+                  vacation_days_used: daysUsed,
+                }
+              : {
+                  tenant_id: ctx.user!.tid,
+                  employee_id: req.employee_id,
+                  year,
+                  sick_days_used: daysUsed,
+                }
+          await ctx.db.from('absence_balances').insert(insertData)
+        }
+      }
+
+      // Notify employee
+      if (req) {
+        broadcastNotificationToMany([req.employee_id])
+      }
+
+      return { ok: true }
+    }),
+
+  updatePTOBalance: adminProcedure
+    .input(
+      z.object({
+        employee_id: z.string().uuid(),
+        year: z.number().int().min(2020).max(2100),
+        vacation_days_total: z.number().min(0).optional(),
+        vacation_days_used: z.number().min(0).optional(),
+        sick_days_total: z.number().min(0).optional(),
+        sick_days_used: z.number().min(0).optional(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const {
+        employee_id,
+        year,
+        vacation_days_total,
+        vacation_days_used,
+        sick_days_total,
+        sick_days_used,
+      } = input
+
+      const { data: existing } = await ctx.db
+        .from('absence_balances')
+        .select('id')
+        .eq('employee_id', employee_id)
+        .eq('year', year)
+        .maybeSingle()
+
+      if (existing) {
+        type BalUpdate = {
+          updated_at: string
+          vacation_days_total?: number
+          vacation_days_used?: number
+          sick_days_total?: number
+          sick_days_used?: number
+        }
+        const patch: BalUpdate = { updated_at: new Date().toISOString() }
+        if (vacation_days_total !== undefined) patch.vacation_days_total = vacation_days_total
+        if (vacation_days_used !== undefined) patch.vacation_days_used = vacation_days_used
+        if (sick_days_total !== undefined) patch.sick_days_total = sick_days_total
+        if (sick_days_used !== undefined) patch.sick_days_used = sick_days_used
+        await ctx.db.from('absence_balances').update(patch).eq('id', existing.id)
+      } else {
+        await ctx.db.from('absence_balances').insert({
+          tenant_id: ctx.user!.tid,
+          employee_id,
+          year,
+          ...(vacation_days_total !== undefined && { vacation_days_total }),
+          ...(vacation_days_used !== undefined && { vacation_days_used }),
+          ...(sick_days_total !== undefined && { sick_days_total }),
+          ...(sick_days_used !== undefined && { sick_days_used }),
+        })
+      }
+
+      return { ok: true }
+    }),
+
+  // ─── Integraciones ────────────────────────────────────────────────────────
+
+  getIntegrations: adminProcedure.query(async ({ ctx }) => {
+    const { data, error } = await ctx.db
+      .from('integrations')
+      .select('*')
+      .eq('tenant_id', ctx.user!.tid)
+
+    if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+    return data ?? []
+  }),
+
+  saveIntegration: adminProcedure
+    .input(
+      z.object({
+        type: z.enum(['slack', 'jira', 'asana', 'github', 'trello', 'webhook']),
+        label: z.string().max(100).optional(),
+        config: z.record(z.string()),
+        active: z.boolean().default(true),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { data: existing } = await ctx.db
+        .from('integrations')
+        .select('id')
+        .eq('tenant_id', ctx.user!.tid)
+        .eq('type', input.type)
+        .maybeSingle()
+
+      if (existing) {
+        const { error } = await ctx.db
+          .from('integrations')
+          .update({
+            label: input.label ?? null,
+            config: input.config,
+            active: input.active,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', existing.id)
+        if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      } else {
+        const { error } = await ctx.db
+          .from('integrations')
+          .insert({
+            tenant_id: ctx.user!.tid,
+            type: input.type,
+            label: input.label ?? null,
+            config: input.config,
+            active: input.active,
+          })
+        if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      }
+
+      return { ok: true }
+    }),
+
+  deleteIntegration: adminProcedure
+    .input(z.object({ id: z.string().uuid() }))
+    .mutation(async ({ ctx, input }) => {
+      const { error } = await ctx.db
+        .from('integrations')
+        .delete()
+        .eq('id', input.id)
+        .eq('tenant_id', ctx.user!.tid)
+
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      return { ok: true }
+    }),
+
+  // ─── Facturas admin ───────────────────────────────────────────────────────
+
+  getAdminInvoices: adminProcedure.query(async ({ ctx }) => {
+    const { data, error } = await ctx.db
+      .from('invoices')
+      .select('*, users!invoices_employee_id_fkey(id, full_name, email)')
+      .eq('tenant_id', ctx.user!.tid)
+      .order('created_at', { ascending: false })
+
+    if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+    return data ?? []
   }),
 })

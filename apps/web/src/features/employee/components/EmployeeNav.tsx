@@ -27,6 +27,11 @@ import {
   Clock4,
   Target,
   MessageSquare,
+  Coffee,
+  Users,
+  Timer,
+  Receipt,
+  BarChart3,
 } from 'lucide-react'
 import { trpc } from '@/lib/trpc-client'
 
@@ -46,6 +51,11 @@ const NAV = [
   { href: '/me/screenshots', label: 'Mis capturas', icon: Camera },
   { href: '/me/schedule', label: 'Mi horario', icon: CalendarDays },
   { href: '/me/absences', label: 'Mis ausencias', icon: CalendarOff },
+  { href: '/me/breaks', label: 'Mis pausas', icon: Coffee },
+  { href: '/me/team-presence', label: 'Equipo en línea', icon: Users },
+  { href: '/me/pomodoro', label: 'Pomodoro', icon: Timer },
+  { href: '/me/invoices', label: 'Mis facturas', icon: Receipt },
+  { href: '/me/benchmark', label: 'Mi benchmark', icon: BarChart3 },
   { href: '/me/manual-time', label: 'Tiempo manual', icon: PenLine },
   { href: '/me/notifications', label: 'Notificaciones', icon: Bell },
   { href: '/me/devices', label: 'Mis dispositivos', icon: Monitor },
