@@ -488,7 +488,6 @@ export const employeeRouter = router({
 
       if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
 
-      // Fire-and-forget — un fallo de auditoría no debe bloquear el consentimiento
       ctx.db
         .from('audit_logs')
         .insert({
@@ -503,4 +502,209 @@ export const employeeRouter = router({
 
       return { ok: true }
     }),
+
+  // ─── Mis capturas de pantalla ─────────────────────────────────────────────
+
+  getMyScreenshots: protectedProcedure
+    .input(
+      z.object({
+        date: z
+          .string()
+          .regex(/^\d{4}-\d{2}-\d{2}$/)
+          .optional(),
+        limit: z.number().int().min(1).max(100).default(50),
+        offset: z.number().int().min(0).default(0),
+      }),
+    )
+    .query(async ({ ctx, input }) => {
+      let q = ctx.db
+        .from('screenshots')
+        .select('id, taken_at, storage_path, thumbnail_path, width, height, session_id')
+        .eq('tenant_id', ctx.user!.tid)
+        .eq('user_id', ctx.user!.sub)
+        .order('taken_at', { ascending: false })
+        .range(input.offset, input.offset + input.limit - 1)
+
+      if (input.date) {
+        q = q.gte('taken_at', `${input.date}T00:00:00Z`).lte('taken_at', `${input.date}T23:59:59Z`)
+      }
+
+      const { data, error } = await q
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+
+      const rows = data ?? []
+      if (rows.length === 0) return { screenshots: [], total: 0 }
+
+      const paths = rows.map((r) => r.thumbnail_path ?? r.storage_path)
+      const { data: signed } = await ctx.db.storage
+        .from('screenshots')
+        .createSignedUrls(paths, 3600)
+
+      const urlMap = new Map<string, string>()
+      signed?.forEach((s) => {
+        if (s.signedUrl && s.path) urlMap.set(s.path, s.signedUrl)
+      })
+
+      const { count } = await ctx.db
+        .from('screenshots')
+        .select('*', { count: 'exact', head: true })
+        .eq('tenant_id', ctx.user!.tid)
+        .eq('user_id', ctx.user!.sub)
+
+      return {
+        screenshots: rows.map((r) => ({
+          ...r,
+          url: urlMap.get(r.thumbnail_path ?? r.storage_path) ?? null,
+        })),
+        total: count ?? 0,
+      }
+    }),
+
+  // ─── Mis ausencias ────────────────────────────────────────────────────────
+
+  getMyTimeOff: protectedProcedure.query(async ({ ctx }) => {
+    const { data, error } = await ctx.db
+      .from('time_off')
+      .select('id, type, starts_on, ends_on, status, notes, created_at, approved_by')
+      .eq('tenant_id', ctx.user!.tid)
+      .eq('user_id', ctx.user!.sub)
+      .order('created_at', { ascending: false })
+      .limit(50)
+
+    if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+    return data ?? []
+  }),
+
+  requestTimeOff: protectedProcedure
+    .input(
+      z.object({
+        type: z.enum(['vacation', 'sick', 'personal', 'maternity', 'paternity', 'other']),
+        starts_on: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+        ends_on: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+        notes: z.string().max(500).optional(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      if (input.ends_on < input.starts_on) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'La fecha de fin debe ser igual o posterior a la de inicio',
+        })
+      }
+
+      const { data, error } = await ctx.db
+        .from('time_off')
+        .insert({
+          tenant_id: ctx.user!.tid,
+          user_id: ctx.user!.sub,
+          type: input.type,
+          starts_on: input.starts_on,
+          ends_on: input.ends_on,
+          notes: input.notes ?? null,
+          status: 'pending',
+        })
+        .select('id')
+        .single()
+
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+
+      // Notificar a managers y admins
+      const { data: managers } = await ctx.db
+        .from('users')
+        .select('id')
+        .eq('tenant_id', ctx.user!.tid)
+        .in('role', ['manager', 'tenant_admin'])
+        .eq('status', 'active')
+
+      if (managers && managers.length > 0) {
+        await ctx.db.from('notifications').insert(
+          managers.map((m) => ({
+            tenant_id: ctx.user!.tid,
+            user_id: m.id,
+            channel: 'in_app' as const,
+            title: 'Nueva solicitud de ausencia',
+            body: `Un empleado solicitó ${input.type} del ${input.starts_on} al ${input.ends_on}.`,
+            sent_by: ctx.user!.sub,
+          })),
+        )
+        broadcastNotificationToMany(managers.map((m) => m.id))
+      }
+
+      return { ok: true, id: data.id }
+    }),
+
+  cancelTimeOff: protectedProcedure
+    .input(z.object({ id: z.string().uuid() }))
+    .mutation(async ({ ctx, input }) => {
+      const { error } = await ctx.db
+        .from('time_off')
+        .delete()
+        .eq('id', input.id)
+        .eq('user_id', ctx.user!.sub)
+        .eq('tenant_id', ctx.user!.tid)
+        .eq('status', 'pending')
+
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      return { ok: true }
+    }),
+
+  // ─── Exportar mis datos ───────────────────────────────────────────────────
+
+  getMyExportData: protectedProcedure.query(async ({ ctx }) => {
+    const from90 = new Date(Date.now() - 90 * 86400000).toISOString().slice(0, 10)
+
+    const [profileRes, sessionsRes, metricsRes, timeOffRes, consentsRes, editsRes] =
+      await Promise.all([
+        ctx.db
+          .from('users')
+          .select('full_name, email, role, department, position, created_at, last_login_at')
+          .eq('id', ctx.user!.sub)
+          .single(),
+        ctx.db
+          .from('work_sessions')
+          .select('started_at, ended_at, active_seconds, idle_seconds, ip_inet')
+          .eq('user_id', ctx.user!.sub)
+          .eq('tenant_id', ctx.user!.tid)
+          .gte('started_at', `${from90}T00:00:00Z`)
+          .order('started_at', { ascending: false })
+          .limit(500),
+        ctx.db
+          .from('daily_user_metrics')
+          .select(
+            'metric_date, active_seconds, productive_seconds, non_productive_seconds, overtime_seconds, productivity_ratio',
+          )
+          .eq('user_id', ctx.user!.sub)
+          .eq('tenant_id', ctx.user!.tid)
+          .gte('metric_date', from90)
+          .order('metric_date', { ascending: false }),
+        ctx.db
+          .from('time_off')
+          .select('type, starts_on, ends_on, status, notes, created_at')
+          .eq('user_id', ctx.user!.sub)
+          .eq('tenant_id', ctx.user!.tid)
+          .order('created_at', { ascending: false }),
+        ctx.db
+          .from('consents')
+          .select('consent_type, granted, granted_at, revoked_at, policy_version')
+          .eq('user_id', ctx.user!.sub)
+          .eq('tenant_id', ctx.user!.tid)
+          .order('granted_at', { ascending: false }),
+        ctx.db
+          .from('activity_edits')
+          .select('applies_to_date, edit_type, reason, status, review_note, created_at')
+          .eq('user_id', ctx.user!.sub)
+          .eq('tenant_id', ctx.user!.tid)
+          .order('created_at', { ascending: false }),
+      ])
+
+    return {
+      exported_at: new Date().toISOString(),
+      profile: profileRes.data ?? null,
+      sessions: sessionsRes.data ?? [],
+      daily_metrics: metricsRes.data ?? [],
+      time_off: timeOffRes.data ?? [],
+      consents: consentsRes.data ?? [],
+      correction_requests: editsRes.data ?? [],
+    }
+  }),
 })

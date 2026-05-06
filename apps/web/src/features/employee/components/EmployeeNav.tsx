@@ -13,6 +13,9 @@ import {
   MonitorDown,
   Bell,
   X,
+  Camera,
+  CalendarOff,
+  Download,
 } from 'lucide-react'
 import { trpc } from '@/lib/trpc-client'
 
@@ -20,11 +23,14 @@ const NAV = [
   { href: '/me/dashboard', label: 'Mi día', icon: LayoutDashboard },
   { href: '/me/metrics', label: 'Mi rendimiento', icon: BarChart2 },
   { href: '/me/sessions', label: 'Mis sesiones', icon: CalendarClock },
+  { href: '/me/screenshots', label: 'Mis capturas', icon: Camera },
+  { href: '/me/absences', label: 'Mis ausencias', icon: CalendarOff },
   { href: '/me/notifications', label: 'Notificaciones', icon: Bell },
   { href: '/me/devices', label: 'Mis dispositivos', icon: Monitor },
   { href: '/me/agent', label: 'Activar agente', icon: MonitorDown },
   { href: '/me/profile', label: 'Mi perfil', icon: User },
   { href: '/me/privacy', label: 'Mi privacidad', icon: ShieldCheck },
+  { href: '/me/export', label: 'Exportar datos', icon: Download },
 ]
 
 export function EmployeeNav({ onClose }: { onClose?: () => void } = {}) {

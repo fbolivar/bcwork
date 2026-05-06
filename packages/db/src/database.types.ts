@@ -1580,6 +1580,48 @@ export type Database = {
         }
         Relationships: []
       }
+      screenshots: {
+        Row: {
+          id: string
+          tenant_id: string
+          user_id: string
+          device_id: string | null
+          session_id: string | null
+          taken_at: string
+          storage_path: string
+          thumbnail_path: string | null
+          width: number | null
+          height: number | null
+          created_at: string | null
+        }
+        Insert: {
+          id?: string
+          tenant_id: string
+          user_id: string
+          device_id?: string | null
+          session_id?: string | null
+          taken_at?: string
+          storage_path: string
+          thumbnail_path?: string | null
+          width?: number | null
+          height?: number | null
+          created_at?: string | null
+        }
+        Update: {
+          id?: string
+          tenant_id?: string
+          user_id?: string
+          device_id?: string | null
+          session_id?: string | null
+          taken_at?: string
+          storage_path?: string
+          thumbnail_path?: string | null
+          width?: number | null
+          height?: number | null
+          created_at?: string | null
+        }
+        Relationships: []
+      }
       time_off: {
         Row: {
           approved_by: string | null

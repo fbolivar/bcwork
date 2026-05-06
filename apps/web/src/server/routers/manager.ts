@@ -680,4 +680,90 @@ export const managerRouter = router({
         devices: devicesRes.data ?? [],
       }
     }),
+
+  // ─── Gestión de ausencias ─────────────────────────────────────────────────
+
+  getTimeOffRequests: managerProcedure
+    .input(
+      z.object({
+        status: z.enum(['pending', 'approved', 'rejected', 'all']).default('pending'),
+      }),
+    )
+    .query(async ({ ctx, input }) => {
+      let q = ctx.db
+        .from('time_off')
+        .select(
+          'id, type, starts_on, ends_on, status, notes, created_at, user_id, users!time_off_user_id_fkey(full_name, email)',
+        )
+        .eq('tenant_id', ctx.user!.tid)
+        .order('created_at', { ascending: false })
+        .limit(100)
+
+      if (input.status !== 'all') q = q.eq('status', input.status)
+
+      const { data, error } = await q
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+
+      return (data ?? []).map((r) => ({
+        id: r.id,
+        type: r.type,
+        starts_on: r.starts_on,
+        ends_on: r.ends_on,
+        status: r.status,
+        notes: r.notes,
+        created_at: r.created_at,
+        user_id: r.user_id,
+        user_name: (r.users as unknown as { full_name: string | null } | null)?.full_name ?? null,
+        user_email: (r.users as unknown as { email: string } | null)?.email ?? null,
+      }))
+    }),
+
+  reviewTimeOff: managerProcedure
+    .input(
+      z.object({
+        id: z.string().uuid(),
+        status: z.enum(['approved', 'rejected']),
+        notes: z.string().max(500).optional(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { data: existing, error: fetchErr } = await ctx.db
+        .from('time_off')
+        .select('user_id, type, starts_on, ends_on, status')
+        .eq('id', input.id)
+        .eq('tenant_id', ctx.user!.tid)
+        .single()
+
+      if (fetchErr || !existing)
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Solicitud no encontrada' })
+
+      if (existing.status !== 'pending')
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Esta solicitud ya fue procesada' })
+
+      const { error } = await ctx.db
+        .from('time_off')
+        .update({
+          status: input.status,
+          approved_by: ctx.user!.sub,
+          notes: input.notes ?? existing.ends_on,
+        })
+        .eq('id', input.id)
+        .eq('tenant_id', ctx.user!.tid)
+
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+
+      // Notificar al empleado
+      const label = input.status === 'approved' ? 'aprobada' : 'rechazada'
+      await ctx.db.from('notifications').insert({
+        tenant_id: ctx.user!.tid,
+        user_id: existing.user_id,
+        channel: 'in_app',
+        title: `Solicitud de ausencia ${label}`,
+        body: `Tu solicitud de ${existing.type} del ${existing.starts_on} al ${existing.ends_on} fue ${label}.`,
+        sent_by: ctx.user!.sub,
+      })
+      broadcastNotificationToMany([existing.user_id])
+
+      return { ok: true }
+    }),
 })

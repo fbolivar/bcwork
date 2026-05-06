@@ -4,6 +4,7 @@ import dynamic from 'next/dynamic'
 import { trpc } from '@/lib/trpc-client'
 import { ActiveSessionsPanel } from '@/features/manager/components/ActiveSessionsPanel'
 import { TeamOverview } from '@/features/manager/components/TeamOverview'
+import { TimeOffPanel } from '@/features/manager/components/TimeOffPanel'
 
 const GeoLocationWidget = dynamic(
   () =>
@@ -285,6 +286,10 @@ export default function ManagerDashboard() {
       <section>
         <h2 className="mb-4 text-sm font-semibold text-gray-700">Rendimiento del equipo</h2>
         <TeamOverview {...(teamId ? { teamId } : {})} />
+      </section>
+
+      <section>
+        <TimeOffPanel />
       </section>
 
       <section>
