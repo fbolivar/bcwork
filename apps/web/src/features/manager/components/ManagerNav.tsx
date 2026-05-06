@@ -1,37 +1,167 @@
 'use client'
 
+import { useState } from 'react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
-import { LayoutDashboard, Users2, Activity, LogOut, BellRing, ClipboardEdit, X } from 'lucide-react'
+import {
+  LayoutDashboard,
+  Users2,
+  Activity,
+  LogOut,
+  BellRing,
+  ClipboardEdit,
+  X,
+  Clock4,
+  Target,
+  Video,
+  MessageSquare,
+  ClipboardList,
+  FileText,
+  Wallet,
+  ChevronDown,
+} from 'lucide-react'
 import { trpc } from '@/lib/trpc-client'
 import { NotificationBell } from '@/features/shared/components/NotificationBell'
+
+type NavItem = { href: string; label: string; icon: React.ElementType }
+type NavGroup = { label: string; defaultOpen?: boolean; items: NavItem[] }
+
+const NAV_GROUPS: NavGroup[] = [
+  {
+    label: 'General',
+    defaultOpen: true,
+    items: [
+      { href: '/manager/dashboard', label: 'Resumen', icon: LayoutDashboard },
+      { href: '/manager/team', label: 'Mi equipo', icon: Users2 },
+      { href: '/manager/sessions', label: 'Sesiones activas', icon: Activity },
+      { href: '/manager/messages', label: 'Mensajes', icon: MessageSquare },
+      { href: '/manager/notifications', label: 'Notificaciones', icon: BellRing },
+    ],
+  },
+  {
+    label: 'Aprobaciones',
+    defaultOpen: false,
+    items: [
+      { href: '/manager/corrections', label: 'Correcciones', icon: ClipboardEdit },
+      { href: '/manager/overtime', label: 'Horas extra', icon: Clock4 },
+      { href: '/manager/expenses', label: 'Gastos', icon: Wallet },
+    ],
+  },
+  {
+    label: 'Gestión de personas',
+    defaultOpen: false,
+    items: [
+      { href: '/manager/goals', label: 'Objetivos', icon: Target },
+      { href: '/manager/1on1s', label: 'Reuniones 1:1', icon: Video },
+    ],
+  },
+  {
+    label: 'Reportes',
+    defaultOpen: false,
+    items: [
+      { href: '/manager/timesheet', label: 'Timesheet', icon: ClipboardList },
+      { href: '/manager/reports', label: 'Informes', icon: FileText },
+    ],
+  },
+]
+
+function NavGroupSection({
+  group,
+  pathname,
+  badges,
+  onClose,
+}: {
+  group: NavGroup
+  pathname: string
+  badges: Record<string, number>
+  onClose?: () => void
+}) {
+  const hasActive = group.items.some((i) => pathname.startsWith(i.href))
+  const [open, setOpen] = useState(group.defaultOpen || hasActive)
+  const groupBadge = group.items.reduce((sum, i) => sum + (badges[i.href] ?? 0), 0)
+
+  return (
+    <div className="mb-1">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="flex w-full items-center gap-1.5 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-gray-50"
+      >
+        <span className="flex-1 text-[10px] font-semibold uppercase tracking-widest text-gray-400">
+          {group.label}
+        </span>
+        {!open && groupBadge > 0 && (
+          <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold text-white">
+            {groupBadge > 9 ? '9+' : groupBadge}
+          </span>
+        )}
+        <ChevronDown
+          className={`h-3 w-3 shrink-0 text-gray-300 transition-transform duration-200 ${open ? 'rotate-0' : '-rotate-90'}`}
+        />
+      </button>
+
+      {open && (
+        <div className="mt-0.5 space-y-0.5">
+          {group.items.map(({ href, label, icon: Icon }) => {
+            const active = pathname.startsWith(href)
+            const badge = badges[href] ?? 0
+            return (
+              <Link
+                key={href}
+                href={href}
+                onClick={onClose}
+                className={`flex items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-sm transition-colors ${
+                  active
+                    ? 'bg-blue-50 font-medium text-blue-700'
+                    : 'text-gray-500 hover:bg-gray-50 hover:text-gray-800'
+                }`}
+              >
+                <Icon className={`h-3.5 w-3.5 shrink-0 ${active ? 'text-blue-600' : ''}`} />
+                <span className="flex-1 truncate">{label}</span>
+                {badge > 0 && (
+                  <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold text-white">
+                    {badge > 9 ? '9+' : badge}
+                  </span>
+                )}
+              </Link>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
 
 export function ManagerNav({ onClose }: { onClose?: () => void } = {}) {
   const pathname = usePathname()
   const router = useRouter()
   const logout = trpc.auth.logout.useMutation({ onSuccess: () => router.push('/login') })
-  const { data: pending } = trpc.manager.getPendingCorrectionsCount.useQuery()
-  const pendingCount = pending?.count ?? 0
 
-  const NAV = [
-    { href: '/manager/dashboard', label: 'Resumen', icon: LayoutDashboard, badge: 0 },
-    { href: '/manager/team', label: 'Mi equipo', icon: Users2, badge: 0 },
-    { href: '/manager/sessions', label: 'Sesiones activas', icon: Activity, badge: 0 },
-    {
-      href: '/manager/corrections',
-      label: 'Correcciones',
-      icon: ClipboardEdit,
-      badge: pendingCount,
-    },
-    { href: '/manager/notifications', label: 'Notificaciones', icon: BellRing, badge: 0 },
-  ]
+  const { data: pendingCorrections } = trpc.manager.getPendingCorrectionsCount.useQuery()
+  const { data: pendingOvertime } = trpc.manager.getPendingOvertimeCount.useQuery()
+  const { data: pendingExpenses } = trpc.manager.getPendingExpensesCount.useQuery()
+  const { data: unreadMsgs } = trpc.manager.getUnreadMessageCount.useQuery(undefined, {
+    refetchInterval: 15000,
+  })
+
+  const badges: Record<string, number> = {
+    '/manager/corrections': pendingCorrections?.count ?? 0,
+    '/manager/overtime': pendingOvertime?.count ?? 0,
+    '/manager/expenses': pendingExpenses?.count ?? 0,
+    '/manager/messages': unreadMsgs?.count ?? 0,
+  }
 
   return (
-    <aside className="flex h-full w-52 flex-col border-r border-gray-200 bg-white">
-      <div className="flex items-center justify-between border-b border-gray-100 px-5 py-4">
-        <div>
-          <span className="text-sm font-bold tracking-tight text-blue-600">BCWork</span>
-          <p className="mt-0.5 text-xs text-gray-400">Panel de manager</p>
+    <aside className="flex h-full w-56 flex-col border-r border-gray-100 bg-white">
+      <div className="flex items-center justify-between px-4 py-4">
+        <div className="flex items-center gap-2.5">
+          <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-blue-600 text-xs font-bold text-white">
+            B
+          </div>
+          <div>
+            <p className="text-sm font-bold tracking-tight text-gray-900">BCWork</p>
+            <p className="text-[10px] text-gray-400">Panel manager</p>
+          </div>
         </div>
         <div className="flex items-center gap-1">
           <NotificationBell />
@@ -47,39 +177,27 @@ export function ManagerNav({ onClose }: { onClose?: () => void } = {}) {
           )}
         </div>
       </div>
-      <nav className="flex-1 space-y-0.5 p-2">
-        {NAV.map(({ href, label, icon: Icon, badge }) => {
-          const active = pathname.startsWith(href)
-          return (
-            <Link
-              key={href}
-              href={href}
-              onClick={onClose}
-              className={`flex items-center gap-2.5 rounded-md px-3 py-2 text-sm transition-colors ${
-                active
-                  ? 'bg-blue-50 font-medium text-blue-700'
-                  : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
-              }`}
-            >
-              <Icon className="h-4 w-4 shrink-0" />
-              <span className="flex-1">{label}</span>
-              {badge > 0 && (
-                <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-red-500 px-1.5 text-xs font-bold text-white">
-                  {badge > 99 ? '99+' : badge}
-                </span>
-              )}
-            </Link>
-          )
-        })}
+
+      <nav className="flex-1 overflow-y-auto px-3 pb-4">
+        {NAV_GROUPS.map((group) => (
+          <NavGroupSection
+            key={group.label}
+            group={group}
+            pathname={pathname}
+            badges={badges}
+            onClose={onClose}
+          />
+        ))}
       </nav>
-      <div className="border-t border-gray-100 p-2">
+
+      <div className="border-t border-gray-100 px-3 py-3">
         <button
           type="button"
           onClick={() => logout.mutate({})}
           disabled={logout.isPending}
-          className="flex w-full items-center gap-2.5 rounded-md px-3 py-2 text-sm text-gray-500 hover:bg-gray-100 disabled:opacity-50"
+          className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-sm text-gray-500 hover:bg-gray-50 hover:text-gray-800 disabled:opacity-50"
         >
-          <LogOut className="h-4 w-4" />
+          <LogOut className="h-3.5 w-3.5" />
           Cerrar sesión
         </button>
       </div>

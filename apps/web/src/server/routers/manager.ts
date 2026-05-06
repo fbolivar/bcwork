@@ -852,4 +852,602 @@ export const managerRouter = router({
 
       return { ok: true }
     }),
+
+  // ─── Horas extra ──────────────────────────────────────────────────────────
+
+  getOvertimeRequests: managerProcedure
+    .input(
+      z.object({ status: z.enum(['pending', 'approved', 'rejected', 'all']).default('pending') }),
+    )
+    .query(async ({ ctx, input }) => {
+      let q = ctx.db
+        .from('overtime_requests')
+        .select(
+          'id, date, overtime_seconds, type, reason, status, manager_note, created_at, employee_id, users!overtime_requests_employee_id_fkey(full_name, email, department)',
+        )
+        .eq('tenant_id', ctx.user!.tid)
+        .order('created_at', { ascending: false })
+        .limit(100)
+      if (input.status !== 'all') q = q.eq('status', input.status)
+      const { data, error } = await q
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      return (data ?? []).map((r) => ({
+        id: r.id,
+        date: r.date,
+        overtime_seconds: r.overtime_seconds,
+        type: r.type,
+        reason: r.reason,
+        status: r.status,
+        manager_note: r.manager_note,
+        created_at: r.created_at,
+        employee_id: r.employee_id,
+        user_name: (r.users as unknown as { full_name: string | null } | null)?.full_name ?? null,
+        user_email: (r.users as unknown as { email: string } | null)?.email ?? null,
+        department:
+          (r.users as unknown as { department: string | null } | null)?.department ?? null,
+      }))
+    }),
+
+  reviewOvertimeRequest: managerProcedure
+    .input(
+      z.object({
+        id: z.string().uuid(),
+        status: z.enum(['approved', 'rejected']),
+        manager_note: z.string().max(500).optional(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { data: existing, error: fetchErr } = await ctx.db
+        .from('overtime_requests')
+        .select('employee_id, date, type, status')
+        .eq('id', input.id)
+        .eq('tenant_id', ctx.user!.tid)
+        .single()
+      if (fetchErr || !existing)
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Solicitud no encontrada' })
+      if (existing.status !== 'pending')
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Esta solicitud ya fue procesada' })
+      const { error } = await ctx.db
+        .from('overtime_requests')
+        .update({ status: input.status, manager_note: input.manager_note ?? null })
+        .eq('id', input.id)
+        .eq('tenant_id', ctx.user!.tid)
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      const label = input.status === 'approved' ? 'aprobada' : 'rechazada'
+      await ctx.db.from('notifications').insert({
+        tenant_id: ctx.user!.tid,
+        user_id: existing.employee_id,
+        channel: 'in_app',
+        title: `Solicitud de horas extra ${label}`,
+        body: input.manager_note ?? `Tu solicitud del ${existing.date} fue ${label}.`,
+        sent_by: ctx.user!.sub,
+      })
+      broadcastNotificationToMany([existing.employee_id])
+      return { ok: true }
+    }),
+
+  getPendingOvertimeCount: managerProcedure.query(async ({ ctx }) => {
+    const { count, error } = await ctx.db
+      .from('overtime_requests')
+      .select('id', { count: 'exact', head: true })
+      .eq('tenant_id', ctx.user!.tid)
+      .eq('status', 'pending')
+    if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+    return { count: count ?? 0 }
+  }),
+
+  // ─── Objetivos del equipo ─────────────────────────────────────────────────
+
+  getTeamGoals: managerProcedure
+    .input(
+      z.object({
+        employee_id: z.string().uuid().optional(),
+        status: z.enum(['active', 'completed', 'cancelled', 'all']).default('active'),
+      }),
+    )
+    .query(async ({ ctx, input }) => {
+      let q = ctx.db
+        .from('employee_goals')
+        .select(
+          'id, title, description, target_value, current_value, unit, due_date, status, created_at, employee_id, users!employee_goals_employee_id_fkey(full_name, email)',
+        )
+        .eq('tenant_id', ctx.user!.tid)
+        .order('created_at', { ascending: false })
+      if (input.status !== 'all') q = q.eq('status', input.status)
+      if (input.employee_id) q = q.eq('employee_id', input.employee_id)
+      const { data, error } = await q
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      return (data ?? []).map((g) => ({
+        id: g.id,
+        title: g.title,
+        description: g.description,
+        target_value: g.target_value,
+        current_value: g.current_value,
+        unit: g.unit,
+        due_date: g.due_date,
+        status: g.status,
+        created_at: g.created_at,
+        employee_id: g.employee_id,
+        user_name: (g.users as unknown as { full_name: string | null } | null)?.full_name ?? null,
+        user_email: (g.users as unknown as { email: string } | null)?.email ?? null,
+      }))
+    }),
+
+  createTeamGoal: managerProcedure
+    .input(
+      z.object({
+        employee_id: z.string().uuid(),
+        title: z.string().min(1).max(200),
+        description: z.string().max(1000).optional(),
+        target_value: z.number().optional(),
+        unit: z.string().max(50).optional(),
+        due_date: z
+          .string()
+          .regex(/^\d{4}-\d{2}-\d{2}$/)
+          .optional(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { error } = await ctx.db.from('employee_goals').insert({
+        tenant_id: ctx.user!.tid,
+        employee_id: input.employee_id,
+        title: input.title,
+        description: input.description ?? null,
+        target_value: input.target_value ?? null,
+        current_value: 0,
+        unit: input.unit ?? null,
+        due_date: input.due_date ?? null,
+        status: 'active',
+        created_by: ctx.user!.sub,
+      })
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      await ctx.db.from('notifications').insert({
+        tenant_id: ctx.user!.tid,
+        user_id: input.employee_id,
+        channel: 'in_app',
+        title: 'Nuevo objetivo asignado',
+        body: `Tu manager te asignó un nuevo objetivo: "${input.title}"`,
+        sent_by: ctx.user!.sub,
+      })
+      broadcastNotificationToMany([input.employee_id])
+      return { ok: true }
+    }),
+
+  updateTeamGoal: managerProcedure
+    .input(
+      z.object({
+        id: z.string().uuid(),
+        current_value: z.number().optional(),
+        status: z.enum(['active', 'completed', 'cancelled']).optional(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const patch: Record<string, unknown> = {}
+      if (input.current_value !== undefined) patch.current_value = input.current_value
+      if (input.status) patch.status = input.status
+      const { error } = await ctx.db
+        .from('employee_goals')
+        .update(patch as any)
+        .eq('id', input.id)
+        .eq('tenant_id', ctx.user!.tid)
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      return { ok: true }
+    }),
+
+  // ─── Reuniones 1:1 ───────────────────────────────────────────────────────
+
+  getTeam1on1s: managerProcedure
+    .input(z.object({ upcoming: z.boolean().default(true) }))
+    .query(async ({ ctx, input }) => {
+      let q = ctx.db
+        .from('one_on_ones')
+        .select(
+          'id, scheduled_at, duration_minutes, agenda, notes, status, employee_id, manager_id, users!one_on_ones_employee_id_fkey(full_name, email)',
+        )
+        .eq('tenant_id', ctx.user!.tid)
+        .order('scheduled_at', { ascending: true })
+        .limit(50)
+      if (input.upcoming) q = q.gte('scheduled_at', new Date().toISOString())
+      const { data, error } = await q
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      return (data ?? []).map((r) => ({
+        id: r.id,
+        scheduled_at: r.scheduled_at,
+        duration_minutes: r.duration_minutes,
+        agenda: r.agenda,
+        notes: r.notes,
+        status: r.status,
+        employee_id: r.employee_id,
+        manager_id: r.manager_id,
+        user_name: (r.users as unknown as { full_name: string | null } | null)?.full_name ?? null,
+        user_email: (r.users as unknown as { email: string } | null)?.email ?? null,
+      }))
+    }),
+
+  createTeam1on1: managerProcedure
+    .input(
+      z.object({
+        employee_id: z.string().uuid(),
+        scheduled_at: z.string(),
+        duration_minutes: z.number().int().min(15).max(180).default(30),
+        agenda: z.string().max(1000).optional(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { error } = await ctx.db.from('one_on_ones').insert({
+        tenant_id: ctx.user!.tid,
+        employee_id: input.employee_id,
+        manager_id: ctx.user!.sub,
+        scheduled_at: input.scheduled_at,
+        duration_minutes: input.duration_minutes,
+        agenda: input.agenda ?? null,
+        status: 'scheduled',
+      })
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      await ctx.db.from('notifications').insert({
+        tenant_id: ctx.user!.tid,
+        user_id: input.employee_id,
+        channel: 'in_app',
+        title: 'Nueva reunión 1:1 agendada',
+        body: `Tu manager agendó una reunión 1:1 para ${new Date(input.scheduled_at).toLocaleDateString('es-CO')}.`,
+        sent_by: ctx.user!.sub,
+      })
+      broadcastNotificationToMany([input.employee_id])
+      return { ok: true }
+    }),
+
+  updateTeam1on1: managerProcedure
+    .input(
+      z.object({
+        id: z.string().uuid(),
+        notes: z.string().max(2000).optional(),
+        status: z.enum(['scheduled', 'completed', 'cancelled']).optional(),
+        agenda: z.string().max(1000).optional(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const patch: Record<string, unknown> = {}
+      if (input.notes !== undefined) patch.notes = input.notes
+      if (input.status) patch.status = input.status
+      if (input.agenda !== undefined) patch.agenda = input.agenda
+      const { error } = await ctx.db
+        .from('one_on_ones')
+        .update(patch as any)
+        .eq('id', input.id)
+        .eq('tenant_id', ctx.user!.tid)
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      return { ok: true }
+    }),
+
+  // ─── Mensajes con el equipo ───────────────────────────────────────────────
+
+  getTeamConversations: managerProcedure.query(async ({ ctx }) => {
+    const userId = ctx.user!.sub
+    const tenantId = ctx.user!.tid
+    const { data, error } = await ctx.db
+      .from('messages')
+      .select('id, from_user_id, to_user_id, body, read_at, created_at')
+      .eq('tenant_id', tenantId)
+      .or(`from_user_id.eq.${userId},to_user_id.eq.${userId}`)
+      .order('created_at', { ascending: false })
+      .limit(500)
+    if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+
+    const msgs = data ?? []
+    const peerIds = [
+      ...new Set(msgs.map((m) => (m.from_user_id === userId ? m.to_user_id : m.from_user_id))),
+    ]
+    if (peerIds.length === 0) return []
+
+    const { data: peers } = await ctx.db
+      .from('users')
+      .select('id, full_name, email')
+      .in('id', peerIds)
+      .eq('tenant_id', tenantId)
+    const peerMap = new Map((peers ?? []).map((p) => [p.id, p]))
+
+    return peerIds
+      .map((peerId) => {
+        const conv = msgs.filter((m) => m.from_user_id === peerId || m.to_user_id === peerId)
+        const last = conv[0]
+        const unread = conv.filter((m) => m.to_user_id === userId && !m.read_at).length
+        const peer = peerMap.get(peerId)
+        return {
+          peer_id: peerId,
+          peer_name: peer?.full_name ?? peer?.email ?? peerId,
+          peer_email: peer?.email ?? '',
+          last_message: last?.body ?? '',
+          last_at: last?.created_at ?? '',
+          unread_count: unread,
+        }
+      })
+      .sort((a, b) => new Date(b.last_at).getTime() - new Date(a.last_at).getTime())
+  }),
+
+  getConversation: managerProcedure
+    .input(
+      z.object({ peer_id: z.string().uuid(), limit: z.number().int().min(1).max(100).default(50) }),
+    )
+    .query(async ({ ctx, input }) => {
+      const userId = ctx.user!.sub
+      const { data, error } = await ctx.db
+        .from('messages')
+        .select('id, from_user_id, to_user_id, body, read_at, created_at')
+        .eq('tenant_id', ctx.user!.tid)
+        .or(
+          `and(from_user_id.eq.${userId},to_user_id.eq.${input.peer_id}),and(from_user_id.eq.${input.peer_id},to_user_id.eq.${userId})`,
+        )
+        .order('created_at', { ascending: true })
+        .limit(input.limit)
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      return data ?? []
+    }),
+
+  sendMessage: managerProcedure
+    .input(z.object({ to_user_id: z.string().uuid(), body: z.string().min(1).max(2000) }))
+    .mutation(async ({ ctx, input }) => {
+      const { error } = await ctx.db.from('messages').insert({
+        tenant_id: ctx.user!.tid,
+        from_user_id: ctx.user!.sub,
+        to_user_id: input.to_user_id,
+        body: input.body,
+      })
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      broadcastNotificationToMany([input.to_user_id])
+      return { ok: true }
+    }),
+
+  markConversationRead: managerProcedure
+    .input(z.object({ peer_id: z.string().uuid() }))
+    .mutation(async ({ ctx, input }) => {
+      await ctx.db
+        .from('messages')
+        .update({ read_at: new Date().toISOString() })
+        .eq('tenant_id', ctx.user!.tid)
+        .eq('from_user_id', input.peer_id)
+        .eq('to_user_id', ctx.user!.sub)
+        .is('read_at', null)
+      return { ok: true }
+    }),
+
+  getUnreadMessageCount: managerProcedure.query(async ({ ctx }) => {
+    const { count, error } = await ctx.db
+      .from('messages')
+      .select('id', { count: 'exact', head: true })
+      .eq('tenant_id', ctx.user!.tid)
+      .eq('to_user_id', ctx.user!.sub)
+      .is('read_at', null)
+    if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+    return { count: count ?? 0 }
+  }),
+
+  // ─── Timesheet consolidado ────────────────────────────────────────────────
+
+  getTeamTimesheet: managerProcedure
+    .input(
+      z.object({
+        teamId: z.string().uuid().optional(),
+        dateFrom: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+        dateTo: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+      }),
+    )
+    .query(async ({ ctx, input }) => {
+      const tenantId = ctx.user!.tid
+      let memberIds: string[] | null = null
+
+      if (input.teamId) {
+        const { data: members } = await ctx.db
+          .from('team_members')
+          .select('user_id')
+          .eq('team_id', input.teamId)
+          .eq('tenant_id', tenantId)
+        memberIds = (members ?? []).map((m) => m.user_id)
+        if (memberIds.length === 0) return []
+      }
+
+      let q = ctx.db
+        .from('daily_user_metrics')
+        .select(
+          'user_id, metric_date, active_seconds, productive_seconds, overtime_seconds, productivity_ratio',
+        )
+        .eq('tenant_id', tenantId)
+        .gte('metric_date', input.dateFrom)
+        .lte('metric_date', input.dateTo)
+        .order('metric_date', { ascending: false })
+
+      if (memberIds) q = q.in('user_id', memberIds)
+
+      const { data: metrics, error } = await q
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+
+      const userIds = [...new Set((metrics ?? []).map((m) => m.user_id))]
+      const { data: users } = await ctx.db
+        .from('users')
+        .select('id, full_name, email, department')
+        .in('id', userIds)
+        .eq('tenant_id', tenantId)
+      const userMap = new Map((users ?? []).map((u) => [u.id, u]))
+
+      return (metrics ?? []).map((m) => ({
+        user_id: m.user_id,
+        full_name: userMap.get(m.user_id)?.full_name ?? null,
+        email: userMap.get(m.user_id)?.email ?? '',
+        department: userMap.get(m.user_id)?.department ?? null,
+        metric_date: m.metric_date,
+        active_seconds: m.active_seconds ?? 0,
+        productive_seconds: m.productive_seconds ?? 0,
+        overtime_seconds: m.overtime_seconds ?? 0,
+        productivity_ratio: Number(m.productivity_ratio ?? 0),
+      }))
+    }),
+
+  // ─── Gastos del equipo ────────────────────────────────────────────────────
+
+  getTeamExpenses: managerProcedure
+    .input(
+      z.object({ status: z.enum(['pending', 'approved', 'rejected', 'all']).default('pending') }),
+    )
+    .query(async ({ ctx, input }) => {
+      let q = ctx.db
+        .from('expenses' as any)
+        .select(
+          'id, amount, currency, category, description, receipt_url, status, manager_note, expense_date, created_at, user_id, users!expenses_user_id_fkey(full_name, email)',
+        )
+        .eq('tenant_id', ctx.user!.tid)
+        .order('created_at', { ascending: false })
+        .limit(100)
+      if (input.status !== 'all') q = q.eq('status', input.status)
+      const { data, error } = await q
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      return (data ?? []).map((e: any) => ({
+        id: e.id,
+        amount: e.amount,
+        currency: e.currency ?? 'COP',
+        category: e.category,
+        description: e.description,
+        receipt_url: e.receipt_url,
+        status: e.status,
+        manager_note: e.manager_note,
+        expense_date: e.expense_date,
+        created_at: e.created_at,
+        user_id: e.user_id,
+        user_name: (e.users as any)?.full_name ?? null,
+        user_email: (e.users as any)?.email ?? null,
+      }))
+    }),
+
+  reviewExpense: managerProcedure
+    .input(
+      z.object({
+        id: z.string().uuid(),
+        status: z.enum(['approved', 'rejected']),
+        manager_note: z.string().max(500).optional(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { data: existing, error: fetchErr } = await ctx.db
+        .from('expenses' as any)
+        .select('user_id, amount, currency, status')
+        .eq('id', input.id)
+        .eq('tenant_id', ctx.user!.tid)
+        .single()
+      if (fetchErr || !existing)
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Gasto no encontrado' })
+      const { error } = await ctx.db
+        .from('expenses' as any)
+        .update({ status: input.status, manager_note: input.manager_note ?? null } as any)
+        .eq('id', input.id)
+        .eq('tenant_id', ctx.user!.tid)
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      const label = input.status === 'approved' ? 'aprobado' : 'rechazado'
+      await ctx.db.from('notifications').insert({
+        tenant_id: ctx.user!.tid,
+        user_id: (existing as any).user_id,
+        channel: 'in_app',
+        title: `Gasto ${label}`,
+        body: input.manager_note ?? `Tu gasto fue ${label}.`,
+        sent_by: ctx.user!.sub,
+      })
+      broadcastNotificationToMany([(existing as any).user_id])
+      return { ok: true }
+    }),
+
+  getPendingExpensesCount: managerProcedure.query(async ({ ctx }) => {
+    const { count, error } = await ctx.db
+      .from('expenses' as any)
+      .select('id', { count: 'exact', head: true })
+      .eq('tenant_id', ctx.user!.tid)
+      .eq('status', 'pending')
+    if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+    return { count: count ?? 0 }
+  }),
+
+  // ─── Reportes del equipo ─────────────────────────────────────────────────
+
+  getTeamReportData: managerProcedure
+    .input(
+      z.object({
+        teamId: z.string().uuid().optional(),
+        dateFrom: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+        dateTo: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+      }),
+    )
+    .query(async ({ ctx, input }) => {
+      const tenantId = ctx.user!.tid
+      let memberIds: string[] | null = null
+
+      if (input.teamId) {
+        const { data: members } = await ctx.db
+          .from('team_members')
+          .select('user_id')
+          .eq('team_id', input.teamId)
+          .eq('tenant_id', tenantId)
+        memberIds = (members ?? []).map((m) => m.user_id)
+        if (memberIds.length === 0)
+          return { users: [], period: { dateFrom: input.dateFrom, dateTo: input.dateTo } }
+      }
+
+      let q = ctx.db
+        .from('daily_user_metrics')
+        .select(
+          'user_id, metric_date, active_seconds, productive_seconds, overtime_seconds, productivity_ratio, focus_score',
+        )
+        .eq('tenant_id', tenantId)
+        .gte('metric_date', input.dateFrom)
+        .lte('metric_date', input.dateTo)
+
+      if (memberIds) q = q.in('user_id', memberIds)
+      const { data: metrics, error } = await q
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+
+      const userIds = [...new Set((metrics ?? []).map((m) => m.user_id))]
+      const { data: users } = await ctx.db
+        .from('users')
+        .select('id, full_name, email, department, position')
+        .in('id', userIds)
+        .eq('tenant_id', tenantId)
+      const userMap = new Map((users ?? []).map((u) => [u.id, u]))
+
+      const byUser = new Map<
+        string,
+        { active: number; productive: number; overtime: number; days: number; ratios: number[] }
+      >()
+      for (const m of metrics ?? []) {
+        const u = byUser.get(m.user_id) ?? {
+          active: 0,
+          productive: 0,
+          overtime: 0,
+          days: 0,
+          ratios: [],
+        }
+        u.active += m.active_seconds ?? 0
+        u.productive += m.productive_seconds ?? 0
+        u.overtime += m.overtime_seconds ?? 0
+        u.days++
+        if (m.productivity_ratio != null) u.ratios.push(Number(m.productivity_ratio))
+        byUser.set(m.user_id, u)
+      }
+
+      const result = Array.from(byUser.entries())
+        .map(([uid, v]) => {
+          const info = userMap.get(uid)
+          const avgRatio =
+            v.ratios.length > 0 ? v.ratios.reduce((a, b) => a + b, 0) / v.ratios.length : 0
+          return {
+            user_id: uid,
+            full_name: info?.full_name ?? null,
+            email: info?.email ?? '',
+            department: info?.department ?? null,
+            position: info?.position ?? null,
+            active_seconds: v.active,
+            productive_seconds: v.productive,
+            overtime_seconds: v.overtime,
+            days_active: v.days,
+            productivity_ratio: avgRatio,
+          }
+        })
+        .sort((a, b) => b.active_seconds - a.active_seconds)
+
+      return { users: result, period: { dateFrom: input.dateFrom, dateTo: input.dateTo } }
+    }),
 })
