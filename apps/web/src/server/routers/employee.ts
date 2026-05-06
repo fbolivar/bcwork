@@ -282,7 +282,7 @@ export const employeeRouter = router({
       return data ?? []
     }),
 
-  // ─── Actividad de un día específico (para timeline) ──────────────────────
+  // ─── Actividad de un día específico (resumen top apps) ──────────────────
 
   getMyDayActivity: protectedProcedure
     .input(z.object({ date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/) }))
@@ -306,6 +306,67 @@ export const employeeRouter = router({
         activeSeconds: data.active_seconds ?? 0,
         productiveSeconds: data.productive_seconds ?? 0,
       }
+    }),
+
+  // ─── Timeline detallado de actividad (evento a evento) ───────────────────
+
+  getMyActivityTimeline: protectedProcedure
+    .input(z.object({ date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/) }))
+    .query(async ({ ctx, input }) => {
+      const from = `${input.date}T00:00:00.000Z`
+      const to = `${input.date}T23:59:59.999Z`
+
+      const [eventsRes, metricsRes] = await Promise.all([
+        ctx.db
+          .from('activity_events')
+          .select(
+            'id, started_at, duration_seconds, app_identifier, window_title, productivity, event_type',
+          )
+          .eq('tenant_id', ctx.user!.tid)
+          .eq('user_id', ctx.user!.sub)
+          .gte('started_at', from)
+          .lte('started_at', to)
+          .order('started_at', { ascending: true })
+          .limit(500),
+        ctx.db
+          .from('daily_user_metrics')
+          .select(
+            'active_seconds, productive_seconds, non_productive_seconds, overtime_seconds, productivity_ratio',
+          )
+          .eq('tenant_id', ctx.user!.tid)
+          .eq('user_id', ctx.user!.sub)
+          .eq('metric_date', input.date)
+          .maybeSingle(),
+      ])
+
+      if (eventsRes.error)
+        throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: eventsRes.error.message })
+
+      const events = (eventsRes.data ?? []).map((e) => ({
+        id: String(e.id),
+        started_at: e.started_at,
+        duration_seconds: e.duration_seconds ?? 0,
+        app_identifier: e.app_identifier ?? null,
+        window_title: e.window_title ?? null,
+        productivity: (e.productivity ?? 'neutral') as
+          | 'productive'
+          | 'unproductive'
+          | 'neutral'
+          | 'idle',
+        event_type: e.event_type,
+      }))
+
+      const summary = metricsRes.data
+        ? {
+            active_seconds: metricsRes.data.active_seconds ?? 0,
+            productive_seconds: metricsRes.data.productive_seconds ?? 0,
+            non_productive_seconds: metricsRes.data.non_productive_seconds ?? 0,
+            overtime_seconds: metricsRes.data.overtime_seconds ?? 0,
+            productivity_ratio: Number(metricsRes.data.productivity_ratio ?? 0),
+          }
+        : null
+
+      return { events, summary }
     }),
 
   // ─── Solicitar corrección de actividad ────────────────────────────────────
