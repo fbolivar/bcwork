@@ -2,6 +2,7 @@ import { z } from 'zod'
 import { createHash } from 'crypto'
 import { TRPCError } from '@trpc/server'
 import { router, protectedProcedure } from '../trpc'
+import { hashPassword, verifyPassword, validatePasswordPolicy } from '@/lib/auth/password'
 
 const POLICY_VERSION = '1.0'
 const CONSENT_TYPE = 'monitoring_basic'
@@ -185,6 +186,184 @@ export const employeeRouter = router({
       .is('revoked_at', null)
       .maybeSingle()
     return { consented: !!data }
+  }),
+
+  // ─── Actualizar perfil ────────────────────────────────────────────────────
+
+  updateMyProfile: protectedProcedure
+    .input(
+      z.object({
+        full_name: z.string().min(1).max(200).optional(),
+        department: z.string().max(100).optional(),
+        position: z.string().max(100).optional(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      type UserUpdate = import('@bcwork/db').Database['public']['Tables']['users']['Update']
+      const updates: UserUpdate = {}
+      if (input.full_name !== undefined) updates.full_name = input.full_name
+      if (input.department !== undefined) updates.department = input.department
+      if (input.position !== undefined) updates.position = input.position
+
+      if (!updates.full_name && !updates.department && !updates.position) return { ok: true }
+
+      const { error } = await ctx.db
+        .from('users')
+        .update(updates)
+        .eq('id', ctx.user!.sub)
+        .eq('tenant_id', ctx.user!.tid)
+
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      return { ok: true }
+    }),
+
+  // ─── Cambiar contraseña (verificando la actual) ───────────────────────────
+
+  changeMyPassword: protectedProcedure
+    .input(
+      z.object({
+        currentPassword: z.string().min(1),
+        newPassword: z.string().min(8).max(100),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const policyError = validatePasswordPolicy(input.newPassword)
+      if (policyError) throw new TRPCError({ code: 'BAD_REQUEST', message: policyError })
+
+      const { data: user, error } = await ctx.db
+        .from('users')
+        .select('id, password_hash')
+        .eq('id', ctx.user!.sub)
+        .single()
+
+      if (error || !user)
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Usuario no encontrado' })
+
+      const valid = await verifyPassword(input.currentPassword, user.password_hash ?? '')
+      if (!valid)
+        throw new TRPCError({ code: 'UNAUTHORIZED', message: 'Contraseña actual incorrecta' })
+
+      const newHash = await hashPassword(input.newPassword)
+      const { error: updErr } = await ctx.db
+        .from('users')
+        .update({
+          password_hash: newHash,
+          password_changed_at: new Date().toISOString(),
+          must_change_password: false,
+        })
+        .eq('id', ctx.user!.sub)
+
+      if (updErr) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: updErr.message })
+      return { ok: true }
+    }),
+
+  // ─── Mis sesiones ─────────────────────────────────────────────────────────
+
+  getMySessions: protectedProcedure
+    .input(z.object({ page: z.number().int().min(0).default(0) }))
+    .query(async ({ ctx, input }) => {
+      const PAGE_SIZE = 20
+      const from = new Date(Date.now() - 30 * 86400000).toISOString()
+
+      const { data, error, count } = await ctx.db
+        .from('work_sessions')
+        .select('id, started_at, ended_at, active_seconds, idle_seconds, location_type, status', {
+          count: 'exact',
+        })
+        .eq('tenant_id', ctx.user!.tid)
+        .eq('user_id', ctx.user!.sub)
+        .gte('started_at', from)
+        .order('started_at', { ascending: false })
+        .range(input.page * PAGE_SIZE, (input.page + 1) * PAGE_SIZE - 1)
+
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      return { sessions: data ?? [], total: count ?? 0, pageSize: PAGE_SIZE }
+    }),
+
+  // ─── Solicitar corrección de actividad ────────────────────────────────────
+
+  requestActivityEdit: protectedProcedure
+    .input(
+      z.object({
+        applies_to_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+        edit_type: z.enum(['missed_session', 'wrong_app', 'duration_error', 'other']),
+        reason: z.string().min(5).max(1000),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { error } = await ctx.db.from('activity_edits').insert({
+        tenant_id: ctx.user!.tid,
+        user_id: ctx.user!.sub,
+        proposed_by: ctx.user!.sub,
+        applies_to_date: input.applies_to_date,
+        edit_type: input.edit_type,
+        payload:
+          {} as import('@bcwork/db').Database['public']['Tables']['activity_edits']['Insert']['payload'],
+        reason: input.reason,
+        status: 'pending',
+      })
+
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      return { ok: true }
+    }),
+
+  // ─── Ver mis solicitudes de corrección ───────────────────────────────────
+
+  getMyActivityEdits: protectedProcedure.query(async ({ ctx }) => {
+    const { data, error } = await ctx.db
+      .from('activity_edits')
+      .select('id, applies_to_date, edit_type, reason, status, created_at, reviewed_at')
+      .eq('tenant_id', ctx.user!.tid)
+      .eq('user_id', ctx.user!.sub)
+      .order('created_at', { ascending: false })
+      .limit(50)
+
+    if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+    return data ?? []
+  }),
+
+  // ─── Detalle de consentimiento ────────────────────────────────────────────
+
+  getMyConsentDetails: protectedProcedure.query(async ({ ctx }) => {
+    const { data } = await ctx.db
+      .from('consents')
+      .select('id, granted, granted_at, revoked_at, policy_version, consent_type')
+      .eq('user_id', ctx.user!.sub)
+      .eq('tenant_id', ctx.user!.tid)
+      .eq('consent_type', CONSENT_TYPE)
+      .order('granted_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+
+    return data ?? null
+  }),
+
+  // ─── Revocar consentimiento ───────────────────────────────────────────────
+
+  revokeConsent: protectedProcedure.mutation(async ({ ctx }) => {
+    const { error } = await ctx.db
+      .from('consents')
+      .update({ revoked_at: new Date().toISOString() })
+      .eq('user_id', ctx.user!.sub)
+      .eq('tenant_id', ctx.user!.tid)
+      .eq('consent_type', CONSENT_TYPE)
+      .is('revoked_at', null)
+
+    if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+
+    ctx.db
+      .from('audit_logs')
+      .insert({
+        tenant_id: ctx.user!.tid,
+        actor_user_id: ctx.user!.sub,
+        action: 'consent.revoked',
+        entity_type: 'consent',
+      })
+      .then(({ error: auditErr }) => {
+        if (auditErr) console.error('[audit] consent.revoked:', auditErr.message)
+      })
+
+    return { ok: true }
   }),
 
   grantConsent: protectedProcedure

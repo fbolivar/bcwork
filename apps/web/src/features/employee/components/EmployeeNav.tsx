@@ -2,13 +2,24 @@
 
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
-import { LayoutDashboard, BarChart2, Monitor, LogOut } from 'lucide-react'
+import {
+  LayoutDashboard,
+  BarChart2,
+  Monitor,
+  LogOut,
+  User,
+  CalendarClock,
+  ShieldCheck,
+} from 'lucide-react'
 import { trpc } from '@/lib/trpc-client'
 
 const NAV = [
   { href: '/me/dashboard', label: 'Mi día', icon: LayoutDashboard },
   { href: '/me/metrics', label: 'Mi rendimiento', icon: BarChart2 },
+  { href: '/me/sessions', label: 'Mis sesiones', icon: CalendarClock },
   { href: '/me/devices', label: 'Mis dispositivos', icon: Monitor },
+  { href: '/me/profile', label: 'Mi perfil', icon: User },
+  { href: '/me/privacy', label: 'Mi privacidad', icon: ShieldCheck },
 ]
 
 export function EmployeeNav() {
