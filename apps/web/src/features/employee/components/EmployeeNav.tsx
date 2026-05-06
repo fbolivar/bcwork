@@ -23,6 +23,10 @@ import {
   CalendarCheck,
   Heart,
   Briefcase,
+  FileText,
+  Clock4,
+  Target,
+  MessageSquare,
 } from 'lucide-react'
 import { trpc } from '@/lib/trpc-client'
 
@@ -33,6 +37,10 @@ const NAV = [
   { href: '/me/attendance', label: 'Calendario', icon: CalendarCheck },
   { href: '/me/wellness', label: 'Mi bienestar', icon: Heart },
   { href: '/me/projects', label: 'Proyectos', icon: Briefcase },
+  { href: '/me/reports', label: 'Mis informes', icon: FileText },
+  { href: '/me/overtime-requests', label: 'Horas extra', icon: Clock4 },
+  { href: '/me/goals', label: 'Mis objetivos', icon: Target },
+  { href: '/me/messages', label: 'Mensajes', icon: MessageSquare },
   { href: '/me/sessions', label: 'Mis sesiones', icon: CalendarClock },
   { href: '/me/activity', label: 'Mi actividad', icon: ActivitySquare },
   { href: '/me/screenshots', label: 'Mis capturas', icon: Camera },
@@ -55,6 +63,11 @@ export function EmployeeNav({ onClose }: { onClose?: () => void } = {}) {
     refetchInterval: 30000,
   })
   const unread = countData?.count ?? 0
+
+  const { data: msgCountData } = trpc.employee.getMyUnreadMessageCount.useQuery(undefined, {
+    refetchInterval: 15000,
+  })
+  const unreadMsgs = msgCountData?.count ?? 0
 
   return (
     <aside className="flex h-full w-52 flex-col border-r border-gray-200 bg-white">
@@ -93,6 +106,11 @@ export function EmployeeNav({ onClose }: { onClose?: () => void } = {}) {
               {href === '/me/notifications' && unread > 0 && (
                 <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold text-white">
                   {unread > 9 ? '9+' : unread}
+                </span>
+              )}
+              {href === '/me/messages' && unreadMsgs > 0 && (
+                <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold text-white">
+                  {unreadMsgs > 9 ? '9+' : unreadMsgs}
                 </span>
               )}
             </Link>

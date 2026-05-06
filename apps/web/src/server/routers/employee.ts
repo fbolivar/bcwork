@@ -1315,4 +1315,395 @@ export const employeeRouter = router({
       if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
       return data ?? []
     }),
+
+  // ─── Informe personal (para PDF) ────────────────────────────────────────
+
+  getMyReport: protectedProcedure
+    .input(
+      z.object({
+        startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+        endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+      }),
+    )
+    .query(async ({ ctx, input }) => {
+      const { startDate, endDate } = input
+
+      const [profileRes, metricsRes, sessionsRes, projectsRes] = await Promise.all([
+        ctx.db
+          .from('users')
+          .select('full_name, email, department, position')
+          .eq('id', ctx.user!.sub)
+          .single(),
+        ctx.db
+          .from('daily_user_metrics')
+          .select(
+            'metric_date, active_seconds, productive_seconds, overtime_seconds, productivity_ratio, expected_seconds',
+          )
+          .eq('user_id', ctx.user!.sub)
+          .eq('tenant_id', ctx.user!.tid)
+          .gte('metric_date', startDate)
+          .lte('metric_date', endDate)
+          .order('metric_date', { ascending: true }),
+        ctx.db
+          .from('work_sessions')
+          .select('id, started_at, ended_at, active_seconds, location_type')
+          .eq('user_id', ctx.user!.sub)
+          .eq('tenant_id', ctx.user!.tid)
+          .gte('started_at', `${startDate}T00:00:00`)
+          .lte('started_at', `${endDate}T23:59:59`)
+          .order('started_at', { ascending: false })
+          .limit(100),
+        ctx.db
+          .from('project_time_entries')
+          .select('duration_seconds, projects(name, color)')
+          .eq('user_id', ctx.user!.sub)
+          .eq('tenant_id', ctx.user!.tid)
+          .gte('started_at', `${startDate}T00:00:00`)
+          .lte('started_at', `${endDate}T23:59:59`),
+      ])
+
+      const metrics = metricsRes.data ?? []
+      const sessions = sessionsRes.data ?? []
+      const projectEntries = projectsRes.data ?? []
+
+      const totalActiveSecs = metrics.reduce((s, r) => s + (r.active_seconds ?? 0), 0)
+      const totalOvertimeSecs = metrics.reduce((s, r) => s + (r.overtime_seconds ?? 0), 0)
+      const totalProductiveSecs = metrics.reduce((s, r) => s + (r.productive_seconds ?? 0), 0)
+      const workDays = metrics.filter((r) => (r.active_seconds ?? 0) > 0).length
+      const avgProductivity =
+        workDays > 0
+          ? metrics.reduce((s, r) => s + Number(r.productivity_ratio ?? 0), 0) / workDays
+          : 0
+
+      const byProject = new Map<string, number>()
+      for (const e of projectEntries) {
+        const proj = e.projects as { name: string; color: string } | null
+        if (!proj) continue
+        byProject.set(proj.name, (byProject.get(proj.name) ?? 0) + (e.duration_seconds ?? 0))
+      }
+      const projectBreakdown = Array.from(byProject.entries())
+        .map(([name, secs]) => ({ name, secs }))
+        .sort((a, b) => b.secs - a.secs)
+
+      return {
+        profile: profileRes.data ?? null,
+        startDate,
+        endDate,
+        summary: {
+          totalActiveSecs,
+          totalOvertimeSecs,
+          totalProductiveSecs,
+          workDays,
+          totalSessions: sessions.length,
+          avgProductivity: Math.round(avgProductivity * 100),
+        },
+        dailyMetrics: metrics.map((m) => ({
+          date: m.metric_date ?? '',
+          activeSecs: m.active_seconds ?? 0,
+          overtimeSecs: m.overtime_seconds ?? 0,
+          productivityRatio: Number(m.productivity_ratio ?? 0),
+        })),
+        recentSessions: sessions.slice(0, 20).map((s) => ({
+          startedAt: s.started_at,
+          endedAt: s.ended_at,
+          activeSecs: s.active_seconds ?? 0,
+          locationType: s.location_type,
+        })),
+        projectBreakdown,
+      }
+    }),
+
+  // ─── Solicitud formal de horas extra ────────────────────────────────────
+
+  requestOvertime: protectedProcedure
+    .input(
+      z.object({
+        date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+        overtime_seconds: z.number().int().min(60),
+        type: z.enum(['payment', 'compensation']),
+        reason: z.string().min(5).max(1000),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { error } = await ctx.db.from('overtime_requests').insert({
+        tenant_id: ctx.user!.tid,
+        employee_id: ctx.user!.sub,
+        date: input.date,
+        overtime_seconds: input.overtime_seconds,
+        type: input.type,
+        reason: input.reason,
+        status: 'pending',
+      })
+
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+
+      const { data: managers } = await ctx.db
+        .from('users')
+        .select('id')
+        .eq('tenant_id', ctx.user!.tid)
+        .in('role', ['manager', 'tenant_admin'])
+        .eq('status', 'active')
+
+      if (managers && managers.length > 0) {
+        await ctx.db.from('notifications').insert(
+          managers.map((m) => ({
+            tenant_id: ctx.user!.tid,
+            user_id: m.id,
+            channel: 'in_app' as const,
+            title: 'Nueva solicitud de horas extra',
+            body: `Un empleado solicitó reconocimiento de horas extra para el ${input.date}.`,
+          })),
+        )
+        broadcastNotificationToMany(managers.map((m) => m.id))
+      }
+
+      return { ok: true }
+    }),
+
+  getMyOvertimeRequests: protectedProcedure
+    .input(
+      z.object({
+        status: z.enum(['pending', 'approved', 'rejected', 'all']).default('all'),
+      }),
+    )
+    .query(async ({ ctx, input }) => {
+      let q = ctx.db
+        .from('overtime_requests')
+        .select('id, date, overtime_seconds, type, reason, status, manager_note, created_at')
+        .eq('tenant_id', ctx.user!.tid)
+        .eq('employee_id', ctx.user!.sub)
+        .order('created_at', { ascending: false })
+        .limit(50)
+
+      if (input.status !== 'all') {
+        q = q.eq('status', input.status)
+      }
+
+      const { data, error } = await q
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      return data ?? []
+    }),
+
+  // ─── Objetivos / KPIs ───────────────────────────────────────────────────
+
+  getMyGoals: protectedProcedure.query(async ({ ctx }) => {
+    const { data, error } = await ctx.db
+      .from('employee_goals')
+      .select(
+        'id, title, description, target_value, current_value, unit, due_date, status, created_at',
+      )
+      .eq('tenant_id', ctx.user!.tid)
+      .eq('employee_id', ctx.user!.sub)
+      .order('created_at', { ascending: false })
+
+    if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+    return data ?? []
+  }),
+
+  updateGoalProgress: protectedProcedure
+    .input(
+      z.object({
+        id: z.string().uuid(),
+        current_value: z.number(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { data: goal, error: fetchErr } = await ctx.db
+        .from('employee_goals')
+        .select('target_value, status')
+        .eq('id', input.id)
+        .eq('tenant_id', ctx.user!.tid)
+        .eq('employee_id', ctx.user!.sub)
+        .single()
+
+      if (fetchErr || !goal) throw new TRPCError({ code: 'NOT_FOUND' })
+      if (goal.status !== 'active')
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'El objetivo no está activo' })
+
+      const newStatus =
+        input.current_value >= (goal.target_value ?? Infinity) ? 'completed' : 'active'
+
+      const { error } = await ctx.db
+        .from('employee_goals')
+        .update({ current_value: input.current_value, status: newStatus })
+        .eq('id', input.id)
+        .eq('tenant_id', ctx.user!.tid)
+        .eq('employee_id', ctx.user!.sub)
+
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      return { ok: true, completed: newStatus === 'completed' }
+    }),
+
+  // ─── Mensajes / Chat ────────────────────────────────────────────────────
+
+  getMyConversations: protectedProcedure.query(async ({ ctx }) => {
+    const userId = ctx.user!.sub
+
+    const { data, error } = await ctx.db
+      .from('messages')
+      .select('id, from_user_id, to_user_id, body, read_at, created_at')
+      .eq('tenant_id', ctx.user!.tid)
+      .or(`from_user_id.eq.${userId},to_user_id.eq.${userId}`)
+      .order('created_at', { ascending: false })
+      .limit(200)
+
+    if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+
+    const msgs = data ?? []
+
+    // Get unique interlocutors
+    const interlocutorIds = new Set<string>()
+    for (const m of msgs) {
+      const other = m.from_user_id === userId ? m.to_user_id : m.from_user_id
+      interlocutorIds.add(other)
+    }
+
+    if (interlocutorIds.size === 0) return []
+
+    const { data: users } = await ctx.db
+      .from('users')
+      .select('id, full_name, role')
+      .in('id', Array.from(interlocutorIds))
+
+    const userMap = new Map((users ?? []).map((u) => [u.id, u]))
+
+    const convMap = new Map<
+      string,
+      {
+        userId: string
+        fullName: string
+        role: string
+        lastMessage: string
+        lastAt: string
+        unread: number
+      }
+    >()
+
+    for (const m of msgs) {
+      const other = m.from_user_id === userId ? m.to_user_id : m.from_user_id
+      if (!convMap.has(other)) {
+        const u = userMap.get(other)
+        convMap.set(other, {
+          userId: other,
+          fullName: u?.full_name ?? 'Usuario',
+          role: u?.role ?? 'employee',
+          lastMessage: m.body,
+          lastAt: m.created_at,
+          unread: 0,
+        })
+      }
+      if (m.to_user_id === userId && !m.read_at) {
+        convMap.get(other)!.unread++
+      }
+    }
+
+    return Array.from(convMap.values()).sort(
+      (a, b) => new Date(b.lastAt).getTime() - new Date(a.lastAt).getTime(),
+    )
+  }),
+
+  getConversation: protectedProcedure
+    .input(
+      z.object({
+        withUserId: z.string().uuid(),
+        limit: z.number().int().min(1).max(100).default(50),
+        offset: z.number().int().min(0).default(0),
+      }),
+    )
+    .query(async ({ ctx, input }) => {
+      const userId = ctx.user!.sub
+
+      const { data, error } = await ctx.db
+        .from('messages')
+        .select('id, from_user_id, to_user_id, body, read_at, created_at')
+        .eq('tenant_id', ctx.user!.tid)
+        .or(
+          `and(from_user_id.eq.${userId},to_user_id.eq.${input.withUserId}),and(from_user_id.eq.${input.withUserId},to_user_id.eq.${userId})`,
+        )
+        .order('created_at', { ascending: true })
+        .range(input.offset, input.offset + input.limit - 1)
+
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      return data ?? []
+    }),
+
+  sendMessage: protectedProcedure
+    .input(
+      z.object({
+        toUserId: z.string().uuid(),
+        body: z.string().min(1).max(2000),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { data: recipient } = await ctx.db
+        .from('users')
+        .select('id')
+        .eq('id', input.toUserId)
+        .eq('tenant_id', ctx.user!.tid)
+        .single()
+
+      if (!recipient)
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Destinatario no encontrado' })
+
+      const { error } = await ctx.db.from('messages').insert({
+        tenant_id: ctx.user!.tid,
+        from_user_id: ctx.user!.sub,
+        to_user_id: input.toUserId,
+        body: input.body,
+      })
+
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+
+      // Notify recipient
+      await ctx.db.from('notifications').insert({
+        tenant_id: ctx.user!.tid,
+        user_id: input.toUserId,
+        channel: 'in_app' as const,
+        title: 'Nuevo mensaje',
+        body: input.body.slice(0, 100),
+        sent_by: ctx.user!.sub,
+      })
+      broadcastNotificationToMany([input.toUserId])
+
+      return { ok: true }
+    }),
+
+  markMessagesRead: protectedProcedure
+    .input(z.object({ fromUserId: z.string().uuid() }))
+    .mutation(async ({ ctx, input }) => {
+      const { error } = await ctx.db
+        .from('messages')
+        .update({ read_at: new Date().toISOString() })
+        .eq('tenant_id', ctx.user!.tid)
+        .eq('to_user_id', ctx.user!.sub)
+        .eq('from_user_id', input.fromUserId)
+        .is('read_at', null)
+
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      return { ok: true }
+    }),
+
+  getMyManagers: protectedProcedure.query(async ({ ctx }) => {
+    const { data, error } = await ctx.db
+      .from('users')
+      .select('id, full_name, role')
+      .eq('tenant_id', ctx.user!.tid)
+      .in('role', ['manager', 'tenant_admin'])
+      .eq('status', 'active')
+
+    if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+    return data ?? []
+  }),
+
+  getMyUnreadMessageCount: protectedProcedure.query(async ({ ctx }) => {
+    const { count, error } = await ctx.db
+      .from('messages')
+      .select('*', { count: 'exact', head: true })
+      .eq('tenant_id', ctx.user!.tid)
+      .eq('to_user_id', ctx.user!.sub)
+      .is('read_at', null)
+
+    if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+    return { count: count ?? 0 }
+  }),
 })

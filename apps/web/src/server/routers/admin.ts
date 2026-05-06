@@ -1619,4 +1619,243 @@ export const adminRouter = router({
       if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
       return { ok: true }
     }),
+
+  // ─── Solicitudes de horas extra (admin) ─────────────────────────────────
+
+  getOvertimeRequests: adminProcedure
+    .input(
+      z.object({
+        status: z.enum(['pending', 'approved', 'rejected', 'all']).default('pending'),
+      }),
+    )
+    .query(async ({ ctx, input }) => {
+      let q = ctx.db
+        .from('overtime_requests')
+        .select(
+          'id, date, overtime_seconds, type, reason, status, manager_note, created_at, employee_id, users!overtime_requests_employee_id_fkey(full_name, email, department)',
+        )
+        .eq('tenant_id', ctx.user!.tid)
+        .order('created_at', { ascending: false })
+        .limit(100)
+
+      if (input.status !== 'all') {
+        q = q.eq('status', input.status)
+      }
+
+      const { data, error } = await q
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      return data ?? []
+    }),
+
+  updateOvertimeRequest: adminProcedure
+    .input(
+      z.object({
+        id: z.string().uuid(),
+        status: z.enum(['approved', 'rejected']),
+        manager_note: z.string().max(500).optional(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { error } = await ctx.db
+        .from('overtime_requests')
+        .update({
+          status: input.status,
+          manager_note: input.manager_note ?? null,
+          reviewed_by: ctx.user!.sub,
+          reviewed_at: new Date().toISOString(),
+        })
+        .eq('id', input.id)
+        .eq('tenant_id', ctx.user!.tid)
+
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+
+      // Notify employee
+      const { data: req } = await ctx.db
+        .from('overtime_requests')
+        .select('employee_id')
+        .eq('id', input.id)
+        .single()
+
+      if (req) {
+        await ctx.db.from('notifications').insert({
+          tenant_id: ctx.user!.tid,
+          user_id: req.employee_id,
+          channel: 'in_app' as const,
+          title: input.status === 'approved' ? 'Horas extra aprobadas' : 'Horas extra rechazadas',
+          body:
+            input.status === 'approved'
+              ? 'Tu solicitud de reconocimiento de horas extra fue aprobada.'
+              : `Tu solicitud fue rechazada. ${input.manager_note ?? ''}`,
+          sent_by: ctx.user!.sub,
+        })
+      }
+
+      return { ok: true }
+    }),
+
+  // ─── Objetivos / KPIs (admin) ────────────────────────────────────────────
+
+  listGoals: adminProcedure
+    .input(
+      z.object({
+        employeeId: z.string().uuid().optional(),
+        status: z.enum(['active', 'completed', 'cancelled', 'all']).default('all'),
+      }),
+    )
+    .query(async ({ ctx, input }) => {
+      let q = ctx.db
+        .from('employee_goals')
+        .select(
+          'id, title, description, target_value, current_value, unit, due_date, status, created_at, employee_id, users!employee_goals_employee_id_fkey(full_name, department)',
+        )
+        .eq('tenant_id', ctx.user!.tid)
+        .order('created_at', { ascending: false })
+        .limit(200)
+
+      if (input.employeeId) q = q.eq('employee_id', input.employeeId)
+      if (input.status !== 'all') q = q.eq('status', input.status)
+
+      const { data, error } = await q
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      return data ?? []
+    }),
+
+  createGoal: adminProcedure
+    .input(
+      z.object({
+        employee_id: z.string().uuid(),
+        title: z.string().min(1).max(200),
+        description: z.string().max(1000).optional(),
+        target_value: z.number().optional(),
+        unit: z.string().max(50).optional(),
+        due_date: z
+          .string()
+          .regex(/^\d{4}-\d{2}-\d{2}$/)
+          .optional(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { data, error } = await ctx.db
+        .from('employee_goals')
+        .insert({
+          tenant_id: ctx.user!.tid,
+          employee_id: input.employee_id,
+          created_by: ctx.user!.sub,
+          title: input.title,
+          description: input.description ?? null,
+          target_value: input.target_value ?? null,
+          unit: input.unit ?? null,
+          due_date: input.due_date ?? null,
+          status: 'active',
+        })
+        .select('id')
+        .single()
+
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+
+      // Notify employee
+      await ctx.db.from('notifications').insert({
+        tenant_id: ctx.user!.tid,
+        user_id: input.employee_id,
+        channel: 'in_app' as const,
+        title: 'Nuevo objetivo asignado',
+        body: `Tu manager te asignó un nuevo objetivo: "${input.title}"`,
+        sent_by: ctx.user!.sub,
+      })
+
+      return { ok: true, id: data.id }
+    }),
+
+  updateGoal: adminProcedure
+    .input(
+      z.object({
+        id: z.string().uuid(),
+        title: z.string().min(1).max(200).optional(),
+        description: z.string().max(1000).optional(),
+        target_value: z.number().optional(),
+        unit: z.string().max(50).optional(),
+        due_date: z
+          .string()
+          .regex(/^\d{4}-\d{2}-\d{2}$/)
+          .optional(),
+        status: z.enum(['active', 'completed', 'cancelled']).optional(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { id, ...fields } = input
+      const { error } = await ctx.db
+        .from('employee_goals')
+        .update({ ...fields, updated_at: new Date().toISOString() })
+        .eq('id', id)
+        .eq('tenant_id', ctx.user!.tid)
+
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      return { ok: true }
+    }),
+
+  // ─── Mensajes admin ──────────────────────────────────────────────────────
+
+  getAdminConversations: adminProcedure.query(async ({ ctx }) => {
+    const userId = ctx.user!.sub
+
+    const { data, error } = await ctx.db
+      .from('messages')
+      .select('id, from_user_id, to_user_id, body, read_at, created_at')
+      .eq('tenant_id', ctx.user!.tid)
+      .or(`from_user_id.eq.${userId},to_user_id.eq.${userId}`)
+      .order('created_at', { ascending: false })
+      .limit(200)
+
+    if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+
+    const msgs = data ?? []
+    const interlocutorIds = new Set<string>()
+    for (const m of msgs) {
+      const other = m.from_user_id === userId ? m.to_user_id : m.from_user_id
+      interlocutorIds.add(other)
+    }
+
+    if (interlocutorIds.size === 0) return []
+
+    const { data: users } = await ctx.db
+      .from('users')
+      .select('id, full_name, role, department')
+      .in('id', Array.from(interlocutorIds))
+
+    const userMap = new Map((users ?? []).map((u) => [u.id, u]))
+
+    const convMap = new Map<
+      string,
+      {
+        userId: string
+        fullName: string
+        role: string
+        lastMessage: string
+        lastAt: string
+        unread: number
+      }
+    >()
+
+    for (const m of msgs) {
+      const other = m.from_user_id === userId ? m.to_user_id : m.from_user_id
+      if (!convMap.has(other)) {
+        const u = userMap.get(other)
+        convMap.set(other, {
+          userId: other,
+          fullName: u?.full_name ?? 'Usuario',
+          role: u?.role ?? 'employee',
+          lastMessage: m.body,
+          lastAt: m.created_at,
+          unread: 0,
+        })
+      }
+      if (m.to_user_id === userId && !m.read_at) {
+        convMap.get(other)!.unread++
+      }
+    }
+
+    return Array.from(convMap.values()).sort(
+      (a, b) => new Date(b.lastAt).getTime() - new Date(a.lastAt).getTime(),
+    )
+  }),
 })
