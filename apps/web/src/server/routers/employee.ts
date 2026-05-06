@@ -260,24 +260,25 @@ export const employeeRouter = router({
   // ─── Mis sesiones ─────────────────────────────────────────────────────────
 
   getMySessions: protectedProcedure
-    .input(z.object({ page: z.number().int().min(0).default(0) }))
+    .input(
+      z.object({
+        days: z.union([z.literal(7), z.literal(14), z.literal(30), z.literal(60)]).default(30),
+      }),
+    )
     .query(async ({ ctx, input }) => {
-      const PAGE_SIZE = 20
-      const from = new Date(Date.now() - 30 * 86400000).toISOString()
+      const from = new Date(Date.now() - input.days * 86400000).toISOString()
 
-      const { data, error, count } = await ctx.db
+      const { data, error } = await ctx.db
         .from('work_sessions')
-        .select('id, started_at, ended_at, active_seconds, idle_seconds, location_type, status', {
-          count: 'exact',
-        })
+        .select('id, started_at, ended_at, active_seconds, idle_seconds, location_type, status')
         .eq('tenant_id', ctx.user!.tid)
         .eq('user_id', ctx.user!.sub)
         .gte('started_at', from)
         .order('started_at', { ascending: false })
-        .range(input.page * PAGE_SIZE, (input.page + 1) * PAGE_SIZE - 1)
+        .limit(200)
 
       if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
-      return { sessions: data ?? [], total: count ?? 0, pageSize: PAGE_SIZE }
+      return data ?? []
     }),
 
   // ─── Solicitar corrección de actividad ────────────────────────────────────
@@ -312,7 +313,9 @@ export const employeeRouter = router({
   getMyActivityEdits: protectedProcedure.query(async ({ ctx }) => {
     const { data, error } = await ctx.db
       .from('activity_edits')
-      .select('id, applies_to_date, edit_type, reason, status, created_at, reviewed_at')
+      .select(
+        'id, applies_to_date, edit_type, reason, status, review_note, created_at, reviewed_at',
+      )
       .eq('tenant_id', ctx.user!.tid)
       .eq('user_id', ctx.user!.sub)
       .order('created_at', { ascending: false })
