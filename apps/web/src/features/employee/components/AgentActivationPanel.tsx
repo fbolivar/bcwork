@@ -139,12 +139,24 @@ export function AgentActivationPanel() {
         </div>
         <div className="grid gap-3 sm:grid-cols-2">
           {[
-            { label: 'Windows', icon: '🪟', note: '.exe • Windows 10/11', href: '#' },
-            { label: 'macOS', icon: '🍎', note: '.dmg • macOS 12+', href: '#' },
+            {
+              label: 'Windows',
+              icon: '🪟',
+              note: '.exe • Windows 10/11',
+              href: 'https://github.com/fbolivar/bcwork/releases/download/agent-v1.0.0/BCWork.Agent_0.1.0_x64-setup.exe',
+            },
+            {
+              label: 'macOS',
+              icon: '🍎',
+              note: '.dmg • macOS 12+',
+              href: 'https://github.com/fbolivar/bcwork/releases/download/agent-v1.0.0/BCWork.Agent_0.1.0_aarch64.dmg',
+            },
           ].map((p) => (
             <a
               key={p.label}
               href={p.href}
+              target="_blank"
+              rel="noopener noreferrer"
               className="flex items-center gap-3 rounded-xl border border-gray-200 px-4 py-3 hover:border-blue-300 hover:bg-blue-50"
             >
               <span className="text-2xl">{p.icon}</span>

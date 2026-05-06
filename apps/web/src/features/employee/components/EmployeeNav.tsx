@@ -13,7 +13,6 @@ import {
   MonitorDown,
 } from 'lucide-react'
 import { trpc } from '@/lib/trpc-client'
-import { NotificationBell } from '@/features/shared/components/NotificationBell'
 
 const NAV = [
   { href: '/me/dashboard', label: 'Mi día', icon: LayoutDashboard },
@@ -32,12 +31,9 @@ export function EmployeeNav() {
 
   return (
     <aside className="flex w-52 flex-col border-r border-gray-200 bg-white">
-      <div className="flex items-center justify-between border-b border-gray-100 px-5 py-4">
-        <div>
-          <span className="text-sm font-bold tracking-tight text-blue-600">BCWork</span>
-          <p className="mt-0.5 text-xs text-gray-400">Mi espacio</p>
-        </div>
-        <NotificationBell />
+      <div className="border-b border-gray-100 px-5 py-4">
+        <span className="text-sm font-bold tracking-tight text-blue-600">BCWork</span>
+        <p className="mt-0.5 text-xs text-gray-400">Mi espacio</p>
       </div>
       <nav className="flex-1 space-y-0.5 p-2">
         {NAV.map(({ href, label, icon: Icon }) => {
