@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import { TRPCError } from '@trpc/server'
 import { router, publicProcedure, protectedProcedure } from '../trpc'
+import { sendWelcomeEmail } from '@/lib/email'
 import { signAccessToken, signRefreshToken, verifyRefreshToken } from '@/lib/auth/jwt'
 import {
   hashPassword,
@@ -145,6 +146,12 @@ export const authRouter = router({
       entityId: tenant.id,
       ipInet: ctx.ip,
       userAgent: ctx.userAgent,
+    })
+
+    void sendWelcomeEmail({
+      to: input.contact_email,
+      name: input.admin_full_name,
+      appUrl: process.env.NEXT_PUBLIC_APP_URL ?? 'https://app.bcwork.co',
     })
 
     return { success: true, tenantId: tenant.id }

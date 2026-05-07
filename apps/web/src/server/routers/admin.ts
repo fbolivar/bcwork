@@ -4,6 +4,11 @@ import { router, adminProcedure, protectedProcedure } from '../trpc'
 import { hashPassword, generateRandomPassword } from '@/lib/auth/password'
 import { logAudit } from '@/lib/auth/audit'
 import { broadcastNotificationToMany } from '@/lib/realtime-broadcast'
+import {
+  sendAbsenceApprovedEmail,
+  sendAbsenceRejectedEmail,
+  sendPayslipIssuedEmail,
+} from '@/lib/email'
 import type { Database } from '@bcwork/db'
 
 type UserInsert = Database['public']['Tables']['users']['Insert']
@@ -1895,7 +1900,7 @@ export const adminRouter = router({
     .mutation(async ({ ctx, input }) => {
       const { data: req } = await ctx.db
         .from('absence_requests')
-        .select('employee_id, days_count, type')
+        .select('employee_id, days_count, type, start_date, end_date')
         .eq('id', input.id)
         .eq('tenant_id', ctx.user!.tid)
         .single()
@@ -1966,6 +1971,50 @@ export const adminRouter = router({
           link: '/absences',
           is_read: false,
         })
+
+        // Send email to employee
+        const { data: emp } = await ctx.db
+          .from('users')
+          .select('full_name, email')
+          .eq('id', req.employee_id)
+          .single()
+        if (emp?.email) {
+          const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'https://app.bcwork.co'
+          const r = req as unknown as {
+            type: string
+            start_date: string
+            end_date: string
+            days_count: number
+          }
+          const fmt = (d: string) =>
+            new Date(d).toLocaleDateString('es-CO', {
+              day: '2-digit',
+              month: 'short',
+              year: 'numeric',
+            })
+          if (isApproved) {
+            void sendAbsenceApprovedEmail({
+              to: emp.email,
+              employeeName: emp.full_name ?? 'Colaborador',
+              type: r.type,
+              startDate: fmt(r.start_date),
+              endDate: fmt(r.end_date),
+              days: Number(r.days_count),
+              note: input.manager_note,
+              appUrl,
+            })
+          } else {
+            void sendAbsenceRejectedEmail({
+              to: emp.email,
+              employeeName: emp.full_name ?? 'Colaborador',
+              type: r.type,
+              startDate: fmt(r.start_date),
+              endDate: fmt(r.end_date),
+              note: input.manager_note,
+              appUrl,
+            })
+          }
+        }
       }
 
       return { ok: true }
@@ -3089,7 +3138,7 @@ export const adminRouter = router({
         net_amount: z.number().default(0),
         currency: z.string().default('COP'),
         notes: z.string().optional(),
-        status: z.enum(['draft', 'paid']).default('draft'),
+        status: z.enum(['draft', 'issued', 'acknowledged', 'paid']).default('draft'),
       }),
     )
     .mutation(async ({ ctx, input }) => {
@@ -3106,6 +3155,26 @@ export const adminRouter = router({
         ;({ error } = await ctx.db.from('payslips' as any).insert(payload))
       }
       if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+
+      // Send email when payslip is issued
+      if (input.status === 'issued') {
+        const { data: emp } = await ctx.db
+          .from('users')
+          .select('full_name, email')
+          .eq('id', input.employee_id)
+          .single()
+        if (emp?.email) {
+          void sendPayslipIssuedEmail({
+            to: emp.email,
+            employeeName: emp.full_name ?? 'Colaborador',
+            periodLabel: input.period_label,
+            netAmount: input.net_amount,
+            currency: input.currency,
+            appUrl: process.env.NEXT_PUBLIC_APP_URL ?? 'https://app.bcwork.co',
+          })
+        }
+      }
+
       return { ok: true }
     }),
 

@@ -4,6 +4,7 @@ import { TRPCError } from '@trpc/server'
 import { router, protectedProcedure } from '../trpc'
 import { hashPassword, verifyPassword, validatePasswordPolicy } from '@/lib/auth/password'
 import { broadcastNotificationToMany } from '@/lib/realtime-broadcast'
+import { sendAbsenceRequestEmail } from '@/lib/email'
 
 const POLICY_VERSION = '1.0'
 const CONSENT_TYPE = 'monitoring_basic'
@@ -1766,6 +1767,39 @@ export const employeeRouter = router({
             is_read: false,
           })),
         )
+
+        // Send email to each manager
+        const { data: managerRows } = await ctx.db
+          .from('users')
+          .select('full_name, email')
+          .in(
+            'id',
+            managers.map((m) => m.id),
+          )
+        if (managerRows) {
+          const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'https://app.bcwork.co'
+          const fmt = (d: string) =>
+            new Date(d).toLocaleDateString('es-CO', {
+              day: '2-digit',
+              month: 'short',
+              year: 'numeric',
+            })
+          for (const mgr of managerRows) {
+            if (mgr.email) {
+              void sendAbsenceRequestEmail({
+                to: mgr.email,
+                managerName: mgr.full_name ?? 'Manager',
+                employeeName,
+                type: input.type,
+                startDate: fmt(input.start_date),
+                endDate: fmt(input.end_date),
+                days: input.days_count,
+                reason: input.reason,
+                appUrl,
+              })
+            }
+          }
+        }
       }
 
       return data
