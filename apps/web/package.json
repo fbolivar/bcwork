@@ -10,9 +10,11 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@ai-sdk/react": "^3.0.178",
     "@bcwork/db": "workspace:*",
     "@bcwork/shared": "workspace:*",
     "@bcwork/ui": "workspace:*",
+    "@openrouter/ai-sdk-provider": "^2.9.0",
     "@react-email/components": "^1.0.12",
     "@sentry/nextjs": "^8.45.0",
     "@supabase/ssr": "^0.6.0",
@@ -22,6 +24,7 @@
     "@trpc/next": "^11.0.0",
     "@trpc/react-query": "^11.0.0",
     "@trpc/server": "^11.0.0",
+    "ai": "^6.0.176",
     "bcryptjs": "^2.4.3",
     "jose": "^5.10.0",
     "jspdf": "^4.2.1",
