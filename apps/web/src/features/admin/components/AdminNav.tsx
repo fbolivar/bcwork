@@ -39,6 +39,9 @@ import {
   FileCheck,
   Megaphone,
   CalendarRange,
+  TrendingUp,
+  FileBarChart,
+  ShieldCheck,
 } from 'lucide-react'
 import { trpc } from '@/lib/trpc-client'
 import { useRouter } from 'next/navigation'
@@ -58,7 +61,7 @@ const NAV = [
   { href: '/admin/pulse-surveys', label: 'Encuestas', icon: ClipboardCheck },
   { href: '/admin/kudos', label: 'Reconocimiento', icon: Heart },
   { href: '/admin/work-locations', label: 'Ubicaciones', icon: MapPin },
-  { href: '/admin/payslips', label: 'Nómina', icon: DollarSign },
+
   { href: '/admin/hr-documents', label: 'Documentos HR', icon: FileText },
   { href: '/admin/performance-reviews', label: 'Evaluaciones', icon: Star },
   { href: '/admin/expenses', label: 'Gastos', icon: Wallet },
@@ -70,6 +73,11 @@ const NAV = [
   { href: '/admin/certificates', label: 'Certificados', icon: FileCheck },
   { href: '/admin/announcements', label: 'Anuncios', icon: Megaphone },
   { href: '/admin/company-calendar', label: 'Cal. empresa', icon: CalendarRange },
+  { href: '/admin/people-analytics', label: 'People Analytics', icon: TrendingUp },
+  { href: '/admin/payroll', label: 'Motor de nómina', icon: DollarSign },
+  { href: '/admin/report-builder', label: 'Informes', icon: FileBarChart },
+  { href: '/admin/contracts', label: 'Contratos', icon: FileCheck },
+  { href: '/admin/compliance', label: 'Cumplimiento', icon: ShieldCheck },
   { href: '/admin/integrations', label: 'Integraciones', icon: Plug },
   { href: '/admin/apps', label: 'Aplicaciones', icon: AppWindow },
   { href: '/admin/ips', label: 'IPs Corporativas', icon: Network },

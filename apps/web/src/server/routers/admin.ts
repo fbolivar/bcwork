@@ -2882,4 +2882,563 @@ export const adminRouter = router({
       if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
       return { ok: true }
     }),
+
+  // ─── PEOPLE ANALYTICS ────────────────────────────────────────────────────
+  getPeopleAnalytics: adminProcedure.query(async ({ ctx }) => {
+    const tid = ctx.user!.tid
+
+    const [usersRes, sessionsRes, absencesRes, reviewsRes] = await Promise.all([
+      ctx.db
+        .from('users')
+        .select('id, full_name, role, department, position, created_at')
+        .eq('tenant_id', tid),
+      ctx.db
+        .from('work_sessions')
+        .select('user_id, active_seconds, started_at')
+        .eq('tenant_id', tid)
+        .gte('started_at', new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString()),
+      ctx.db
+        .from('absence_requests')
+        .select('employee_id, start_date, end_date, type, status')
+        .eq('tenant_id', tid)
+        .eq('status', 'approved'),
+      ctx.db
+        .from('performance_reviews')
+        .select('reviewee_id, overall_rating, submitted_at')
+        .eq('tenant_id', tid),
+    ])
+
+    const allUsers = usersRes.data ?? []
+    const sessions = sessionsRes.data ?? []
+    const absences = absencesRes.data ?? []
+    const reviews = reviewsRes.data ?? []
+
+    // Headcount por departamento
+    const headcountByDept: Record<string, number> = {}
+    for (const u of allUsers) {
+      const dept = u.department ?? 'Sin departamento'
+      headcountByDept[dept] = (headcountByDept[dept] ?? 0) + 1
+    }
+
+    // Tendencia de ingresos (últimos 6 meses)
+    const now = new Date()
+    const hiresByMonth: Record<string, number> = {}
+    for (let i = 5; i >= 0; i--) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+      hiresByMonth[key] = 0
+    }
+    for (const u of allUsers) {
+      if (!u.created_at) continue
+      const d = new Date(u.created_at)
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+      if (key in hiresByMonth) hiresByMonth[key] = (hiresByMonth[key] ?? 0) + 1
+    }
+
+    // Promedio de horas trabajadas por usuario (últimos 90 días)
+    const hoursByUser: Record<string, number> = {}
+    for (const s of sessions) {
+      hoursByUser[s.user_id] = (hoursByUser[s.user_id] ?? 0) + (s.active_seconds ?? 0)
+    }
+    const avgHours =
+      Object.values(hoursByUser).length > 0
+        ? Object.values(hoursByUser).reduce((a, b) => a + b, 0) /
+          Object.values(hoursByUser).length /
+          3600
+        : 0
+
+    // Ausencias por tipo
+    const absencesByType: Record<string, number> = {}
+    for (const a of absences) {
+      const t = (a as any).type ?? 'otro'
+      absencesByType[t] = (absencesByType[t] ?? 0) + 1
+    }
+
+    // Rating promedio de performance
+    const avgRating =
+      reviews.length > 0
+        ? reviews.reduce((s, r) => s + ((r as any).overall_rating ?? 0), 0) / reviews.length
+        : null
+
+    // Usuarios activos (sesión en últimos 30 días)
+    const cutoff30 = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString()
+    const activeSet = new Set(
+      sessions.filter((s) => (s.started_at ?? '') >= cutoff30).map((s) => s.user_id),
+    )
+
+    return {
+      headcount: allUsers.length,
+      activeCount: activeSet.size,
+      headcountByDept: Object.entries(headcountByDept).sort((a, b) => b[1] - a[1]),
+      hiresByMonth: Object.entries(hiresByMonth).map(([month, count]) => ({ month, count })),
+      avgHoursLast90d: Math.round(avgHours * 10) / 10,
+      absencesByType: Object.entries(absencesByType).sort((a, b) => b[1] - a[1]),
+      avgPerformanceRating: avgRating ? Math.round(avgRating * 10) / 10 : null,
+      roleDistribution: Object.entries(
+        allUsers.reduce<Record<string, number>>((acc, u) => {
+          acc[u.role ?? 'employee'] = (acc[u.role ?? 'employee'] ?? 0) + 1
+          return acc
+        }, {}),
+      ).sort((a, b) => b[1] - a[1]),
+    }
+  }),
+
+  // ─── PAYROLL ENGINE ───────────────────────────────────────────────────────
+  listPayrollPeriods: adminProcedure.query(async ({ ctx }) => {
+    const { data, error } = await ctx.db
+      .from('payroll_periods' as any)
+      .select('*')
+      .eq('tenant_id', ctx.user!.tid)
+      .order('period_start', { ascending: false })
+    if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+    return data ?? []
+  }),
+
+  createPayrollPeriod: adminProcedure
+    .input(
+      z.object({
+        label: z.string().min(1),
+        period_start: z.string(),
+        period_end: z.string(),
+        notes: z.string().optional(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { data, error } = await ctx.db
+        .from('payroll_periods' as any)
+        .insert({ ...input, tenant_id: ctx.user!.tid, created_by: ctx.user!.sub })
+        .select()
+        .single()
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      return data
+    }),
+
+  updatePayrollPeriodStatus: adminProcedure
+    .input(
+      z.object({
+        id: z.string().uuid(),
+        status: z.enum(['draft', 'processing', 'paid', 'cancelled']),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { error } = await ctx.db
+        .from('payroll_periods' as any)
+        .update({ status: input.status })
+        .eq('id', input.id)
+        .eq('tenant_id', ctx.user!.tid)
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      return { ok: true }
+    }),
+
+  listPayslips: adminProcedure
+    .input(z.object({ period_id: z.string().uuid().optional() }))
+    .query(async ({ ctx, input }) => {
+      let q = ctx.db
+        .from('payslips' as any)
+        .select('*, users!employee_id(full_name, department, position)')
+        .eq('tenant_id', ctx.user!.tid)
+        .order('created_at', { ascending: false })
+      if (input.period_id) q = q.eq('period_id', input.period_id)
+      const { data, error } = await q
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      return data ?? []
+    }),
+
+  upsertPayslip: adminProcedure
+    .input(
+      z.object({
+        id: z.string().uuid().optional(),
+        period_id: z.string().uuid().optional(),
+        employee_id: z.string().uuid(),
+        period_label: z.string(),
+        period_start: z.string(),
+        period_end: z.string(),
+        base_salary: z.number().default(0),
+        worked_days: z.number().int().default(0),
+        overtime_hours: z.number().default(0),
+        overtime_value: z.number().default(0),
+        transportation_allowance: z.number().default(0),
+        prima: z.number().default(0),
+        cesantias: z.number().default(0),
+        intereses_cesantias: z.number().default(0),
+        vacaciones: z.number().default(0),
+        health_employee: z.number().default(0),
+        pension_employee: z.number().default(0),
+        health_employer: z.number().default(0),
+        pension_employer: z.number().default(0),
+        arl: z.number().default(0),
+        icbf: z.number().default(0),
+        sena: z.number().default(0),
+        cajas_compensacion: z.number().default(0),
+        other_earnings: z.number().default(0),
+        other_deductions: z.number().default(0),
+        gross_amount: z.number().default(0),
+        deductions: z.number().default(0),
+        net_amount: z.number().default(0),
+        currency: z.string().default('COP'),
+        notes: z.string().optional(),
+        status: z.enum(['draft', 'paid']).default('draft'),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { id, ...rest } = input
+      const payload = { ...rest, tenant_id: ctx.user!.tid, created_by: ctx.user!.sub }
+      let error
+      if (id) {
+        ;({ error } = await ctx.db
+          .from('payslips' as any)
+          .update(payload)
+          .eq('id', id)
+          .eq('tenant_id', ctx.user!.tid))
+      } else {
+        ;({ error } = await ctx.db.from('payslips' as any).insert(payload))
+      }
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      return { ok: true }
+    }),
+
+  // ─── REPORT BUILDER ───────────────────────────────────────────────────────
+  runCustomReport: adminProcedure
+    .input(
+      z.object({
+        report_type: z.enum(['attendance', 'productivity', 'absences', 'payroll', 'overview']),
+        date_from: z.string(),
+        date_to: z.string(),
+        department: z.string().optional(),
+        user_ids: z.array(z.string().uuid()).optional(),
+      }),
+    )
+    .query(async ({ ctx, input }) => {
+      const tid = ctx.user!.tid
+      const { report_type, date_from, date_to, department } = input
+
+      if (report_type === 'attendance') {
+        let q = ctx.db
+          .from('work_sessions')
+          .select(
+            'user_id, started_at, ended_at, duration_seconds, users!user_id(full_name, department)',
+          )
+          .eq('tenant_id', tid)
+          .gte('started_at', date_from)
+          .lte('started_at', date_to)
+        const { data, error } = await q
+        if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+        return { type: 'attendance', rows: data ?? [] }
+      }
+
+      if (report_type === 'productivity') {
+        let q = ctx.db
+          .from('daily_user_metrics')
+          .select(
+            'user_id, date, productive_seconds, neutral_seconds, unproductive_seconds, productivity_score, users!user_id(full_name, department)',
+          )
+          .eq('tenant_id', tid)
+          .gte('date', date_from)
+          .lte('date', date_to)
+        if (department) q = q.eq('users.department', department)
+        const { data, error } = await q
+        if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+        return { type: 'productivity', rows: data ?? [] }
+      }
+
+      if (report_type === 'absences') {
+        const { data, error } = await ctx.db
+          .from('absence_requests')
+          .select('*, users!user_id(full_name, department)')
+          .eq('tenant_id', tid)
+          .gte('start_date', date_from)
+          .lte('start_date', date_to)
+        if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+        return { type: 'absences', rows: data ?? [] }
+      }
+
+      if (report_type === 'payroll') {
+        const { data, error } = await ctx.db
+          .from('payslips' as any)
+          .select('*, users!employee_id(full_name, department, position)')
+          .eq('tenant_id', tid)
+          .gte('period_start', date_from)
+          .lte('period_end', date_to)
+        if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+        return { type: 'payroll', rows: data ?? [] }
+      }
+
+      // overview: combinar asistencia + productividad
+      const [sessRes, metRes, usrRes] = await Promise.all([
+        ctx.db
+          .from('work_sessions')
+          .select('user_id, active_seconds')
+          .eq('tenant_id', tid)
+          .gte('started_at', date_from)
+          .lte('started_at', date_to),
+        ctx.db
+          .from('daily_user_metrics')
+          .select('user_id, productivity_ratio')
+          .eq('tenant_id', tid)
+          .gte('metric_date', date_from)
+          .lte('metric_date', date_to),
+        ctx.db.from('users').select('id, full_name, department, position').eq('tenant_id', tid),
+      ])
+
+      const totalSecsByUser: Record<string, number> = {}
+      for (const s of sessRes.data ?? []) {
+        totalSecsByUser[s.user_id] = (totalSecsByUser[s.user_id] ?? 0) + (s.active_seconds ?? 0)
+      }
+      const scoresByUser: Record<string, number[]> = {}
+      for (const m of (metRes.data ?? []) as any[]) {
+        const uid = m.user_id as string
+        if (!scoresByUser[uid]) scoresByUser[uid] = []
+        scoresByUser[uid]!.push((m.productivity_ratio as number) ?? 0)
+      }
+
+      const rows = (usrRes.data ?? []).map((u) => {
+        const uid = u.id ?? ''
+        const scores = scoresByUser[uid]
+        return {
+          user_id: uid,
+          full_name: u.full_name,
+          department: u.department,
+          position: u.position,
+          total_hours: Math.round(((totalSecsByUser[uid] ?? 0) / 3600) * 10) / 10,
+          avg_productivity: scores
+            ? Math.round((scores.reduce((a, b) => a + b, 0) / scores.length) * 10) / 10
+            : null,
+        }
+      })
+
+      return { type: 'overview', rows }
+    }),
+
+  listReportTemplates: adminProcedure.query(async ({ ctx }) => {
+    const { data, error } = await ctx.db
+      .from('scheduled_reports')
+      .select('*')
+      .eq('tenant_id', ctx.user!.tid)
+      .order('created_at', { ascending: false })
+    if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+    return data ?? []
+  }),
+
+  // ─── CONTRACT MANAGEMENT ─────────────────────────────────────────────────
+  listContractTemplates: adminProcedure.query(async ({ ctx }) => {
+    const { data, error } = await ctx.db
+      .from('contract_templates' as any)
+      .select('*')
+      .eq('tenant_id', ctx.user!.tid)
+      .order('created_at', { ascending: false })
+    if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+    return data ?? []
+  }),
+
+  upsertContractTemplate: adminProcedure
+    .input(
+      z.object({
+        id: z.string().uuid().optional(),
+        name: z.string().min(1),
+        contract_type: z.enum([
+          'indefinido',
+          'fijo',
+          'obra',
+          'prestacion_servicios',
+          'aprendizaje',
+        ]),
+        body_html: z.string().default(''),
+        variables: z.array(z.string()).default([]),
+        is_active: z.boolean().default(true),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { id, variables, ...rest } = input
+      const payload = {
+        ...rest,
+        variables: JSON.stringify(variables),
+        tenant_id: ctx.user!.tid,
+        created_by: ctx.user!.sub,
+      }
+      let error
+      if (id) {
+        ;({ error } = await ctx.db
+          .from('contract_templates' as any)
+          .update(payload)
+          .eq('id', id)
+          .eq('tenant_id', ctx.user!.tid))
+      } else {
+        ;({ error } = await ctx.db.from('contract_templates' as any).insert(payload))
+      }
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      return { ok: true }
+    }),
+
+  listContracts: adminProcedure
+    .input(z.object({ status: z.string().optional(), employee_id: z.string().uuid().optional() }))
+    .query(async ({ ctx, input }) => {
+      let q = ctx.db
+        .from('employment_contracts' as any)
+        .select('*, users!employee_id(full_name, department, position)')
+        .eq('tenant_id', ctx.user!.tid)
+        .order('created_at', { ascending: false })
+      if (input.status) q = q.eq('status', input.status)
+      if (input.employee_id) q = q.eq('employee_id', input.employee_id)
+      const { data, error } = await q
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      return data ?? []
+    }),
+
+  upsertContract: adminProcedure
+    .input(
+      z.object({
+        id: z.string().uuid().optional(),
+        employee_id: z.string().uuid(),
+        template_id: z.string().uuid().optional(),
+        contract_type: z.enum([
+          'indefinido',
+          'fijo',
+          'obra',
+          'prestacion_servicios',
+          'aprendizaje',
+        ]),
+        start_date: z.string(),
+        end_date: z.string().optional(),
+        salary: z.number().optional(),
+        position: z.string().optional(),
+        status: z
+          .enum(['draft', 'sent', 'signed', 'active', 'terminated', 'expired'])
+          .default('draft'),
+        document_url: z.string().optional(),
+        notes: z.string().optional(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { id, ...rest } = input
+      const payload = { ...rest, tenant_id: ctx.user!.tid, created_by: ctx.user!.sub }
+      let error
+      if (id) {
+        ;({ error } = await ctx.db
+          .from('employment_contracts' as any)
+          .update(payload)
+          .eq('id', id)
+          .eq('tenant_id', ctx.user!.tid))
+      } else {
+        ;({ error } = await ctx.db.from('employment_contracts' as any).insert(payload))
+      }
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      return { ok: true }
+    }),
+
+  updateContractStatus: adminProcedure
+    .input(
+      z.object({
+        id: z.string().uuid(),
+        status: z.enum(['draft', 'sent', 'signed', 'active', 'terminated', 'expired']),
+        termination_reason: z.string().optional(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const payload: Record<string, unknown> = { status: input.status }
+      if (input.status === 'signed') payload.signed_at = new Date().toISOString()
+      if (input.status === 'terminated') {
+        payload.terminated_at = new Date().toISOString()
+        payload.termination_reason = input.termination_reason
+      }
+      const { error } = await ctx.db
+        .from('employment_contracts' as any)
+        .update(payload)
+        .eq('id', input.id)
+        .eq('tenant_id', ctx.user!.tid)
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      return { ok: true }
+    }),
+
+  // ─── COMPLIANCE PANEL ─────────────────────────────────────────────────────
+  listComplianceRequirements: adminProcedure
+    .input(
+      z.object({
+        category: z.string().optional(),
+        status: z.string().optional(),
+        employee_id: z.string().uuid().optional(),
+      }),
+    )
+    .query(async ({ ctx, input }) => {
+      let q = ctx.db
+        .from('compliance_requirements' as any)
+        .select('*, users!employee_id(full_name, department)')
+        .eq('tenant_id', ctx.user!.tid)
+        .order('due_date', { ascending: true })
+      if (input.category) q = q.eq('category', input.category)
+      if (input.status) q = q.eq('status', input.status)
+      if (input.employee_id) q = q.eq('employee_id', input.employee_id)
+      const { data, error } = await q
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      return data ?? []
+    }),
+
+  upsertComplianceRequirement: adminProcedure
+    .input(
+      z.object({
+        id: z.string().uuid().optional(),
+        employee_id: z.string().uuid().optional(),
+        category: z.enum([
+          'sgsst',
+          'arl',
+          'eps',
+          'pension',
+          'caja_compensacion',
+          'contrato',
+          'induccion',
+          'examen_medico',
+          'capacitacion',
+          'otro',
+        ]),
+        title: z.string().min(1),
+        description: z.string().optional(),
+        due_date: z.string().optional(),
+        is_company_wide: z.boolean().default(false),
+        document_url: z.string().optional(),
+        status: z.enum(['pending', 'completed', 'overdue', 'na']).default('pending'),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { id, ...rest } = input
+      const payload = { ...rest, tenant_id: ctx.user!.tid, created_by: ctx.user!.sub }
+      let error
+      if (id) {
+        ;({ error } = await ctx.db
+          .from('compliance_requirements' as any)
+          .update(payload)
+          .eq('id', id)
+          .eq('tenant_id', ctx.user!.tid))
+      } else {
+        ;({ error } = await ctx.db.from('compliance_requirements' as any).insert(payload))
+      }
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      return { ok: true }
+    }),
+
+  completeComplianceRequirement: adminProcedure
+    .input(z.object({ id: z.string().uuid(), document_url: z.string().optional() }))
+    .mutation(async ({ ctx, input }) => {
+      const { error } = await ctx.db
+        .from('compliance_requirements' as any)
+        .update({
+          status: 'completed',
+          completed_at: new Date().toISOString(),
+          document_url: input.document_url,
+        })
+        .eq('id', input.id)
+        .eq('tenant_id', ctx.user!.tid)
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      return { ok: true }
+    }),
+
+  deleteComplianceRequirement: adminProcedure
+    .input(z.object({ id: z.string().uuid() }))
+    .mutation(async ({ ctx, input }) => {
+      const { error } = await ctx.db
+        .from('compliance_requirements' as any)
+        .delete()
+        .eq('id', input.id)
+        .eq('tenant_id', ctx.user!.tid)
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      return { ok: true }
+    }),
 })
