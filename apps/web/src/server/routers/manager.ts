@@ -1450,4 +1450,400 @@ export const managerRouter = router({
 
       return { users: result, period: { dateFrom: input.dateFrom, dateTo: input.dateTo } }
     }),
+
+  // ─── Ausencias / Vacaciones ───────────────────────────────────────────────
+
+  getLeaveRequests: managerProcedure
+    .input(
+      z.object({
+        status: z.enum(['pending', 'approved', 'rejected', 'all']).default('pending'),
+      }),
+    )
+    .query(async ({ ctx, input }) => {
+      const tenantId = ctx.user!.tid
+      let q = ctx.db
+        .from('absence_requests')
+        .select('*, users!absence_requests_employee_id_fkey(full_name, email, department)')
+        .eq('tenant_id', tenantId)
+        .order('created_at', { ascending: false })
+      if (input.status !== 'all') q = q.eq('status', input.status)
+      const { data, error } = await q
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      return (data ?? []).map((r) => ({
+        ...r,
+        full_name: (r.users as unknown as { full_name: string | null } | null)?.full_name ?? null,
+        email: (r.users as unknown as { email: string } | null)?.email ?? '',
+        department:
+          (r.users as unknown as { department: string | null } | null)?.department ?? null,
+      }))
+    }),
+
+  reviewLeaveRequest: managerProcedure
+    .input(
+      z.object({
+        id: z.string().uuid(),
+        status: z.enum(['approved', 'rejected']),
+        manager_note: z.string().optional(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const tenantId = ctx.user!.tid
+      const { error } = await ctx.db
+        .from('absence_requests')
+        .update({
+          status: input.status,
+          manager_note: input.manager_note ?? null,
+          reviewed_by: ctx.user!.sub,
+          reviewed_at: new Date().toISOString(),
+        } as any)
+        .eq('id', input.id)
+        .eq('tenant_id', tenantId)
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      return { ok: true }
+    }),
+
+  getPendingLeaveCount: managerProcedure.query(async ({ ctx }) => {
+    const tenantId = ctx.user!.tid
+    const { count } = await ctx.db
+      .from('absence_requests')
+      .select('*', { count: 'exact', head: true })
+      .eq('tenant_id', tenantId)
+      .eq('status', 'pending')
+    return count ?? 0
+  }),
+
+  // ─── Tendencias ───────────────────────────────────────────────────────────
+
+  getTeamTrends: managerProcedure
+    .input(
+      z.object({
+        teamId: z.string().uuid().optional(),
+        days: z.number().int().min(7).max(90).default(30),
+      }),
+    )
+    .query(async ({ ctx, input }) => {
+      const tenantId = ctx.user!.tid
+      const dateFrom = new Date(Date.now() - input.days * 24 * 60 * 60 * 1000)
+        .toISOString()
+        .slice(0, 10)
+
+      let memberIds: string[] | null = null
+      if (input.teamId) {
+        const { data: members } = await ctx.db
+          .from('team_members')
+          .select('user_id')
+          .eq('team_id', input.teamId)
+          .eq('tenant_id', tenantId)
+        memberIds = (members ?? []).map((m) => m.user_id)
+        if (memberIds.length === 0) return []
+      }
+
+      let q = ctx.db
+        .from('daily_user_metrics')
+        .select('metric_date, user_id, active_seconds, productivity_ratio, overtime_seconds')
+        .eq('tenant_id', tenantId)
+        .gte('metric_date', dateFrom)
+        .order('metric_date')
+
+      if (memberIds) q = q.in('user_id', memberIds)
+      const { data, error } = await q
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+
+      const byDate = new Map<
+        string,
+        { active: number[]; ratios: number[]; overtime: number; users: number }
+      >()
+      for (const m of data ?? []) {
+        const d = byDate.get(m.metric_date) ?? { active: [], ratios: [], overtime: 0, users: 0 }
+        d.active.push(m.active_seconds ?? 0)
+        if (m.productivity_ratio != null) d.ratios.push(Number(m.productivity_ratio))
+        d.overtime += m.overtime_seconds ?? 0
+        d.users++
+        byDate.set(m.metric_date, d)
+      }
+
+      return Array.from(byDate.entries()).map(([date, v]) => ({
+        date,
+        avg_active_seconds:
+          v.active.length > 0
+            ? Math.round(v.active.reduce((a, b) => a + b, 0) / v.active.length)
+            : 0,
+        avg_productivity_ratio:
+          v.ratios.length > 0 ? v.ratios.reduce((a, b) => a + b, 0) / v.ratios.length : 0,
+        total_overtime_seconds: v.overtime,
+        active_users: v.users,
+      }))
+    }),
+
+  // ─── Evaluaciones de desempeño ────────────────────────────────────────────
+
+  getTeamReviews: managerProcedure
+    .input(z.object({ status: z.enum(['pending', 'completed', 'all']).default('all') }))
+    .query(async ({ ctx, input }) => {
+      const tenantId = ctx.user!.tid
+      let q = ctx.db
+        .from('performance_reviews')
+        .select(
+          '*, reviewee:users!performance_reviews_reviewee_id_fkey(full_name, email, department), reviewer:users!performance_reviews_reviewer_id_fkey(full_name, email)',
+        )
+        .eq('tenant_id', tenantId)
+        .order('created_at', { ascending: false })
+      if (input.status !== 'all') q = q.eq('status', input.status)
+      const { data, error } = await q
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      return (data ?? []).map((r) => ({
+        ...r,
+        reviewee_name:
+          (r.reviewee as unknown as { full_name: string | null } | null)?.full_name ?? null,
+        reviewee_email: (r.reviewee as unknown as { email: string } | null)?.email ?? '',
+        reviewee_department:
+          (r.reviewee as unknown as { department: string | null } | null)?.department ?? null,
+        reviewer_name:
+          (r.reviewer as unknown as { full_name: string | null } | null)?.full_name ?? null,
+      }))
+    }),
+
+  createReview: managerProcedure
+    .input(
+      z.object({
+        reviewee_id: z.string().uuid(),
+        review_type: z.enum(['quarterly', 'annual', 'probation', 'pip']),
+        period_label: z.string().min(1),
+        due_date: z.string().optional(),
+        questions: z
+          .array(
+            z.object({
+              id: z.string(),
+              text: z.string(),
+              type: z.enum(['rating', 'text']),
+            }),
+          )
+          .default([]),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const tenantId = ctx.user!.tid
+      const { data, error } = await ctx.db
+        .from('performance_reviews')
+        .insert({
+          tenant_id: tenantId,
+          reviewee_id: input.reviewee_id,
+          reviewer_id: ctx.user!.sub,
+          review_type: input.review_type,
+          period_label: input.period_label,
+          due_date: input.due_date ?? null,
+          questions: input.questions,
+          status: 'pending',
+          created_by: ctx.user!.sub,
+        } as any)
+        .select('id')
+        .single()
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      return data
+    }),
+
+  submitReview: managerProcedure
+    .input(
+      z.object({
+        id: z.string().uuid(),
+        answers: z.record(z.string(), z.unknown()),
+        overall_rating: z.number().int().min(1).max(5),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const tenantId = ctx.user!.tid
+      const { error } = await ctx.db
+        .from('performance_reviews')
+        .update({
+          answers: input.answers,
+          overall_rating: input.overall_rating,
+          status: 'completed',
+          submitted_at: new Date().toISOString(),
+        } as any)
+        .eq('id', input.id)
+        .eq('tenant_id', tenantId)
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      return { ok: true }
+    }),
+
+  // ─── Calendario del equipo ────────────────────────────────────────────────
+
+  getTeamCalendar: managerProcedure
+    .input(z.object({ year: z.number().int(), month: z.number().int().min(1).max(12) }))
+    .query(async ({ ctx, input }) => {
+      const tenantId = ctx.user!.tid
+      const pad = (n: number) => String(n).padStart(2, '0')
+      const dateFrom = `${input.year}-${pad(input.month)}-01`
+      const dateTo = new Date(input.year, input.month, 0).toISOString().slice(0, 10)
+
+      const [absencesRes, oneOnOnesRes, eventsRes] = await Promise.all([
+        ctx.db
+          .from('absence_requests')
+          .select(
+            'id, employee_id, type, start_date, end_date, days_count, status, users!absence_requests_employee_id_fkey(full_name, email)',
+          )
+          .eq('tenant_id', tenantId)
+          .in('status', ['approved', 'pending'])
+          .lte('start_date', dateTo)
+          .gte('end_date', dateFrom),
+        ctx.db
+          .from('one_on_ones')
+          .select(
+            'id, employee_id, scheduled_at, duration_minutes, users!one_on_ones_employee_id_fkey(full_name, email)',
+          )
+          .eq('tenant_id', tenantId)
+          .eq('status', 'scheduled')
+          .gte('scheduled_at', `${dateFrom}T00:00:00`)
+          .lte('scheduled_at', `${dateTo}T23:59:59`),
+        ctx.db
+          .from('company_events')
+          .select('id, title, event_date, event_type')
+          .eq('tenant_id', tenantId)
+          .gte('event_date', dateFrom)
+          .lte('event_date', dateTo),
+      ])
+
+      return {
+        absences: (absencesRes.data ?? []).map((a) => ({
+          id: a.id,
+          employee_id: a.employee_id,
+          full_name: (a.users as unknown as { full_name: string | null } | null)?.full_name ?? null,
+          email: (a.users as unknown as { email: string } | null)?.email ?? '',
+          type: a.type,
+          start_date: a.start_date,
+          end_date: a.end_date,
+          days_count: a.days_count,
+          status: a.status,
+        })),
+        one_on_ones: (oneOnOnesRes.data ?? []).map((o) => ({
+          id: o.id,
+          employee_id: o.employee_id,
+          full_name: (o.users as unknown as { full_name: string | null } | null)?.full_name ?? null,
+          scheduled_at: o.scheduled_at,
+          duration_minutes: o.duration_minutes,
+        })),
+        events: (eventsRes.data ?? []) as Array<{
+          id: string
+          title: string
+          event_date: string
+          event_type: string
+        }>,
+      }
+    }),
+
+  // ─── Alertas configurables ────────────────────────────────────────────────
+
+  getAlertRules: managerProcedure.query(async ({ ctx }) => {
+    const tenantId = ctx.user!.tid
+    const { data, error } = await ctx.db
+      .from('alert_rules')
+      .select('*')
+      .eq('tenant_id', tenantId)
+      .order('created_at', { ascending: false })
+    if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+    return data ?? []
+  }),
+
+  createAlertRule: managerProcedure
+    .input(
+      z.object({
+        name: z.string().min(1),
+        rule_type: z.string().min(1),
+        threshold_value: z.number(),
+        consecutive_days: z.number().int().min(1).default(1),
+        scope: z.enum(['all', 'team', 'user']).default('all'),
+        scope_id: z.string().uuid().optional(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const tenantId = ctx.user!.tid
+      const { data, error } = await ctx.db
+        .from('alert_rules')
+        .insert({ tenant_id: tenantId, ...input, created_by: ctx.user!.sub } as any)
+        .select('id')
+        .single()
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      return data
+    }),
+
+  toggleAlertRule: managerProcedure
+    .input(z.object({ id: z.string().uuid(), is_active: z.boolean() }))
+    .mutation(async ({ ctx, input }) => {
+      const tenantId = ctx.user!.tid
+      const { error } = await ctx.db
+        .from('alert_rules')
+        .update({ is_active: input.is_active })
+        .eq('id', input.id)
+        .eq('tenant_id', tenantId)
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      return { ok: true }
+    }),
+
+  deleteAlertRule: managerProcedure
+    .input(z.object({ id: z.string().uuid() }))
+    .mutation(async ({ ctx, input }) => {
+      const tenantId = ctx.user!.tid
+      const { error } = await ctx.db
+        .from('alert_rules')
+        .delete()
+        .eq('id', input.id)
+        .eq('tenant_id', tenantId)
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      return { ok: true }
+    }),
+
+  // ─── Reconocimientos / Kudos ──────────────────────────────────────────────
+
+  getTeamKudos: managerProcedure
+    .input(z.object({ limit: z.number().int().min(1).max(100).default(50) }))
+    .query(async ({ ctx, input }) => {
+      const tenantId = ctx.user!.tid
+      const { data, error } = await ctx.db
+        .from('kudos')
+        .select(
+          '*, from_user:users!kudos_from_user_id_fkey(full_name, email), to_user:users!kudos_to_user_id_fkey(full_name, email)',
+        )
+        .eq('tenant_id', tenantId)
+        .order('created_at', { ascending: false })
+        .limit(input.limit)
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      return (data ?? []).map((k) => ({
+        id: k.id,
+        from_user_id: k.from_user_id,
+        to_user_id: k.to_user_id,
+        from_name:
+          (k.from_user as unknown as { full_name: string | null; email: string } | null)
+            ?.full_name ??
+          (k.from_user as unknown as { email: string } | null)?.email ??
+          '',
+        to_name:
+          (k.to_user as unknown as { full_name: string | null; email: string } | null)?.full_name ??
+          (k.to_user as unknown as { email: string } | null)?.email ??
+          '',
+        message: k.message,
+        value: k.value,
+        created_at: k.created_at,
+      }))
+    }),
+
+  sendKudo: managerProcedure
+    .input(
+      z.object({
+        to_user_id: z.string().uuid(),
+        message: z.string().min(1),
+        value: z.string().min(1),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const tenantId = ctx.user!.tid
+      const { error } = await ctx.db.from('kudos').insert({
+        tenant_id: tenantId,
+        from_user_id: ctx.user!.sub,
+        to_user_id: input.to_user_id,
+        message: input.message,
+        value: input.value,
+      } as any)
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      return { ok: true }
+    }),
 })

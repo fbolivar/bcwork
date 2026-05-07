@@ -19,6 +19,12 @@ import {
   FileText,
   Wallet,
   ChevronDown,
+  CalendarOff,
+  TrendingUp,
+  ClipboardCheck,
+  CalendarDays,
+  Bell,
+  Heart,
 } from 'lucide-react'
 import { trpc } from '@/lib/trpc-client'
 import { NotificationBell } from '@/features/shared/components/NotificationBell'
@@ -45,6 +51,7 @@ const NAV_GROUPS: NavGroup[] = [
       { href: '/manager/corrections', label: 'Correcciones', icon: ClipboardEdit },
       { href: '/manager/overtime', label: 'Horas extra', icon: Clock4 },
       { href: '/manager/expenses', label: 'Gastos', icon: Wallet },
+      { href: '/manager/leave', label: 'Ausencias', icon: CalendarOff },
     ],
   },
   {
@@ -53,15 +60,24 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       { href: '/manager/goals', label: 'Objetivos', icon: Target },
       { href: '/manager/1on1s', label: 'Reuniones 1:1', icon: Video },
+      { href: '/manager/reviews', label: 'Evaluaciones', icon: ClipboardCheck },
+      { href: '/manager/kudos', label: 'Reconocimientos', icon: Heart },
     ],
   },
   {
-    label: 'Reportes',
+    label: 'Reportes y análisis',
     defaultOpen: false,
     items: [
       { href: '/manager/timesheet', label: 'Timesheet', icon: ClipboardList },
       { href: '/manager/reports', label: 'Informes', icon: FileText },
+      { href: '/manager/trends', label: 'Tendencias', icon: TrendingUp },
+      { href: '/manager/calendar', label: 'Calendario', icon: CalendarDays },
     ],
+  },
+  {
+    label: 'Configuración',
+    defaultOpen: false,
+    items: [{ href: '/manager/alerts', label: 'Alertas', icon: Bell }],
   },
 ]
 
@@ -140,6 +156,7 @@ export function ManagerNav({ onClose }: { onClose?: () => void } = {}) {
   const { data: pendingCorrections } = trpc.manager.getPendingCorrectionsCount.useQuery()
   const { data: pendingOvertime } = trpc.manager.getPendingOvertimeCount.useQuery()
   const { data: pendingExpenses } = trpc.manager.getPendingExpensesCount.useQuery()
+  const { data: pendingLeave } = trpc.manager.getPendingLeaveCount.useQuery()
   const { data: unreadMsgs } = trpc.manager.getUnreadMessageCount.useQuery(undefined, {
     refetchInterval: 15000,
   })
@@ -148,6 +165,7 @@ export function ManagerNav({ onClose }: { onClose?: () => void } = {}) {
     '/manager/corrections': pendingCorrections?.count ?? 0,
     '/manager/overtime': pendingOvertime?.count ?? 0,
     '/manager/expenses': pendingExpenses?.count ?? 0,
+    '/manager/leave': typeof pendingLeave === 'number' ? pendingLeave : 0,
     '/manager/messages': unreadMsgs?.count ?? 0,
   }
 
