@@ -3648,4 +3648,374 @@ export const managerRouter = router({
       })
       .sort((a: any, b: any) => b.risk_score - a.risk_score)
   }),
+
+  // ─── Report Exports ────────────────────────────────────────────────────────
+
+  getReportData: managerProcedure
+    .input(
+      z.object({
+        type: z.enum(['timesheet', 'absences', 'compensation', 'benefits', 'evaluations']),
+        date_from: z.string(),
+        date_to: z.string(),
+        employee_id: z.string().uuid().optional(),
+      }),
+    )
+    .query(async ({ ctx, input }) => {
+      const tid = ctx.user!.tid
+      const db = ctx.db as any
+      const { type, date_from, date_to, employee_id } = input
+
+      // Get team members for this manager
+      const { data: myTeams } = await db
+        .from('teams')
+        .select('id')
+        .eq('tenant_id', tid)
+        .eq('manager_id', ctx.user!.sub)
+      const teamIds = (myTeams ?? []).map((t: any) => t.id)
+      const { data: teamMemberRows } = await db
+        .from('team_members')
+        .select('user_id')
+        .in('team_id', teamIds)
+      const memberIds: string[] = (teamMemberRows ?? []).map((r: any) => r.user_id as string)
+      const filteredIds = employee_id ? [employee_id] : memberIds
+
+      const { data: users } = await db
+        .from('users')
+        .select('id, full_name, email, department, position')
+        .in('id', filteredIds.length ? filteredIds : ['00000000-0000-0000-0000-000000000000'])
+        .eq('tenant_id', tid)
+      const userMap = new Map((users ?? []).map((u: any) => [u.id, u]))
+
+      if (type === 'timesheet') {
+        const { data: metrics } = await db
+          .from('daily_user_metrics')
+          .select('user_id, metric_date, total_seconds, productive_seconds, active_seconds')
+          .eq('tenant_id', tid)
+          .gte('metric_date', date_from)
+          .lte('metric_date', date_to)
+          .in(
+            'user_id',
+            filteredIds.length ? filteredIds : ['00000000-0000-0000-0000-000000000000'],
+          )
+          .order('metric_date', { ascending: true })
+        const rows = (metrics ?? []).map((r: any) => ({
+          employee: (userMap.get(r.user_id) as any)?.full_name ?? r.user_id,
+          email: (userMap.get(r.user_id) as any)?.email ?? '',
+          department: (userMap.get(r.user_id) as any)?.department ?? '',
+          date: r.metric_date,
+          hours_total: Number((r.total_seconds / 3600).toFixed(2)),
+          hours_productive: Number((r.productive_seconds / 3600).toFixed(2)),
+          hours_active: Number((r.active_seconds / 3600).toFixed(2)),
+        }))
+        return {
+          type,
+          columns: [
+            'Empleado',
+            'Email',
+            'Departamento',
+            'Fecha',
+            'Horas totales',
+            'Horas productivas',
+            'Horas activas',
+          ],
+          rows,
+        }
+      }
+
+      if (type === 'absences') {
+        const { data: abs } = await db
+          .from('absence_requests')
+          .select('user_id, start_date, end_date, absence_type, status, reason')
+          .eq('tenant_id', tid)
+          .gte('start_date', date_from)
+          .lte('start_date', date_to)
+          .in(
+            'user_id',
+            filteredIds.length ? filteredIds : ['00000000-0000-0000-0000-000000000000'],
+          )
+          .order('start_date', { ascending: true })
+        const rows = (abs ?? []).map((r: any) => ({
+          employee: (userMap.get(r.user_id) as any)?.full_name ?? r.user_id,
+          email: (userMap.get(r.user_id) as any)?.email ?? '',
+          department: (userMap.get(r.user_id) as any)?.department ?? '',
+          start_date: r.start_date,
+          end_date: r.end_date,
+          type: r.absence_type ?? '',
+          status: r.status ?? '',
+          reason: r.reason ?? '',
+        }))
+        return {
+          type,
+          columns: [
+            'Empleado',
+            'Email',
+            'Departamento',
+            'Desde',
+            'Hasta',
+            'Tipo',
+            'Estado',
+            'Motivo',
+          ],
+          rows,
+        }
+      }
+
+      if (type === 'compensation') {
+        const { data: comp } = await db
+          .from('compensation_records')
+          .select('user_id, effective_date, salary, currency, compensation_type, notes')
+          .eq('tenant_id', tid)
+          .gte('effective_date', date_from)
+          .lte('effective_date', date_to)
+          .in(
+            'user_id',
+            filteredIds.length ? filteredIds : ['00000000-0000-0000-0000-000000000000'],
+          )
+          .order('effective_date', { ascending: true })
+        const rows = (comp ?? []).map((r: any) => ({
+          employee: (userMap.get(r.user_id) as any)?.full_name ?? r.user_id,
+          email: (userMap.get(r.user_id) as any)?.email ?? '',
+          department: (userMap.get(r.user_id) as any)?.department ?? '',
+          effective_date: r.effective_date,
+          salary: r.salary,
+          currency: r.currency ?? 'COP',
+          type: r.compensation_type ?? '',
+          notes: r.notes ?? '',
+        }))
+        return {
+          type,
+          columns: [
+            'Empleado',
+            'Email',
+            'Departamento',
+            'Fecha efectiva',
+            'Salario',
+            'Moneda',
+            'Tipo',
+            'Notas',
+          ],
+          rows,
+        }
+      }
+
+      if (type === 'benefits') {
+        const { data: bens } = await db
+          .from('employee_benefits')
+          .select('user_id, benefit_type, amount, frequency, active, start_date')
+          .eq('tenant_id', tid)
+          .in(
+            'user_id',
+            filteredIds.length ? filteredIds : ['00000000-0000-0000-0000-000000000000'],
+          )
+        const rows = (bens ?? []).map((r: any) => ({
+          employee: (userMap.get(r.user_id) as any)?.full_name ?? r.user_id,
+          email: (userMap.get(r.user_id) as any)?.email ?? '',
+          department: (userMap.get(r.user_id) as any)?.department ?? '',
+          benefit_type: r.benefit_type ?? '',
+          amount: r.amount ?? 0,
+          frequency: r.frequency ?? '',
+          active: r.active ? 'Activo' : 'Inactivo',
+          start_date: r.start_date ?? '',
+        }))
+        return {
+          type,
+          columns: [
+            'Empleado',
+            'Email',
+            'Departamento',
+            'Beneficio',
+            'Valor',
+            'Frecuencia',
+            'Estado',
+            'Fecha inicio',
+          ],
+          rows,
+        }
+      }
+
+      // evaluations
+      const { data: evals } = await db
+        .from('performance_reviews')
+        .select('reviewee_id, review_date, overall_score, status, review_type, reviewer_id')
+        .eq('tenant_id', tid)
+        .gte('review_date', date_from)
+        .lte('review_date', date_to)
+        .in(
+          'reviewee_id',
+          filteredIds.length ? filteredIds : ['00000000-0000-0000-0000-000000000000'],
+        )
+        .order('review_date', { ascending: true })
+      const rows = (evals ?? []).map((r: any) => ({
+        employee: (userMap.get(r.reviewee_id) as any)?.full_name ?? r.reviewee_id,
+        email: (userMap.get(r.reviewee_id) as any)?.email ?? '',
+        department: (userMap.get(r.reviewee_id) as any)?.department ?? '',
+        review_date: r.review_date,
+        score: r.overall_score ?? '',
+        status: r.status ?? '',
+        type: r.review_type ?? '',
+      }))
+      return {
+        type,
+        columns: [
+          'Empleado',
+          'Email',
+          'Departamento',
+          'Fecha evaluación',
+          'Score',
+          'Estado',
+          'Tipo',
+        ],
+        rows,
+      }
+    }),
+
+  // ─── Shift Scheduling ──────────────────────────────────────────────────────
+
+  getShifts: managerProcedure.query(async ({ ctx }) => {
+    const db = ctx.db as any
+    const { data } = await db
+      .from('work_shifts')
+      .select('*')
+      .eq('tenant_id', ctx.user!.tid)
+      .eq('active', true)
+      .order('name', { ascending: true })
+    return (data ?? []) as any[]
+  }),
+
+  createShift: managerProcedure
+    .input(
+      z.object({
+        name: z.string().min(1),
+        description: z.string().optional(),
+        start_time: z.string(),
+        end_time: z.string(),
+        days_of_week: z.array(z.number().int().min(0).max(6)).min(1),
+        color: z.string().default('#3b82f6'),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const db = ctx.db as any
+      const { data, error } = await db
+        .from('work_shifts')
+        .insert({
+          tenant_id: ctx.user!.tid,
+          name: input.name,
+          description: input.description,
+          start_time: input.start_time,
+          end_time: input.end_time,
+          days_of_week: input.days_of_week,
+          color: input.color,
+        })
+        .select()
+        .single()
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      return data
+    }),
+
+  updateShift: managerProcedure
+    .input(
+      z.object({
+        id: z.string().uuid(),
+        name: z.string().min(1).optional(),
+        description: z.string().optional(),
+        start_time: z.string().optional(),
+        end_time: z.string().optional(),
+        days_of_week: z.array(z.number().int().min(0).max(6)).optional(),
+        color: z.string().optional(),
+        active: z.boolean().optional(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const db = ctx.db as any
+      const { id, ...rest } = input
+      await db.from('work_shifts').update(rest).eq('id', id).eq('tenant_id', ctx.user!.tid)
+    }),
+
+  deleteShift: managerProcedure
+    .input(z.object({ id: z.string().uuid() }))
+    .mutation(async ({ ctx, input }) => {
+      const db = ctx.db as any
+      await db.from('work_shifts').delete().eq('id', input.id).eq('tenant_id', ctx.user!.tid)
+    }),
+
+  getWeekSchedule: managerProcedure
+    .input(z.object({ week_start_date: z.string() }))
+    .query(async ({ ctx, input }) => {
+      const db = ctx.db as any
+      const tid = ctx.user!.tid
+
+      // Get team members
+      const { data: myTeams } = await db
+        .from('teams')
+        .select('id')
+        .eq('tenant_id', tid)
+        .eq('manager_id', ctx.user!.sub)
+      const teamIds = (myTeams ?? []).map((t: any) => t.id)
+      const { data: teamMemberRows } = await db
+        .from('team_members')
+        .select('user_id')
+        .in('team_id', teamIds)
+      const memberIds: string[] = (teamMemberRows ?? []).map((r: any) => r.user_id as string)
+
+      const { data: members } = await db
+        .from('users')
+        .select('id, full_name, email, department, position')
+        .in('id', memberIds.length ? memberIds : ['00000000-0000-0000-0000-000000000000'])
+        .eq('tenant_id', tid)
+
+      const { data: assignments } = await db
+        .from('shift_assignments')
+        .select('id, user_id, shift_id, week_start_date, notes')
+        .eq('tenant_id', tid)
+        .eq('week_start_date', input.week_start_date)
+        .in('user_id', memberIds.length ? memberIds : ['00000000-0000-0000-0000-000000000000'])
+
+      const { data: shifts } = await db
+        .from('work_shifts')
+        .select('*')
+        .eq('tenant_id', tid)
+        .eq('active', true)
+
+      const shiftMap = new Map((shifts ?? []).map((s: any) => [s.id, s]))
+
+      return {
+        members: (members ?? []) as any[],
+        assignments: ((assignments ?? []) as any[]).map((a: any) => ({
+          ...a,
+          shift: shiftMap.get(a.shift_id) ?? null,
+        })),
+        shifts: (shifts ?? []) as any[],
+      }
+    }),
+
+  assignShift: managerProcedure
+    .input(
+      z.object({
+        user_id: z.string().uuid(),
+        shift_id: z.string().uuid(),
+        week_start_date: z.string(),
+        notes: z.string().optional(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const db = ctx.db as any
+      const { error } = await db.from('shift_assignments').upsert(
+        {
+          tenant_id: ctx.user!.tid,
+          user_id: input.user_id,
+          shift_id: input.shift_id,
+          week_start_date: input.week_start_date,
+          notes: input.notes,
+        },
+        { onConflict: 'user_id,shift_id,week_start_date' },
+      )
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+    }),
+
+  removeShiftAssignment: managerProcedure
+    .input(z.object({ id: z.string().uuid() }))
+    .mutation(async ({ ctx, input }) => {
+      const db = ctx.db as any
+      await db.from('shift_assignments').delete().eq('id', input.id).eq('tenant_id', ctx.user!.tid)
+    }),
 })

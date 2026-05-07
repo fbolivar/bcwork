@@ -42,6 +42,8 @@ import {
   CalendarCheck,
   Gift,
   ShieldAlert,
+  Download,
+  CalendarRange,
 } from 'lucide-react'
 import { trpc } from '@/lib/trpc-client'
 import { NotificationBell } from '@/features/shared/components/NotificationBell'
@@ -103,6 +105,7 @@ const NAV_GROUPS: NavGroup[] = [
       { href: '/manager/benefits', label: 'Beneficios', icon: Gift },
       { href: '/manager/documents', label: 'Documentos', icon: FileText },
       { href: '/manager/retention', label: 'Riesgo de fuga', icon: ShieldAlert },
+      { href: '/manager/shifts', label: 'Turnos', icon: CalendarRange },
     ],
   },
   {
@@ -115,6 +118,7 @@ const NAV_GROUPS: NavGroup[] = [
       { href: '/manager/calendar', label: 'Calendario', icon: CalendarDays },
       { href: '/manager/comparison', label: 'Comparativa', icon: GitCompare },
       { href: '/manager/budget', label: 'Presupuesto', icon: Wallet },
+      { href: '/manager/exports', label: 'Exportar', icon: Download },
     ],
   },
   {
