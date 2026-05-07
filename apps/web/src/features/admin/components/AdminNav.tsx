@@ -42,6 +42,8 @@ import {
   TrendingUp,
   FileBarChart,
   ShieldCheck,
+  CreditCard,
+  UserSearch,
 } from 'lucide-react'
 import { trpc } from '@/lib/trpc-client'
 import { useRouter } from 'next/navigation'
@@ -85,6 +87,8 @@ const NAV = [
   { href: '/admin/metrics', label: 'Métricas', icon: BarChart2 },
   { href: '/admin/alerts', label: 'Alertas', icon: Bell },
   { href: '/admin/audit', label: 'Auditoría', icon: Shield },
+  { href: '/admin/recruitment', label: 'Reclutamiento', icon: UserSearch },
+  { href: '/admin/billing', label: 'Facturación', icon: CreditCard },
   { href: '/admin/settings', label: 'Configuración', icon: Settings },
   { href: '/admin/downloads', label: 'Descargas', icon: Download },
 ]

@@ -701,7 +701,7 @@ export const adminRouter = router({
     const { data, error } = await ctx.db
       .from('tenants')
       .select(
-        'legal_name, trade_name, nit, contact_email, contact_phone, timezone, data_retention_months, data_protection_officer, onboarding_complete, logo_url',
+        'legal_name, trade_name, nit, contact_email, contact_phone, timezone, data_retention_months, data_protection_officer, onboarding_complete, logo_url, notification_preferences',
       )
       .eq('id', ctx.user!.tid)
       .single()
@@ -3516,6 +3516,221 @@ export const adminRouter = router({
     .mutation(async ({ ctx, input }) => {
       const { error } = await ctx.db
         .from('compliance_requirements' as any)
+        .delete()
+        .eq('id', input.id)
+        .eq('tenant_id', ctx.user!.tid)
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      return { ok: true }
+    }),
+
+  // ─── SETTINGS: notification preferences ──────────────────────────────────
+
+  getNotificationPreferences: adminProcedure.query(async ({ ctx }) => {
+    const { data } = await (ctx.db as any)
+      .from('tenants')
+      .select('notification_preferences')
+      .eq('id', ctx.user!.tid)
+      .single()
+    return (data?.notification_preferences ?? {}) as Record<string, boolean>
+  }),
+
+  updateNotificationPreferences: adminProcedure
+    .input(z.record(z.string(), z.boolean()))
+    .mutation(async ({ ctx, input }) => {
+      const { error } = await (ctx.db as any)
+        .from('tenants')
+        .update({ notification_preferences: input, updated_at: new Date().toISOString() })
+        .eq('id', ctx.user!.tid)
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      return { ok: true }
+    }),
+
+  // ─── BILLING ─────────────────────────────────────────────────────────────
+
+  getBillingInfo: adminProcedure.query(async ({ ctx }) => {
+    const { data: license } = await ctx.db
+      .from('licenses')
+      .select('*, plans(code, name, monthly_price_per_seat_cop, features)')
+      .eq('tenant_id', ctx.user!.tid)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+
+    const { count: seatsUsed } = await ctx.db
+      .from('users')
+      .select('id', { count: 'exact', head: true })
+      .eq('tenant_id', ctx.user!.tid)
+      .eq('status', 'active')
+
+    const trialEndsAt = license?.trial_ends_at ? new Date(license.trial_ends_at) : null
+    const daysLeft = trialEndsAt
+      ? Math.max(0, Math.ceil((trialEndsAt.getTime() - Date.now()) / 86400000))
+      : null
+
+    return {
+      license: license ?? null,
+      plan: (license as any)?.plans ?? null,
+      seatsUsed: seatsUsed ?? 0,
+      seatsTotal: license?.seats_total ?? 0,
+      daysLeft,
+      status: license?.status ?? 'trial',
+    }
+  }),
+
+  listBillingEvents: adminProcedure.query(async ({ ctx }) => {
+    const { data } = await ctx.db
+      .from('billing_events')
+      .select('*')
+      .eq('tenant_id', ctx.user!.tid)
+      .order('occurred_at', { ascending: false })
+      .limit(50)
+    return data ?? []
+  }),
+
+  // ─── RECRUITMENT / ATS ────────────────────────────────────────────────────
+
+  listHiringRequests: adminProcedure.query(async ({ ctx }) => {
+    const { data, error } = await (ctx.db as any)
+      .from('hiring_requests')
+      .select('*')
+      .eq('tenant_id', ctx.user!.tid)
+      .order('created_at', { ascending: false })
+    if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+    return data ?? []
+  }),
+
+  upsertHiringRequest: adminProcedure
+    .input(
+      z.object({
+        id: z.string().uuid().optional(),
+        title: z.string().min(1).max(200),
+        department: z.string().max(100).optional(),
+        description: z.string().max(2000).optional(),
+        requirements: z.string().max(2000).optional(),
+        seniority_level: z.enum(['junior', 'mid', 'senior', 'lead', 'director']).default('mid'),
+        headcount: z.number().int().min(1).default(1),
+        priority: z.enum(['low', 'medium', 'high', 'urgent']).default('medium'),
+        status: z.enum(['open', 'in_progress', 'on_hold', 'closed', 'cancelled']).default('open'),
+        location_type: z.enum(['remote', 'hybrid', 'onsite']).default('remote'),
+        salary_min: z.number().optional(),
+        salary_max: z.number().optional(),
+        currency: z.string().default('COP'),
+        due_date: z.string().optional(),
+        notes: z.string().max(1000).optional(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { id, ...rest } = input
+      const payload = { ...rest, tenant_id: ctx.user!.tid, requested_by: ctx.user!.sub }
+      let error
+      if (id) {
+        ;({ error } = await (ctx.db as any)
+          .from('hiring_requests')
+          .update({ ...rest, updated_at: new Date().toISOString() })
+          .eq('id', id)
+          .eq('tenant_id', ctx.user!.tid))
+      } else {
+        ;({ error } = await (ctx.db as any).from('hiring_requests').insert(payload))
+      }
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      return { ok: true }
+    }),
+
+  deleteHiringRequest: adminProcedure
+    .input(z.object({ id: z.string().uuid() }))
+    .mutation(async ({ ctx, input }) => {
+      const { error } = await (ctx.db as any)
+        .from('hiring_requests')
+        .delete()
+        .eq('id', input.id)
+        .eq('tenant_id', ctx.user!.tid)
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      return { ok: true }
+    }),
+
+  listCandidates: adminProcedure
+    .input(z.object({ hiring_request_id: z.string().uuid().optional() }))
+    .query(async ({ ctx, input }) => {
+      let q = (ctx.db as any)
+        .from('job_candidates')
+        .select('*')
+        .eq('tenant_id', ctx.user!.tid)
+        .order('created_at', { ascending: false })
+      if (input.hiring_request_id) q = q.eq('hiring_request_id', input.hiring_request_id)
+      const { data, error } = await q
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      return data ?? []
+    }),
+
+  upsertCandidate: adminProcedure
+    .input(
+      z.object({
+        id: z.string().uuid().optional(),
+        hiring_request_id: z.string().uuid().optional(),
+        full_name: z.string().min(1).max(200),
+        email: z.string().email().optional(),
+        phone: z.string().max(30).optional(),
+        cv_url: z.string().url().optional(),
+        linkedin_url: z.string().url().optional(),
+        source: z.string().max(50).optional(),
+        stage: z
+          .enum(['applied', 'screening', 'interview', 'technical', 'offer', 'hired', 'rejected'])
+          .default('applied'),
+        stage_notes: z.string().max(1000).optional(),
+        expected_salary: z.number().optional(),
+        rejected_reason: z.string().max(500).optional(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { id, ...rest } = input
+      const payload = { ...rest, tenant_id: ctx.user!.tid }
+      let error
+      if (id) {
+        ;({ error } = await (ctx.db as any)
+          .from('job_candidates')
+          .update({ ...rest, updated_at: new Date().toISOString() })
+          .eq('id', id)
+          .eq('tenant_id', ctx.user!.tid))
+      } else {
+        ;({ error } = await (ctx.db as any).from('job_candidates').insert(payload))
+      }
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      return { ok: true }
+    }),
+
+  updateCandidateStage: adminProcedure
+    .input(
+      z.object({
+        id: z.string().uuid(),
+        stage: z.enum([
+          'applied',
+          'screening',
+          'interview',
+          'technical',
+          'offer',
+          'hired',
+          'rejected',
+        ]),
+        stage_notes: z.string().max(1000).optional(),
+        rejected_reason: z.string().max(500).optional(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { id, ...rest } = input
+      const { error } = await (ctx.db as any)
+        .from('job_candidates')
+        .update({ ...rest, updated_at: new Date().toISOString() })
+        .eq('id', id)
+        .eq('tenant_id', ctx.user!.tid)
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      return { ok: true }
+    }),
+
+  deleteCandidate: adminProcedure
+    .input(z.object({ id: z.string().uuid() }))
+    .mutation(async ({ ctx, input }) => {
+      const { error } = await (ctx.db as any)
+        .from('job_candidates')
         .delete()
         .eq('id', input.id)
         .eq('tenant_id', ctx.user!.tid)
