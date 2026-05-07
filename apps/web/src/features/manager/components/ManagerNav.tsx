@@ -40,6 +40,8 @@ import {
   Smile,
   GitMerge,
   CalendarCheck,
+  Gift,
+  ShieldAlert,
 } from 'lucide-react'
 import { trpc } from '@/lib/trpc-client'
 import { NotificationBell } from '@/features/shared/components/NotificationBell'
@@ -85,6 +87,7 @@ const NAV_GROUPS: NavGroup[] = [
       { href: '/manager/milestones', label: 'Aniversarios', icon: CalendarHeart },
       { href: '/manager/enps', label: 'eNPS', icon: Smile },
       { href: '/manager/succession', label: 'Plan de sucesión', icon: GitMerge },
+      { href: '/manager/offboarding', label: 'Offboarding', icon: LogOut },
     ],
   },
   {
@@ -97,6 +100,9 @@ const NAV_GROUPS: NavGroup[] = [
       { href: '/manager/compensation', label: 'Compensación', icon: DollarSign },
       { href: '/manager/hiring', label: 'Contrataciones', icon: Briefcase },
       { href: '/manager/leave-balances', label: 'Saldos de ausencias', icon: CalendarCheck },
+      { href: '/manager/benefits', label: 'Beneficios', icon: Gift },
+      { href: '/manager/documents', label: 'Documentos', icon: FileText },
+      { href: '/manager/retention', label: 'Riesgo de fuga', icon: ShieldAlert },
     ],
   },
   {

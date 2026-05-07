@@ -3190,4 +3190,462 @@ export const managerRouter = router({
         email: (r.users as unknown as { email: string } | null)?.email ?? '',
       }))
     }),
+
+  // ─── Employee Documents ────────────────────────────────────────────────────
+
+  getEmployeeDocuments: managerProcedure
+    .input(z.object({ employee_id: z.string().uuid().optional() }))
+    .query(async ({ ctx, input }) => {
+      const tenantId = ctx.user!.tid
+      let q = (ctx.db as any)
+        .from('employee_documents')
+        .select('*, users!employee_documents_employee_id_fkey(full_name, email, department)')
+        .eq('tenant_id', tenantId)
+        .order('created_at', { ascending: false })
+      if (input.employee_id) q = q.eq('employee_id', input.employee_id)
+      const { data, error } = await q
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      return (data ?? []).map((d: any) => ({
+        ...d,
+        full_name: (d.users as any)?.full_name ?? null,
+        email: (d.users as any)?.email ?? '',
+        department: (d.users as any)?.department ?? null,
+      }))
+    }),
+
+  addEmployeeDocument: managerProcedure
+    .input(
+      z.object({
+        employee_id: z.string().uuid(),
+        title: z.string().min(1),
+        category: z.enum(['contract', 'id', 'certificate', 'payslip', 'letter', 'other']),
+        file_url: z.string().url().optional(),
+        expiry_date: z.string().optional(),
+        notes: z.string().optional(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const tenantId = ctx.user!.tid
+      const { error } = await (ctx.db as any).from('employee_documents').insert({
+        tenant_id: tenantId,
+        employee_id: input.employee_id,
+        title: input.title,
+        category: input.category,
+        file_url: input.file_url ?? null,
+        expiry_date: input.expiry_date ?? null,
+        notes: input.notes ?? null,
+        uploaded_by: ctx.user!.sub,
+      })
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      return { ok: true }
+    }),
+
+  deleteEmployeeDocument: managerProcedure
+    .input(z.object({ id: z.string().uuid() }))
+    .mutation(async ({ ctx, input }) => {
+      const tenantId = ctx.user!.tid
+      const { error } = await (ctx.db as any)
+        .from('employee_documents')
+        .delete()
+        .eq('id', input.id)
+        .eq('tenant_id', tenantId)
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      return { ok: true }
+    }),
+
+  // ─── Offboarding ──────────────────────────────────────────────────────────
+
+  getOffboardingPlans: managerProcedure
+    .input(z.object({ status: z.string().optional() }))
+    .query(async ({ ctx, input }) => {
+      const tenantId = ctx.user!.tid
+      let q = (ctx.db as any)
+        .from('offboarding_plans')
+        .select(
+          '*, users!offboarding_plans_employee_id_fkey(full_name, email, department, position)',
+        )
+        .eq('tenant_id', tenantId)
+        .order('created_at', { ascending: false })
+      if (input.status) q = q.eq('status', input.status)
+      const { data: plans, error } = await q
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+
+      const planList = (plans ?? []) as any[]
+      const planIds = planList.map((p: any) => p.id)
+      let taskMap: Record<string, any[]> = {}
+      if (planIds.length > 0) {
+        const { data: tasks } = await (ctx.db as any)
+          .from('offboarding_tasks')
+          .select('*')
+          .in('plan_id', planIds)
+          .eq('tenant_id', tenantId)
+        for (const t of tasks ?? []) {
+          if (!taskMap[t.plan_id]) taskMap[t.plan_id] = []
+          taskMap[t.plan_id]!.push(t)
+        }
+      }
+      return planList.map((p: any) => ({
+        ...p,
+        full_name: (p.users as any)?.full_name ?? null,
+        email: (p.users as any)?.email ?? '',
+        department: (p.users as any)?.department ?? null,
+        position: (p.users as any)?.position ?? null,
+        tasks: taskMap[p.id] ?? [],
+      }))
+    }),
+
+  createOffboardingPlan: managerProcedure
+    .input(
+      z.object({
+        employee_id: z.string().uuid(),
+        exit_date: z.string().optional(),
+        exit_reason: z
+          .enum(['resignation', 'termination', 'retirement', 'contract_end', 'other'])
+          .optional(),
+        exit_interview_notes: z.string().optional(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const tenantId = ctx.user!.tid
+      const { data, error } = await (ctx.db as any)
+        .from('offboarding_plans')
+        .insert({
+          tenant_id: tenantId,
+          employee_id: input.employee_id,
+          exit_date: input.exit_date ?? null,
+          exit_reason: input.exit_reason ?? null,
+          exit_interview_notes: input.exit_interview_notes ?? null,
+          status: 'pending',
+          created_by: ctx.user!.sub,
+        })
+        .select()
+        .single()
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+
+      // Create default checklist
+      const defaultTasks = [
+        { title: 'Entrevista de salida', category: 'hr' },
+        { title: 'Devolución de equipos (laptop, celular)', category: 'equipment' },
+        { title: 'Revocar accesos a sistemas', category: 'access' },
+        { title: 'Entrega de documentación y proyectos', category: 'documentation' },
+        { title: 'Liquidación y pago final', category: 'finance' },
+        { title: 'Despedida del equipo', category: 'farewell' },
+      ]
+      await (ctx.db as any).from('offboarding_tasks').insert(
+        defaultTasks.map((t) => ({
+          plan_id: data.id,
+          tenant_id: tenantId,
+          title: t.title,
+          category: t.category,
+        })),
+      )
+      return data
+    }),
+
+  updateOffboardingPlan: managerProcedure
+    .input(
+      z.object({
+        id: z.string().uuid(),
+        status: z.enum(['pending', 'in_progress', 'completed']).optional(),
+        exit_interview_notes: z.string().optional(),
+        exit_date: z.string().optional(),
+        exit_reason: z
+          .enum(['resignation', 'termination', 'retirement', 'contract_end', 'other'])
+          .optional(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const tenantId = ctx.user!.tid
+      const payload: any = { updated_at: new Date().toISOString() }
+      if (input.status !== undefined) payload.status = input.status
+      if (input.exit_interview_notes !== undefined)
+        payload.exit_interview_notes = input.exit_interview_notes
+      if (input.exit_date !== undefined) payload.exit_date = input.exit_date
+      if (input.exit_reason !== undefined) payload.exit_reason = input.exit_reason
+      const { error } = await (ctx.db as any)
+        .from('offboarding_plans')
+        .update(payload)
+        .eq('id', input.id)
+        .eq('tenant_id', tenantId)
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      return { ok: true }
+    }),
+
+  toggleOffboardingTask: managerProcedure
+    .input(z.object({ id: z.string().uuid(), completed: z.boolean() }))
+    .mutation(async ({ ctx, input }) => {
+      const tenantId = ctx.user!.tid
+      const { error } = await (ctx.db as any)
+        .from('offboarding_tasks')
+        .update({ completed_at: input.completed ? new Date().toISOString() : null })
+        .eq('id', input.id)
+        .eq('tenant_id', tenantId)
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      return { ok: true }
+    }),
+
+  addOffboardingTask: managerProcedure
+    .input(
+      z.object({
+        plan_id: z.string().uuid(),
+        title: z.string().min(1),
+        category: z.enum([
+          'general',
+          'equipment',
+          'access',
+          'documentation',
+          'hr',
+          'finance',
+          'farewell',
+        ]),
+        due_date: z.string().optional(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const tenantId = ctx.user!.tid
+      const { error } = await (ctx.db as any).from('offboarding_tasks').insert({
+        plan_id: input.plan_id,
+        tenant_id: tenantId,
+        title: input.title,
+        category: input.category,
+        due_date: input.due_date ?? null,
+      })
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      return { ok: true }
+    }),
+
+  // ─── Employee Benefits ────────────────────────────────────────────────────
+
+  getEmployeeBenefits: managerProcedure
+    .input(
+      z.object({ employee_id: z.string().uuid().optional(), active_only: z.boolean().optional() }),
+    )
+    .query(async ({ ctx, input }) => {
+      const tenantId = ctx.user!.tid
+      const { data: members } = await (ctx.db as any)
+        .from('users')
+        .select('id, full_name, email, department, position')
+        .eq('tenant_id', tenantId)
+        .eq('role', 'employee')
+        .order('full_name')
+
+      let q = (ctx.db as any)
+        .from('employee_benefits')
+        .select('*')
+        .eq('tenant_id', tenantId)
+        .order('created_at', { ascending: false })
+      if (input.employee_id) q = q.eq('employee_id', input.employee_id)
+      if (input.active_only) q = q.eq('active', true)
+      const { data: benefits, error } = await q
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+
+      const benefitsByEmployee: Record<string, any[]> = {}
+      for (const b of benefits ?? []) {
+        if (!benefitsByEmployee[b.employee_id]) benefitsByEmployee[b.employee_id] = []
+        benefitsByEmployee[b.employee_id]!.push(b)
+      }
+      return {
+        members: (members ?? []).map((m: any) => ({
+          ...m,
+          benefits: benefitsByEmployee[m.id] ?? [],
+        })),
+      }
+    }),
+
+  upsertBenefit: managerProcedure
+    .input(
+      z.object({
+        id: z.string().uuid().optional(),
+        employee_id: z.string().uuid(),
+        benefit_type: z.string().min(1),
+        description: z.string().optional(),
+        amount: z.number().optional(),
+        currency: z.string().default('COP'),
+        frequency: z.enum(['monthly', 'annual', 'one_time']),
+        active: z.boolean().default(true),
+        start_date: z.string().optional(),
+        end_date: z.string().optional(),
+        notes: z.string().optional(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const tenantId = ctx.user!.tid
+      const payload: any = {
+        tenant_id: tenantId,
+        employee_id: input.employee_id,
+        benefit_type: input.benefit_type,
+        description: input.description ?? null,
+        amount: input.amount ?? null,
+        currency: input.currency,
+        frequency: input.frequency,
+        active: input.active,
+        start_date: input.start_date ?? null,
+        end_date: input.end_date ?? null,
+        notes: input.notes ?? null,
+        created_by: ctx.user!.sub,
+      }
+      if (input.id) {
+        const { error } = await (ctx.db as any)
+          .from('employee_benefits')
+          .update(payload)
+          .eq('id', input.id)
+          .eq('tenant_id', tenantId)
+        if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      } else {
+        const { error } = await (ctx.db as any).from('employee_benefits').insert(payload)
+        if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      }
+      return { ok: true }
+    }),
+
+  deleteBenefit: managerProcedure
+    .input(z.object({ id: z.string().uuid() }))
+    .mutation(async ({ ctx, input }) => {
+      const tenantId = ctx.user!.tid
+      const { error } = await (ctx.db as any)
+        .from('employee_benefits')
+        .delete()
+        .eq('id', input.id)
+        .eq('tenant_id', tenantId)
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      return { ok: true }
+    }),
+
+  // ─── Retention / Flight Risk ───────────────────────────────────────────────
+
+  getRetentionScores: managerProcedure.query(async ({ ctx }) => {
+    const tenantId = ctx.user!.tid
+    const today = new Date()
+    const thirtyDaysAgo = new Date(today.getTime() - 30 * 86400000).toISOString().slice(0, 10)
+    const ninetyDaysAgo = new Date(today.getTime() - 90 * 86400000).toISOString().slice(0, 10)
+
+    const { data: members } = await (ctx.db as any)
+      .from('users')
+      .select('id, full_name, email, department, position, hire_date')
+      .eq('tenant_id', tenantId)
+      .eq('role', 'employee')
+
+    if (!members || members.length === 0) return []
+
+    const memberIds = members.map((m: any) => m.id)
+
+    // Days active last 30d
+    const { data: activityRows } = await ctx.db
+      .from('daily_user_metrics')
+      .select('user_id, metric_date')
+      .eq('tenant_id', tenantId)
+      .gte('metric_date', thirtyDaysAgo)
+      .in('user_id', memberIds)
+
+    // Absence count last 90d
+    const { data: absenceRows } = await ctx.db
+      .from('absence_requests')
+      .select('employee_id, days_count')
+      .eq('tenant_id', tenantId)
+      .eq('status', 'approved')
+      .gte('start_date', ninetyDaysAgo)
+      .in('employee_id', memberIds)
+
+    // Active PIPs
+    const { data: pipRows } = await (ctx.db as any)
+      .from('pip_plans')
+      .select('employee_id')
+      .eq('tenant_id', tenantId)
+      .eq('status', 'active')
+      .in('employee_id', memberIds)
+
+    // Latest eNPS score per employee
+    const { data: enpsRows } = await (ctx.db as any)
+      .from('enps_responses')
+      .select('employee_id, score, created_at')
+      .eq('tenant_id', tenantId)
+      .in('employee_id', memberIds)
+      .order('created_at', { ascending: false })
+
+    // Last compensation date
+    const { data: compRows } = await (ctx.db as any)
+      .from('compensation_records')
+      .select('user_id, effective_date')
+      .eq('tenant_id', tenantId)
+      .in('user_id', memberIds)
+      .order('effective_date', { ascending: false })
+
+    // Build lookup maps
+    const activityMap: Record<string, number> = {}
+    for (const r of activityRows ?? []) {
+      activityMap[r.user_id] = (activityMap[r.user_id] ?? 0) + 1
+    }
+    const absenceMap: Record<string, number> = {}
+    for (const r of absenceRows ?? []) {
+      absenceMap[r.employee_id] = (absenceMap[r.employee_id] ?? 0) + Number(r.days_count)
+    }
+    const pipSet = new Set((pipRows ?? []).map((r: any) => r.employee_id))
+    const enpsMap: Record<string, number> = {}
+    for (const r of enpsRows ?? []) {
+      if (!(r.employee_id in enpsMap)) enpsMap[r.employee_id] = r.score
+    }
+    const lastRaiseMap: Record<string, string> = {}
+    for (const r of compRows ?? []) {
+      if (!(r.user_id in lastRaiseMap)) lastRaiseMap[r.user_id] = r.effective_date
+    }
+
+    return members
+      .map((m: any) => {
+        const daysActive = activityMap[m.id] ?? 0
+        const absenceDays = absenceMap[m.id] ?? 0
+        const hasPip = pipSet.has(m.id)
+        const enpsScore = m.id in enpsMap ? enpsMap[m.id] : null
+        const lastRaise = lastRaiseMap[m.id] ?? null
+        const daysSinceRaise = lastRaise
+          ? Math.floor((today.getTime() - new Date(lastRaise).getTime()) / 86400000)
+          : null
+        const hireDate = m.hire_date ? new Date(m.hire_date) : null
+        const tenureDays = hireDate
+          ? Math.floor((today.getTime() - hireDate.getTime()) / 86400000)
+          : null
+
+        // Risk score 0-100 (higher = more at risk)
+        let risk = 0
+        // Low activity: 0-5 days active in 30d = +30
+        if (daysActive === 0) risk += 30
+        else if (daysActive < 5) risk += 20
+        else if (daysActive < 10) risk += 10
+        // High absences: >10 days in 90d = +20
+        if (absenceDays > 10) risk += 20
+        else if (absenceDays > 5) risk += 10
+        // Active PIP = +25
+        if (hasPip) risk += 25
+        // Low eNPS: 0-6 = +15
+        if (enpsScore != null && enpsScore <= 6) risk += 15
+        else if (enpsScore != null && enpsScore <= 7) risk += 5
+        // No raise in 18+ months = +15
+        if (daysSinceRaise !== null && daysSinceRaise > 540) risk += 15
+        else if (daysSinceRaise !== null && daysSinceRaise > 365) risk += 8
+        // High-risk tenure: 6-18 months (common flight window)
+        if (tenureDays !== null && tenureDays >= 180 && tenureDays <= 540) risk += 5
+
+        risk = Math.min(risk, 100)
+        const riskLevel = risk >= 60 ? 'high' : risk >= 35 ? 'medium' : 'low'
+
+        return {
+          id: m.id,
+          full_name: m.full_name,
+          email: m.email,
+          department: m.department,
+          position: m.position,
+          hire_date: m.hire_date,
+          risk_score: risk,
+          risk_level: riskLevel,
+          factors: {
+            days_active_30d: daysActive,
+            absence_days_90d: absenceDays,
+            has_active_pip: hasPip,
+            enps_score: enpsScore,
+            days_since_raise: daysSinceRaise,
+            tenure_days: tenureDays,
+          },
+        }
+      })
+      .sort((a: any, b: any) => b.risk_score - a.risk_score)
+  }),
 })
