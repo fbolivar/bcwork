@@ -103,20 +103,21 @@ export function GeoLocationWidget({ locations }: { locations: UserLoc[] }) {
                 onMouseEnter={(e) => handleMarkerEnter(loc, e as unknown as React.MouseEvent)}
                 onMouseLeave={handleMarkerLeave}
                 onClick={() => setSelected(isSelected ? null : loc)}
-                style={{ cursor: 'pointer' }}
               >
-                <circle
-                  r={isSelected ? 7 : 5}
-                  fill={isSelected ? '#f59e0b' : '#06b6d4'}
-                  stroke="#fff"
-                  strokeWidth={1.5}
-                  opacity={0.95}
-                />
-                <circle
-                  r={isSelected ? 14 : 10}
-                  fill={isSelected ? '#f59e0b' : '#06b6d4'}
-                  opacity={0.2}
-                />
+                <g style={{ cursor: 'pointer' }}>
+                  <circle
+                    r={isSelected ? 14 : 10}
+                    fill={isSelected ? '#f59e0b' : '#06b6d4'}
+                    opacity={0.2}
+                  />
+                  <circle
+                    r={isSelected ? 7 : 5}
+                    fill={isSelected ? '#f59e0b' : '#06b6d4'}
+                    stroke="#fff"
+                    strokeWidth={1.5}
+                    opacity={0.95}
+                  />
+                </g>
               </Marker>
             )
           })}
