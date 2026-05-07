@@ -89,6 +89,7 @@ const NAV_GROUPS: NavGroup[] = [
       { href: '/manager/milestones', label: 'Aniversarios', icon: CalendarHeart },
       { href: '/manager/enps', label: 'eNPS', icon: Smile },
       { href: '/manager/succession', label: 'Plan de sucesión', icon: GitMerge },
+      { href: '/manager/career-plans', label: 'Planes de carrera', icon: TrendingUp },
       { href: '/manager/offboarding', label: 'Offboarding', icon: LogOut },
     ],
   },

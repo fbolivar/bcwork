@@ -3222,6 +3222,7 @@ export const managerRouter = router({
         file_url: z.string().url().optional(),
         expiry_date: z.string().optional(),
         notes: z.string().optional(),
+        requires_signature: z.boolean().optional(),
       }),
     )
     .mutation(async ({ ctx, input }) => {
@@ -3234,6 +3235,7 @@ export const managerRouter = router({
         file_url: input.file_url ?? null,
         expiry_date: input.expiry_date ?? null,
         notes: input.notes ?? null,
+        requires_signature: input.requires_signature ?? false,
         uploaded_by: ctx.user!.sub,
       })
       if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
@@ -4017,5 +4019,148 @@ export const managerRouter = router({
     .mutation(async ({ ctx, input }) => {
       const db = ctx.db as any
       await db.from('shift_assignments').delete().eq('id', input.id).eq('tenant_id', ctx.user!.tid)
+    }),
+
+  getTeamCareerPlans: managerProcedure.query(async ({ ctx }) => {
+    const db = ctx.db as any
+    const tid = ctx.user!.tid
+    const { data: myTeams } = await db
+      .from('teams')
+      .select('id')
+      .eq('tenant_id', tid)
+      .eq('manager_id', ctx.user!.sub)
+    const teamIds = (myTeams ?? []).map((t: any) => t.id)
+    const { data: memberRows } = await db
+      .from('team_members')
+      .select('user_id')
+      .in('team_id', teamIds.length ? teamIds : ['00000000-0000-0000-0000-000000000000'])
+    const memberIds: string[] = (memberRows ?? []).map((r: any) => r.user_id as string)
+
+    const { data: users } = await db
+      .from('users')
+      .select('id, full_name, email, position, department')
+      .in('id', memberIds.length ? memberIds : ['00000000-0000-0000-0000-000000000000'])
+      .eq('tenant_id', tid)
+
+    const { data: plans } = await db
+      .from('career_plans')
+      .select('*, career_milestones(*)')
+      .eq('tenant_id', tid)
+      .in('user_id', memberIds.length ? memberIds : ['00000000-0000-0000-0000-000000000000'])
+      .order('created_at', { ascending: false })
+
+    const planMap = new Map((plans ?? []).map((p: any) => [p.user_id, p]))
+
+    return (users ?? []).map((u: any) => ({
+      ...u,
+      career_plan: planMap.get(u.id) ?? null,
+    })) as any[]
+  }),
+
+  upsertCareerPlan: managerProcedure
+    .input(
+      z.object({
+        id: z.string().uuid().optional(),
+        user_id: z.string().uuid(),
+        current_position: z.string().min(1),
+        target_role: z.string().min(1),
+        target_date: z.string().optional(),
+        notes: z.string().optional(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const db = ctx.db as any
+      const tid = ctx.user!.tid
+      if (input.id) {
+        const { data, error } = await db
+          .from('career_plans')
+          .update({
+            current_position: input.current_position,
+            target_role: input.target_role,
+            target_date: input.target_date ?? null,
+            notes: input.notes ?? null,
+          })
+          .eq('id', input.id)
+          .eq('tenant_id', tid)
+          .select()
+          .single()
+        if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+        return data
+      } else {
+        const { data, error } = await db
+          .from('career_plans')
+          .insert({
+            tenant_id: tid,
+            user_id: input.user_id,
+            current_position: input.current_position,
+            target_role: input.target_role,
+            target_date: input.target_date ?? null,
+            notes: input.notes ?? null,
+            created_by: ctx.user!.sub,
+          })
+          .select()
+          .single()
+        if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+        return data
+      }
+    }),
+
+  deleteCareerPlan: managerProcedure
+    .input(z.object({ id: z.string().uuid() }))
+    .mutation(async ({ ctx, input }) => {
+      const db = ctx.db as any
+      await db.from('career_plans').delete().eq('id', input.id).eq('tenant_id', ctx.user!.tid)
+    }),
+
+  addCareerMilestone: managerProcedure
+    .input(
+      z.object({
+        career_plan_id: z.string().uuid(),
+        title: z.string().min(1),
+        description: z.string().optional(),
+        target_date: z.string().optional(),
+        sort_order: z.number().int().optional(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const db = ctx.db as any
+      const { data, error } = await db
+        .from('career_milestones')
+        .insert({
+          career_plan_id: input.career_plan_id,
+          title: input.title,
+          description: input.description ?? null,
+          target_date: input.target_date ?? null,
+          sort_order: input.sort_order ?? 0,
+          status: 'pending',
+        })
+        .select()
+        .single()
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      return data
+    }),
+
+  updateCareerMilestone: managerProcedure
+    .input(
+      z.object({
+        id: z.string().uuid(),
+        title: z.string().min(1).optional(),
+        description: z.string().optional(),
+        target_date: z.string().optional(),
+        status: z.enum(['pending', 'in_progress', 'completed']).optional(),
+        sort_order: z.number().int().optional(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const db = ctx.db as any
+      const { id, ...rest } = input
+      await db.from('career_milestones').update(rest).eq('id', id)
+    }),
+
+  deleteCareerMilestone: managerProcedure
+    .input(z.object({ id: z.string().uuid() }))
+    .mutation(async ({ ctx, input }) => {
+      const db = ctx.db as any
+      await db.from('career_milestones').delete().eq('id', input.id)
     }),
 })

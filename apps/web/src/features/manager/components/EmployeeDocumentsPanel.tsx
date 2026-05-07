@@ -35,6 +35,7 @@ export function EmployeeDocumentsPanel() {
   const [docUrl, setDocUrl] = useState('')
   const [docExpiry, setDocExpiry] = useState('')
   const [docNotes, setDocNotes] = useState('')
+  const [docRequiresSignature, setDocRequiresSignature] = useState(false)
 
   const { data: teams } = trpc.manager.getMyTeams.useQuery()
   const teamId = teams?.[0]?.id
@@ -63,6 +64,7 @@ export function EmployeeDocumentsPanel() {
     setDocUrl('')
     setDocExpiry('')
     setDocNotes('')
+    setDocRequiresSignature(false)
   }
 
   const memberList = (members ?? []) as any[]
@@ -327,6 +329,15 @@ export function EmployeeDocumentsPanel() {
                   className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none"
                 />
               </div>
+              <label className="flex items-center gap-2 text-xs text-gray-700">
+                <input
+                  type="checkbox"
+                  checked={docRequiresSignature}
+                  onChange={(e) => setDocRequiresSignature(e.target.checked)}
+                  className="h-3.5 w-3.5 rounded"
+                />
+                Requiere firma del empleado
+              </label>
             </div>
             <div className="mt-4 flex gap-2">
               <button
@@ -356,6 +367,7 @@ export function EmployeeDocumentsPanel() {
                     file_url: docUrl || undefined,
                     expiry_date: docExpiry || undefined,
                     notes: docNotes || undefined,
+                    requires_signature: docRequiresSignature || undefined,
                   })
                 }
                 className="flex-1 rounded-lg bg-blue-600 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
