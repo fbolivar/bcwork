@@ -46,6 +46,10 @@ import {
   CalendarRange,
   Monitor,
   ChevronDown,
+  Layers,
+  TrendingUp,
+  MessageCircle,
+  FilePen,
 } from 'lucide-react'
 import { trpc } from '@/lib/trpc-client'
 
@@ -122,7 +126,9 @@ const NAV_GROUPS: NavGroup[] = [
       { href: '/me/invoices', label: 'Mis facturas', icon: Receipt },
       { href: '/me/benefits', label: 'Mis beneficios', icon: Gift },
       { href: '/me/hr-documents', label: 'Documentos HR', icon: FileCheck },
+      { href: '/me/sign-documents', label: 'Firmar documentos', icon: FilePen },
       { href: '/me/certificates', label: 'Certificados', icon: FileText },
+      { href: '/me/compensation', label: 'Mi compensación', icon: DollarSign },
       { href: '/me/work-location', label: 'Mi ubicación', icon: MapPin },
     ],
   },
@@ -132,6 +138,9 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       { href: '/me/onboarding', label: 'Onboarding', icon: Rocket },
       { href: '/me/training', label: 'Capacitación', icon: GraduationCap },
+      { href: '/me/career', label: 'Mi plan de carrera', icon: TrendingUp },
+      { href: '/me/skills', label: 'Mis habilidades', icon: Layers },
+      { href: '/me/feedback', label: 'Feedback 360°', icon: MessageCircle },
       { href: '/me/wellness', label: 'Mi bienestar', icon: Heart },
     ],
   },

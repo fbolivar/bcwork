@@ -2581,4 +2581,267 @@ export const employeeRouter = router({
       if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
       return { ok: true }
     }),
+
+  // ─── Mis habilidades ────────────────────────────────────────────────────────
+
+  getMySkills: protectedProcedure.query(async ({ ctx }) => {
+    const db = ctx.db as any
+    const { data } = await db
+      .from('employee_skills')
+      .select('*')
+      .eq('user_id', ctx.user!.sub)
+      .eq('tenant_id', ctx.user!.tid)
+      .order('skill_name', { ascending: true })
+    return (data ?? []) as any[]
+  }),
+
+  upsertMySkill: protectedProcedure
+    .input(
+      z.object({
+        id: z.string().uuid().optional(),
+        skill_name: z.string().min(1).max(100),
+        category: z.string().optional(),
+        level: z.number().int().min(1).max(5),
+        notes: z.string().optional(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const db = ctx.db as any
+      if (input.id) {
+        const { error } = await db
+          .from('employee_skills')
+          .update({
+            skill_name: input.skill_name,
+            category: input.category,
+            level: input.level,
+            notes: input.notes,
+          })
+          .eq('id', input.id)
+          .eq('user_id', ctx.user!.sub)
+        if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      } else {
+        const { error } = await db.from('employee_skills').insert({
+          tenant_id: ctx.user!.tid,
+          user_id: ctx.user!.sub,
+          skill_name: input.skill_name,
+          category: input.category,
+          level: input.level,
+          notes: input.notes,
+        })
+        if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      }
+    }),
+
+  deleteMySkill: protectedProcedure
+    .input(z.object({ id: z.string().uuid() }))
+    .mutation(async ({ ctx, input }) => {
+      const db = ctx.db as any
+      await db.from('employee_skills').delete().eq('id', input.id).eq('user_id', ctx.user!.sub)
+    }),
+
+  // ─── Mi historial de compensación ──────────────────────────────────────────
+
+  getMyCompensationHistory: protectedProcedure.query(async ({ ctx }) => {
+    const db = ctx.db as any
+    const { data } = await db
+      .from('compensation_records')
+      .select('id, effective_date, salary, currency, compensation_type, notes')
+      .eq('user_id', ctx.user!.sub)
+      .eq('tenant_id', ctx.user!.tid)
+      .order('effective_date', { ascending: false })
+    return (data ?? []) as any[]
+  }),
+
+  // ─── Solicitar feedback 360° ────────────────────────────────────────────────
+
+  getMyFeedbackRequests: protectedProcedure.query(async ({ ctx }) => {
+    const db = ctx.db as any
+    const { data } = await db
+      .from('feedback_360')
+      .select(
+        'id, reviewee_id, reviewer_id, status, feedback_text, request_note, created_at, requester_acknowledged',
+      )
+      .eq('requested_by', ctx.user!.sub)
+      .eq('tenant_id', ctx.user!.tid)
+      .order('created_at', { ascending: false })
+
+    // enrich with reviewer names
+    const reviewerIds = [...new Set((data ?? []).map((r: any) => r.reviewer_id as string))]
+    const { data: users } = await db
+      .from('users')
+      .select('id, full_name, email, department')
+      .in('id', reviewerIds.length ? reviewerIds : ['00000000-0000-0000-0000-000000000000'])
+    const userMap = new Map((users ?? []).map((u: any) => [u.id, u]))
+
+    return ((data ?? []) as any[]).map((r: any) => ({
+      ...r,
+      reviewer: userMap.get(r.reviewer_id) ?? null,
+    }))
+  }),
+
+  getMyReceivedFeedback: protectedProcedure.query(async ({ ctx }) => {
+    const db = ctx.db as any
+    const { data } = await db
+      .from('feedback_360')
+      .select('id, reviewer_id, feedback_text, status, created_at, request_note')
+      .eq('reviewee_id', ctx.user!.sub)
+      .eq('tenant_id', ctx.user!.tid)
+      .eq('status', 'completed')
+      .order('created_at', { ascending: false })
+
+    const reviewerIds = [...new Set((data ?? []).map((r: any) => r.reviewer_id as string))]
+    const { data: users } = await db
+      .from('users')
+      .select('id, full_name, email, department')
+      .in('id', reviewerIds.length ? reviewerIds : ['00000000-0000-0000-0000-000000000000'])
+    const userMap = new Map((users ?? []).map((u: any) => [u.id, u]))
+
+    return ((data ?? []) as any[]).map((r: any) => ({
+      ...r,
+      reviewer: userMap.get(r.reviewer_id) ?? null,
+    }))
+  }),
+
+  requestFeedback: protectedProcedure
+    .input(
+      z.object({
+        reviewer_ids: z.array(z.string().uuid()).min(1).max(10),
+        request_note: z.string().max(500).optional(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const db = ctx.db as any
+      const rows = input.reviewer_ids.map((rid) => ({
+        tenant_id: ctx.user!.tid,
+        reviewee_id: ctx.user!.sub,
+        reviewer_id: rid,
+        requested_by: ctx.user!.sub,
+        request_note: input.request_note,
+        status: 'pending',
+        review_type: '360',
+      }))
+      const { error } = await db.from('feedback_360').insert(rows)
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+    }),
+
+  acknowledgeReceivedFeedback: protectedProcedure
+    .input(z.object({ id: z.string().uuid() }))
+    .mutation(async ({ ctx, input }) => {
+      const db = ctx.db as any
+      await db
+        .from('feedback_360')
+        .update({ requester_acknowledged: true })
+        .eq('id', input.id)
+        .eq('requested_by', ctx.user!.sub)
+    }),
+
+  getMyTeammates: protectedProcedure.query(async ({ ctx }) => {
+    const db = ctx.db as any
+    const { data: teams } = await db
+      .from('team_members')
+      .select('team_id')
+      .eq('user_id', ctx.user!.sub)
+    const teamIds = (teams ?? []).map((t: any) => t.team_id as string)
+    if (!teamIds.length) return []
+
+    const { data: members } = await db.from('team_members').select('user_id').in('team_id', teamIds)
+    const memberIds = [...new Set((members ?? []).map((m: any) => m.user_id as string))].filter(
+      (id) => id !== ctx.user!.sub,
+    )
+    if (!memberIds.length) return []
+
+    const { data: users } = await db
+      .from('users')
+      .select('id, full_name, email, department, position')
+      .in('id', memberIds)
+      .eq('tenant_id', ctx.user!.tid)
+    return (users ?? []) as any[]
+  }),
+
+  // ─── Mi plan de carrera ─────────────────────────────────────────────────────
+
+  getMyCareerPlan: protectedProcedure.query(async ({ ctx }) => {
+    const db = ctx.db as any
+    const { data: plan } = await db
+      .from('career_plans')
+      .select('*')
+      .eq('user_id', ctx.user!.sub)
+      .eq('tenant_id', ctx.user!.tid)
+      .maybeSingle()
+    if (!plan) return null
+
+    const { data: milestones } = await db
+      .from('career_milestones')
+      .select('*')
+      .eq('career_plan_id', plan.id)
+      .order('sort_order', { ascending: true })
+
+    return { ...plan, milestones: (milestones ?? []) as any[] }
+  }),
+
+  updateCareerPlanProgress: protectedProcedure
+    .input(
+      z.object({
+        milestone_id: z.string().uuid(),
+        status: z.enum(['pending', 'in_progress', 'completed']),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const db = ctx.db as any
+      // verify ownership through plan
+      const { data: ms } = await db
+        .from('career_milestones')
+        .select('career_plan_id')
+        .eq('id', input.milestone_id)
+        .single()
+      if (!ms) throw new TRPCError({ code: 'NOT_FOUND' })
+
+      const { data: plan } = await db
+        .from('career_plans')
+        .select('id')
+        .eq('id', ms.career_plan_id)
+        .eq('user_id', ctx.user!.sub)
+        .single()
+      if (!plan) throw new TRPCError({ code: 'FORBIDDEN' })
+
+      await db
+        .from('career_milestones')
+        .update({ status: input.status })
+        .eq('id', input.milestone_id)
+    }),
+
+  // ─── Documentos pendientes de firma ────────────────────────────────────────
+
+  getMyEmployeeDocuments: protectedProcedure.query(async ({ ctx }) => {
+    const db = ctx.db as any
+    const { data } = await db
+      .from('employee_documents')
+      .select(
+        'id, title, category, file_url, notes, requires_signature, signed_at, signature_note, created_at, expiry_date',
+      )
+      .eq('employee_id', ctx.user!.sub)
+      .eq('tenant_id', ctx.user!.tid)
+      .order('created_at', { ascending: false })
+    return (data ?? []) as any[]
+  }),
+
+  signEmployeeDocument: protectedProcedure
+    .input(
+      z.object({
+        id: z.string().uuid(),
+        signature_note: z.string().max(500).optional(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const db = ctx.db as any
+      const { error } = await db
+        .from('employee_documents')
+        .update({
+          signed_at: new Date().toISOString(),
+          signature_note: input.signature_note ?? null,
+        })
+        .eq('id', input.id)
+        .eq('employee_id', ctx.user!.sub)
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+    }),
 })
