@@ -1747,6 +1747,25 @@ export const employeeRouter = router({
 
       if (managers && managers.length > 0) {
         broadcastNotificationToMany(managers.map((m) => m.id))
+        // Insert real notification rows for each manager/admin
+        const { data: employee } = await ctx.db
+          .from('users')
+          .select('full_name')
+          .eq('id', ctx.user!.sub)
+          .single()
+        const employeeName =
+          (employee as { full_name?: string } | null)?.full_name ?? 'Un colaborador'
+        await (ctx.db as any).from('notifications').insert(
+          managers.map((m) => ({
+            tenant_id: ctx.user!.tid,
+            user_id: m.id,
+            type: 'absence_request',
+            title: 'Nueva solicitud de ausencia',
+            message: `${employeeName} ha enviado una solicitud de ausencia (${input.type}).`,
+            link: '/admin/absences',
+            is_read: false,
+          })),
+        )
       }
 
       return data

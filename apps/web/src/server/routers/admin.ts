@@ -1954,6 +1954,18 @@ export const adminRouter = router({
       // Notify employee
       if (req) {
         broadcastNotificationToMany([req.employee_id])
+        const isApproved = input.status === 'approved'
+        await (ctx.db as any).from('notifications').insert({
+          tenant_id: ctx.user!.tid,
+          user_id: req.employee_id,
+          type: isApproved ? 'absence_approved' : 'absence_rejected',
+          title: isApproved ? 'Solicitud de ausencia aprobada' : 'Solicitud de ausencia rechazada',
+          message: isApproved
+            ? `Tu solicitud de ausencia ha sido aprobada.${input.manager_note ? ` Nota: ${input.manager_note}` : ''}`
+            : `Tu solicitud de ausencia ha sido rechazada.${input.manager_note ? ` Motivo: ${input.manager_note}` : ''}`,
+          link: '/absences',
+          is_read: false,
+        })
       }
 
       return { ok: true }
