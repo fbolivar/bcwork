@@ -75,10 +75,14 @@ function UserDetail({
   )
   const lastMetric = d?.metrics.at(-1) as { domains_top?: unknown; apps_top?: unknown } | undefined
   const topDomains = (
-    (lastMetric?.domains_top as Array<{ domain: string; secs: number }>) ?? []
+    Array.isArray(lastMetric?.domains_top)
+      ? (lastMetric!.domains_top as Array<{ domain: string; secs: number }>)
+      : []
   ).slice(0, 6)
   const topApps = (
-    (lastMetric?.apps_top as Array<{ identifier: string; secs: number }>) ?? []
+    Array.isArray(lastMetric?.apps_top)
+      ? (lastMetric!.apps_top as Array<{ identifier: string; secs: number }>)
+      : []
   ).slice(0, 5)
 
   return (
