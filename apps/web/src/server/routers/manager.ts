@@ -2887,4 +2887,307 @@ export const managerRouter = router({
       if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
       return { ok: true }
     }),
+
+  // ─── eNPS ─────────────────────────────────────────────────────────────────
+
+  getEnpsSurveys: managerProcedure.query(async ({ ctx }) => {
+    const tenantId = ctx.user!.tid
+    const { data: surveys, error } = await (ctx.db as any)
+      .from('enps_surveys')
+      .select('*')
+      .eq('tenant_id', tenantId)
+      .order('sent_at', { ascending: false })
+    if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+
+    const surveyList = (surveys ?? []) as any[]
+    const enriched = await Promise.all(
+      surveyList.map(async (s: any) => {
+        const { data: responses } = await (ctx.db as any)
+          .from('enps_responses')
+          .select('score')
+          .eq('survey_id', s.id)
+          .eq('tenant_id', tenantId)
+        const resp = (responses ?? []) as { score: number }[]
+        const total = resp.length
+        const promoters = resp.filter((r) => r.score >= 9).length
+        const detractors = resp.filter((r) => r.score <= 6).length
+        const enps = total > 0 ? Math.round(((promoters - detractors) / total) * 100) : null
+        return { ...s, total_responses: total, enps_score: enps, promoters, detractors }
+      }),
+    )
+    return enriched
+  }),
+
+  createEnpsSurvey: managerProcedure
+    .input(
+      z.object({
+        title: z.string().min(1),
+        period: z.string().min(1),
+        question: z.string().optional(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const tenantId = ctx.user!.tid
+      const { data, error } = await (ctx.db as any)
+        .from('enps_surveys')
+        .insert({
+          tenant_id: tenantId,
+          title: input.title,
+          period: input.period,
+          question:
+            input.question ?? '¿Qué tan probable es que recomiendes trabajar aquí a un amigo?',
+          created_by: ctx.user!.sub,
+        })
+        .select()
+        .single()
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      return data
+    }),
+
+  submitEnpsResponse: managerProcedure
+    .input(
+      z.object({
+        survey_id: z.string().uuid(),
+        employee_id: z.string().uuid(),
+        score: z.number().int().min(0).max(10),
+        comment: z.string().optional(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const tenantId = ctx.user!.tid
+      const { error } = await (ctx.db as any).from('enps_responses').upsert(
+        {
+          survey_id: input.survey_id,
+          tenant_id: tenantId,
+          employee_id: input.employee_id,
+          score: input.score,
+          comment: input.comment ?? null,
+        },
+        { onConflict: 'survey_id,employee_id' },
+      )
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      return { ok: true }
+    }),
+
+  getEnpsSurveyResponses: managerProcedure
+    .input(z.object({ survey_id: z.string().uuid() }))
+    .query(async ({ ctx, input }) => {
+      const tenantId = ctx.user!.tid
+      const { data, error } = await (ctx.db as any)
+        .from('enps_responses')
+        .select(
+          'id, score, comment, created_at, employee_id, users!enps_responses_employee_id_fkey(full_name)',
+        )
+        .eq('survey_id', input.survey_id)
+        .eq('tenant_id', tenantId)
+        .order('created_at', { ascending: false })
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      return (data ?? []).map((r: any) => ({
+        id: r.id,
+        score: r.score,
+        comment: r.comment,
+        created_at: r.created_at,
+        employee_name: (r.users as any)?.full_name ?? null,
+      }))
+    }),
+
+  // ─── Succession Planning ───────────────────────────────────────────────────
+
+  getSuccessionPlans: managerProcedure.query(async ({ ctx }) => {
+    const tenantId = ctx.user!.tid
+    const { data, error } = await (ctx.db as any)
+      .from('succession_plans')
+      .select('*')
+      .eq('tenant_id', tenantId)
+      .order('role_title')
+    if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+
+    const plans = (data ?? []) as any[]
+    const userIds = [
+      ...new Set(plans.flatMap((p: any) => [p.incumbent_id, p.successor_id].filter(Boolean))),
+    ] as string[]
+
+    let userMap: Record<
+      string,
+      { full_name: string | null; position: string | null; department: string | null }
+    > = {}
+    if (userIds.length > 0) {
+      const { data: users } = await (ctx.db as any)
+        .from('users')
+        .select('id, full_name, position, department')
+        .in('id', userIds)
+        .eq('tenant_id', tenantId)
+      for (const u of users ?? []) userMap[u.id] = u
+    }
+
+    return plans.map((p: any) => ({
+      ...p,
+      incumbent: p.incumbent_id ? (userMap[p.incumbent_id] ?? null) : null,
+      successor: userMap[p.successor_id] ?? null,
+    }))
+  }),
+
+  upsertSuccessionPlan: managerProcedure
+    .input(
+      z.object({
+        id: z.string().uuid().optional(),
+        role_title: z.string().min(1),
+        incumbent_id: z.string().uuid().optional(),
+        successor_id: z.string().uuid(),
+        readiness: z.enum(['immediate', '1year', '2years', 'developing']),
+        notes: z.string().optional(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const tenantId = ctx.user!.tid
+      const payload: any = {
+        tenant_id: tenantId,
+        role_title: input.role_title,
+        incumbent_id: input.incumbent_id ?? null,
+        successor_id: input.successor_id,
+        readiness: input.readiness,
+        notes: input.notes ?? null,
+        created_by: ctx.user!.sub,
+        updated_at: new Date().toISOString(),
+      }
+      if (input.id) {
+        const { error } = await (ctx.db as any)
+          .from('succession_plans')
+          .update(payload)
+          .eq('id', input.id)
+          .eq('tenant_id', tenantId)
+        if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      } else {
+        const { error } = await (ctx.db as any).from('succession_plans').insert(payload)
+        if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      }
+      return { ok: true }
+    }),
+
+  deleteSuccessionPlan: managerProcedure
+    .input(z.object({ id: z.string().uuid() }))
+    .mutation(async ({ ctx, input }) => {
+      const tenantId = ctx.user!.tid
+      const { error } = await (ctx.db as any)
+        .from('succession_plans')
+        .delete()
+        .eq('id', input.id)
+        .eq('tenant_id', tenantId)
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      return { ok: true }
+    }),
+
+  // ─── Leave Balances ────────────────────────────────────────────────────────
+
+  getLeaveBalances: managerProcedure
+    .input(z.object({ year: z.number().int().optional() }))
+    .query(async ({ ctx, input }) => {
+      const tenantId = ctx.user!.tid
+      const year = input.year ?? new Date().getFullYear()
+
+      const { data: members } = await (ctx.db as any)
+        .from('users')
+        .select('id, full_name, email, department, position')
+        .eq('tenant_id', tenantId)
+        .eq('role', 'employee')
+        .order('full_name')
+
+      const { data: balances } = await (ctx.db as any)
+        .from('leave_balances')
+        .select('*')
+        .eq('tenant_id', tenantId)
+        .eq('year', year)
+
+      // Merge used_days from actual absence_requests
+      const { data: approved } = await ctx.db
+        .from('absence_requests')
+        .select('employee_id, type, days_count')
+        .eq('tenant_id', tenantId)
+        .eq('status', 'approved')
+        .gte('start_date', `${year}-01-01`)
+        .lte('end_date', `${year}-12-31`)
+
+      const usedByEmployee: Record<string, Record<string, number>> = {}
+      for (const r of approved ?? []) {
+        if (!usedByEmployee[r.employee_id]) usedByEmployee[r.employee_id] = {}
+        usedByEmployee[r.employee_id]![r.type] =
+          (usedByEmployee[r.employee_id]![r.type] ?? 0) + Number(r.days_count)
+      }
+
+      const balanceMap: Record<string, Record<string, any>> = {}
+      for (const b of balances ?? []) {
+        if (!balanceMap[b.employee_id]) balanceMap[b.employee_id] = {}
+        balanceMap[b.employee_id]![b.leave_type] = b
+      }
+
+      return {
+        year,
+        members: (members ?? []).map((m: any) => ({
+          ...m,
+          balances: balanceMap[m.id] ?? {},
+          used: usedByEmployee[m.id] ?? {},
+        })),
+      }
+    }),
+
+  upsertLeaveBalance: managerProcedure
+    .input(
+      z.object({
+        employee_id: z.string().uuid(),
+        leave_type: z.string().min(1),
+        year: z.number().int(),
+        total_days: z.number().min(0),
+        notes: z.string().optional(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const tenantId = ctx.user!.tid
+      const { error } = await (ctx.db as any).from('leave_balances').upsert(
+        {
+          tenant_id: tenantId,
+          employee_id: input.employee_id,
+          leave_type: input.leave_type,
+          year: input.year,
+          total_days: input.total_days,
+          notes: input.notes ?? null,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: 'tenant_id,employee_id,leave_type,year' },
+      )
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      return { ok: true }
+    }),
+
+  getLeaveCalendar: managerProcedure
+    .input(
+      z.object({
+        year: z.number().int().optional(),
+        month: z.number().int().min(1).max(12).optional(),
+      }),
+    )
+    .query(async ({ ctx, input }) => {
+      const tenantId = ctx.user!.tid
+      const year = input.year ?? new Date().getFullYear()
+      const from = input.month
+        ? `${year}-${String(input.month).padStart(2, '0')}-01`
+        : `${year}-01-01`
+      const to = input.month
+        ? `${year}-${String(input.month).padStart(2, '0')}-31`
+        : `${year}-12-31`
+
+      const { data, error } = await ctx.db
+        .from('absence_requests')
+        .select('*, users!absence_requests_employee_id_fkey(full_name, email)')
+        .eq('tenant_id', tenantId)
+        .eq('status', 'approved')
+        .gte('start_date', from)
+        .lte('end_date', to)
+        .order('start_date')
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      return (data ?? []).map((r) => ({
+        ...r,
+        full_name: (r.users as unknown as { full_name: string | null } | null)?.full_name ?? null,
+        email: (r.users as unknown as { email: string } | null)?.email ?? '',
+      }))
+    }),
 })
