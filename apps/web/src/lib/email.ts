@@ -1,7 +1,12 @@
 import { Resend } from 'resend'
 
-const resend = new Resend(process.env.RESEND_API_KEY)
 const FROM = process.env.EMAIL_FROM ?? 'BCWork <noreply@bcwork.co>'
+
+function getResend() {
+  const key = process.env.RESEND_API_KEY
+  if (!key || key === 're_placeholder') return null
+  return new Resend(key)
+}
 
 // ─── Base layout ─────────────────────────────────────────────────────────────
 
@@ -105,7 +110,7 @@ export async function sendAbsenceApprovedEmail({
     </table>
     ${ctaButton('Ver mis ausencias', `${appUrl}/me/absences`)}
   `
-  return resend.emails.send({
+  return getResend()?.emails.send({
     from: FROM,
     to,
     subject: 'Tu ausencia fue aprobada ✅',
@@ -144,7 +149,7 @@ export async function sendAbsenceRejectedEmail({
     ${p('Puedes solicitar una nueva ausencia o contactar a tu manager si tienes preguntas.')}
     ${ctaButton('Ver mis ausencias', `${appUrl}/me/absences`)}
   `
-  return resend.emails.send({
+  return getResend()?.emails.send({
     from: FROM,
     to,
     subject: 'Tu ausencia no fue aprobada',
@@ -188,7 +193,7 @@ export async function sendAbsenceRequestEmail({
     </table>
     ${ctaButton('Revisar solicitud', `${appUrl}/admin/absences`)}
   `
-  return resend.emails.send({
+  return getResend()?.emails.send({
     from: FROM,
     to,
     subject: `${employeeName} solicitó ${days} día${days !== 1 ? 's' : ''} de ausencia`,
@@ -213,7 +218,7 @@ export async function sendWelcomeEmail({
     ${p('Completa la configuración de tu empresa para comenzar a aprovechar todas las funcionalidades.')}
     ${ctaButton('Ir al dashboard', `${appUrl}/dashboard`)}
   `
-  return resend.emails.send({
+  return getResend()?.emails.send({
     from: FROM,
     to,
     subject: '¡Bienvenido a BCWork! 🎉',
@@ -254,7 +259,7 @@ export async function sendPayslipIssuedEmail({
     ${p('Ingresa a la plataforma para ver el detalle completo y confirmar recibido.')}
     ${ctaButton('Ver mi recibo', `${appUrl}/me/payslips`)}
   `
-  return resend.emails.send({
+  return getResend()?.emails.send({
     from: FROM,
     to,
     subject: `Tu recibo de nómina — ${periodLabel}`,
