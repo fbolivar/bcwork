@@ -25,6 +25,11 @@ import {
   CalendarDays,
   Bell,
   Heart,
+  BarChart2,
+  BookOpen,
+  GitCompare,
+  Star,
+  DollarSign,
 } from 'lucide-react'
 import { trpc } from '@/lib/trpc-client'
 import { NotificationBell } from '@/features/shared/components/NotificationBell'
@@ -62,6 +67,9 @@ const NAV_GROUPS: NavGroup[] = [
       { href: '/manager/1on1s', label: 'Reuniones 1:1', icon: Video },
       { href: '/manager/reviews', label: 'Evaluaciones', icon: ClipboardCheck },
       { href: '/manager/kudos', label: 'Reconocimientos', icon: Heart },
+      { href: '/manager/pulse', label: 'Encuestas de pulso', icon: BarChart2 },
+      { href: '/manager/training', label: 'Capacitaciones', icon: BookOpen },
+      { href: '/manager/feedback360', label: 'Feedback 360°', icon: Star },
     ],
   },
   {
@@ -72,6 +80,8 @@ const NAV_GROUPS: NavGroup[] = [
       { href: '/manager/reports', label: 'Informes', icon: FileText },
       { href: '/manager/trends', label: 'Tendencias', icon: TrendingUp },
       { href: '/manager/calendar', label: 'Calendario', icon: CalendarDays },
+      { href: '/manager/comparison', label: 'Comparativa', icon: GitCompare },
+      { href: '/manager/budget', label: 'Presupuesto', icon: DollarSign },
     ],
   },
   {

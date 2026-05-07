@@ -1846,4 +1846,469 @@ export const managerRouter = router({
       if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
       return { ok: true }
     }),
+
+  // ─── Encuestas de pulso ───────────────────────────────────────────────────
+
+  getTeamPulseSurveys: managerProcedure
+    .input(z.object({ status: z.enum(['draft', 'active', 'closed', 'all']).default('all') }))
+    .query(async ({ ctx, input }) => {
+      const tenantId = ctx.user!.tid
+      let q = ctx.db
+        .from('pulse_surveys')
+        .select('*')
+        .eq('tenant_id', tenantId)
+        .order('created_at', { ascending: false })
+      if (input.status !== 'all') q = q.eq('status', input.status)
+      const { data, error } = await q
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+
+      const surveyIds = (data ?? []).map((s) => s.id)
+      let responseCounts: Record<string, number> = {}
+      if (surveyIds.length > 0) {
+        const { data: counts } = await ctx.db
+          .from('pulse_responses')
+          .select('survey_id')
+          .in('survey_id', surveyIds)
+          .eq('tenant_id', tenantId)
+        for (const r of counts ?? []) {
+          responseCounts[r.survey_id] = (responseCounts[r.survey_id] ?? 0) + 1
+        }
+      }
+
+      return (data ?? []).map((s) => ({ ...s, response_count: responseCounts[s.id] ?? 0 }))
+    }),
+
+  createPulseSurvey: managerProcedure
+    .input(
+      z.object({
+        title: z.string().min(1),
+        questions: z.array(
+          z.object({
+            id: z.string(),
+            text: z.string(),
+            type: z.enum(['rating', 'text', 'yesno']),
+          }),
+        ),
+        starts_at: z.string().optional(),
+        ends_at: z.string().optional(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const tenantId = ctx.user!.tid
+      const { data, error } = await ctx.db
+        .from('pulse_surveys')
+        .insert({
+          tenant_id: tenantId,
+          created_by: ctx.user!.sub,
+          title: input.title,
+          questions: input.questions,
+          status: 'draft',
+          starts_at: input.starts_at ?? null,
+          ends_at: input.ends_at ?? null,
+        } as any)
+        .select('id')
+        .single()
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      return data
+    }),
+
+  publishPulseSurvey: managerProcedure
+    .input(z.object({ id: z.string().uuid(), status: z.enum(['active', 'closed']) }))
+    .mutation(async ({ ctx, input }) => {
+      const tenantId = ctx.user!.tid
+      const { error } = await ctx.db
+        .from('pulse_surveys')
+        .update({ status: input.status } as any)
+        .eq('id', input.id)
+        .eq('tenant_id', tenantId)
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      return { ok: true }
+    }),
+
+  getPulseSurveyResults: managerProcedure
+    .input(z.object({ surveyId: z.string().uuid() }))
+    .query(async ({ ctx, input }) => {
+      const tenantId = ctx.user!.tid
+      const { data: survey } = await ctx.db
+        .from('pulse_surveys')
+        .select('*')
+        .eq('id', input.surveyId)
+        .eq('tenant_id', tenantId)
+        .single()
+
+      const { data: responses } = await ctx.db
+        .from('pulse_responses')
+        .select('*, users!pulse_responses_user_id_fkey(full_name, email)')
+        .eq('survey_id', input.surveyId)
+        .eq('tenant_id', tenantId)
+
+      const questions = ((survey as any)?.questions ?? []) as Array<{
+        id: string
+        text: string
+        type: string
+      }>
+      const allResponses = (responses ?? []) as any[]
+
+      // Aggregate per question
+      const aggregated = questions.map((q) => {
+        const vals = allResponses
+          .map((r) => {
+            const ans = (r.answers as any[]).find((a: any) => a.id === q.id)
+            return ans?.value
+          })
+          .filter((v) => v !== undefined && v !== null && v !== '')
+
+        if (q.type === 'rating') {
+          const nums = vals.map(Number).filter((n) => !isNaN(n))
+          const avg = nums.length > 0 ? nums.reduce((a, b) => a + b, 0) / nums.length : null
+          const dist: Record<string, number> = {}
+          for (const n of nums) dist[n] = (dist[n] ?? 0) + 1
+          return { ...q, avg, distribution: dist, count: nums.length }
+        }
+        return { ...q, avg: null, distribution: {}, answers: vals, count: vals.length }
+      })
+
+      return {
+        survey,
+        response_count: allResponses.length,
+        questions: aggregated,
+      }
+    }),
+
+  // ─── Capacitaciones del equipo ────────────────────────────────────────────
+
+  getTeamTrainingProgress: managerProcedure
+    .input(z.object({ teamId: z.string().uuid().optional() }))
+    .query(async ({ ctx, input }) => {
+      const tenantId = ctx.user!.tid
+
+      let memberIds: string[] | null = null
+      if (input.teamId) {
+        const { data: members } = await ctx.db
+          .from('team_members')
+          .select('user_id')
+          .eq('team_id', input.teamId)
+          .eq('tenant_id', tenantId)
+        memberIds = (members ?? []).map((m) => m.user_id)
+      }
+
+      const { data: courses } = await ctx.db
+        .from('training_courses')
+        .select('id, title, description, category, duration_minutes, is_required')
+        .eq('tenant_id', tenantId)
+        .order('created_at', { ascending: false })
+
+      let enrollQ = ctx.db
+        .from('training_enrollments')
+        .select(
+          'course_id, employee_id, status, progress_pct, completed_at, users!training_enrollments_employee_id_fkey(full_name, email)',
+        )
+        .eq('tenant_id', tenantId)
+      if (memberIds) enrollQ = enrollQ.in('employee_id', memberIds)
+      const { data: enrollments } = await enrollQ
+
+      type EnrollmentEntry = {
+        course_id: string
+        status: string
+        progress_pct: number
+        completed_at: string | null
+      }
+      const byEmployee = new Map<
+        string,
+        { full_name: string | null; email: string; enrollments: EnrollmentEntry[] }
+      >()
+      for (const e of enrollments ?? []) {
+        const existing: {
+          full_name: string | null
+          email: string
+          enrollments: EnrollmentEntry[]
+        } = byEmployee.get(e.employee_id) ?? {
+          full_name: (e.users as any)?.full_name ?? null,
+          email: (e.users as any)?.email ?? '',
+          enrollments: [] as EnrollmentEntry[],
+        }
+        existing.enrollments.push({
+          course_id: e.course_id,
+          status: e.status,
+          progress_pct: e.progress_pct,
+          completed_at: e.completed_at,
+        })
+        byEmployee.set(e.employee_id, existing)
+      }
+
+      return {
+        courses: courses ?? [],
+        employees: Array.from(byEmployee.entries()).map(([id, v]) => ({ id, ...v })),
+      }
+    }),
+
+  enrollInCourse: managerProcedure
+    .input(z.object({ employee_id: z.string().uuid(), course_id: z.string().uuid() }))
+    .mutation(async ({ ctx, input }) => {
+      const tenantId = ctx.user!.tid
+      const { error } = await ctx.db.from('training_enrollments').upsert(
+        {
+          tenant_id: tenantId,
+          course_id: input.course_id,
+          employee_id: input.employee_id,
+          status: 'enrolled',
+          progress_pct: 0,
+        } as any,
+        { onConflict: 'tenant_id,course_id,employee_id' },
+      )
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      return { ok: true }
+    }),
+
+  // ─── Comparativa de equipo ────────────────────────────────────────────────
+
+  getTeamComparison: managerProcedure
+    .input(
+      z.object({
+        teamId: z.string().uuid().optional(),
+        days: z.number().int().min(7).max(90).default(30),
+      }),
+    )
+    .query(async ({ ctx, input }) => {
+      const tenantId = ctx.user!.tid
+      const dateFrom = new Date(Date.now() - input.days * 86400000).toISOString().slice(0, 10)
+
+      let memberIds: string[] | null = null
+      if (input.teamId) {
+        const { data: members } = await ctx.db
+          .from('team_members')
+          .select('user_id')
+          .eq('team_id', input.teamId)
+          .eq('tenant_id', tenantId)
+        memberIds = (members ?? []).map((m) => m.user_id)
+        if (memberIds.length === 0) return []
+      }
+
+      let q = ctx.db
+        .from('daily_user_metrics')
+        .select(
+          'user_id, active_seconds, productive_seconds, overtime_seconds, productivity_ratio, focus_score',
+        )
+        .eq('tenant_id', tenantId)
+        .gte('metric_date', dateFrom)
+      if (memberIds) q = q.in('user_id', memberIds)
+      const { data: metrics, error } = await q
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+
+      const byUser = new Map<
+        string,
+        {
+          active: number
+          productive: number
+          overtime: number
+          ratios: number[]
+          focus: number[]
+          days: number
+        }
+      >()
+      for (const m of metrics ?? []) {
+        const u = byUser.get(m.user_id) ?? {
+          active: 0,
+          productive: 0,
+          overtime: 0,
+          ratios: [],
+          focus: [],
+          days: 0,
+        }
+        u.active += m.active_seconds ?? 0
+        u.productive += m.productive_seconds ?? 0
+        u.overtime += m.overtime_seconds ?? 0
+        if (m.productivity_ratio != null) u.ratios.push(Number(m.productivity_ratio))
+        if (m.focus_score != null) u.focus.push(Number(m.focus_score))
+        u.days++
+        byUser.set(m.user_id, u)
+      }
+
+      const userIds = [...byUser.keys()]
+      const { data: users } = await ctx.db
+        .from('users')
+        .select('id, full_name, email, department, position')
+        .in('id', userIds)
+        .eq('tenant_id', tenantId)
+      const userMap = new Map((users ?? []).map((u) => [u.id, u]))
+
+      return Array.from(byUser.entries())
+        .map(([uid, v]) => {
+          const info = userMap.get(uid)
+          const avgProd =
+            v.ratios.length > 0 ? v.ratios.reduce((a, b) => a + b, 0) / v.ratios.length : 0
+          const avgFocus =
+            v.focus.length > 0 ? v.focus.reduce((a, b) => a + b, 0) / v.focus.length : 0
+          return {
+            user_id: uid,
+            full_name: info?.full_name ?? null,
+            email: info?.email ?? '',
+            department: info?.department ?? null,
+            position: info?.position ?? null,
+            days_active: v.days,
+            total_active_seconds: v.active,
+            avg_daily_active_seconds: v.days > 0 ? Math.round(v.active / v.days) : 0,
+            total_overtime_seconds: v.overtime,
+            avg_productivity_ratio: avgProd,
+            avg_focus_score: avgFocus,
+          }
+        })
+        .sort((a, b) => b.avg_productivity_ratio - a.avg_productivity_ratio)
+    }),
+
+  // ─── Feedback 360° ────────────────────────────────────────────────────────
+
+  getTeamFeedback360: managerProcedure
+    .input(z.object({ period_label: z.string().optional() }))
+    .query(async ({ ctx, input }) => {
+      const tenantId = ctx.user!.tid
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const qb = ctx.db
+        .from('feedback_360' as any)
+        .select(
+          '*, from_user:users!feedback_360_from_user_id_fkey(full_name, email), to_user:users!feedback_360_to_user_id_fkey(full_name, email)',
+        )
+        .eq('tenant_id', tenantId)
+        .order('created_at', { ascending: false })
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data, error } = (await (input.period_label
+        ? (qb as any).eq('period_label', input.period_label)
+        : qb)) as any
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      return ((data ?? []) as any[]).map((f: any) => ({
+        ...f,
+        from_name: f.from_user?.full_name ?? f.from_user?.email ?? '',
+        to_name: f.to_user?.full_name ?? f.to_user?.email ?? '',
+      }))
+    }),
+
+  sendFeedback360: managerProcedure
+    .input(
+      z.object({
+        to_user_id: z.string().uuid(),
+        relationship: z.enum(['peer', 'self', 'upward', 'manager']),
+        period_label: z.string().min(1),
+        ratings: z.record(z.string(), z.number()),
+        message: z.string().optional(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const tenantId = ctx.user!.tid
+      const { error } = await (ctx.db as any).from('feedback_360').insert({
+        tenant_id: tenantId,
+        from_user_id: ctx.user!.sub,
+        to_user_id: input.to_user_id,
+        relationship: input.relationship,
+        period_label: input.period_label,
+        ratings: input.ratings,
+        message: input.message ?? null,
+      })
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      return { ok: true }
+    }),
+
+  // ─── Presupuesto de gastos ────────────────────────────────────────────────
+
+  getTeamExpenseBudget: managerProcedure
+    .input(z.object({ period_month: z.string(), teamId: z.string().uuid().optional() }))
+    .query(async ({ ctx, input }) => {
+      const tenantId = ctx.user!.tid
+
+      const { data: budgets } = (await (ctx.db as any)
+        .from('team_expense_budgets')
+        .select('*')
+        .eq('tenant_id', tenantId)
+        .eq('period_month', input.period_month)) as {
+        data: Array<{ budget_amount: number; category: string | null }> | null
+      }
+
+      const monthStart = `${input.period_month}-01`
+      const monthEnd = new Date(
+        Number(input.period_month.slice(0, 4)),
+        Number(input.period_month.slice(5, 7)),
+        0,
+      )
+        .toISOString()
+        .slice(0, 10)
+
+      let expQ = ctx.db
+        .from('expenses')
+        .select('amount, currency, category, status')
+        .eq('tenant_id', tenantId)
+        .gte('expense_date', monthStart)
+        .lte('expense_date', monthEnd)
+        .in('status', ['approved', 'pending'])
+
+      if (input.teamId) {
+        const { data: members } = await ctx.db
+          .from('team_members')
+          .select('user_id')
+          .eq('team_id', input.teamId)
+          .eq('tenant_id', tenantId)
+        const memberIds = (members ?? []).map((m) => m.user_id)
+        if (memberIds.length > 0) expQ = expQ.in('employee_id', memberIds)
+      }
+
+      const { data: expenses } = await expQ
+
+      const totalBudget = (budgets ?? []).reduce((s, b) => s + Number(b.budget_amount), 0)
+      const totalSpent = (expenses ?? [])
+        .filter((e) => e.status === 'approved')
+        .reduce((s, e) => s + Number(e.amount), 0)
+      const totalPending = (expenses ?? [])
+        .filter((e) => e.status === 'pending')
+        .reduce((s, e) => s + Number(e.amount), 0)
+
+      const byCategory = new Map<string, { spent: number; budget: number }>()
+      for (const e of expenses ?? []) {
+        const c = byCategory.get(e.category) ?? { spent: 0, budget: 0 }
+        if (e.status === 'approved') c.spent += Number(e.amount)
+        byCategory.set(e.category, c)
+      }
+      for (const b of budgets ?? []) {
+        if (b.category) {
+          const c = byCategory.get(b.category) ?? { spent: 0, budget: 0 }
+          c.budget += Number(b.budget_amount)
+          byCategory.set(b.category, c)
+        }
+      }
+
+      return {
+        period_month: input.period_month,
+        total_budget: totalBudget,
+        total_spent: totalSpent,
+        total_pending: totalPending,
+        remaining: totalBudget - totalSpent,
+        pct_used: totalBudget > 0 ? Math.round((totalSpent / totalBudget) * 100) : null,
+        by_category: Array.from(byCategory.entries()).map(([cat, v]) => ({ category: cat, ...v })),
+      }
+    }),
+
+  setExpenseBudget: managerProcedure
+    .input(
+      z.object({
+        period_month: z.string(),
+        budget_amount: z.number().min(0),
+        currency: z.string().default('COP'),
+        category: z.string().optional(),
+        teamId: z.string().uuid().optional(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const tenantId = ctx.user!.tid
+      const { error } = await (ctx.db as any).from('team_expense_budgets').upsert(
+        {
+          tenant_id: tenantId,
+          team_id: input.teamId ?? null,
+          period_month: input.period_month,
+          budget_amount: input.budget_amount,
+          currency: input.currency,
+          category: input.category ?? null,
+          created_by: ctx.user!.sub,
+        },
+        { onConflict: 'tenant_id,team_id,period_month,category' },
+      )
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      return { ok: true }
+    }),
 })
