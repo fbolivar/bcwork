@@ -30,6 +30,13 @@ import {
   GitCompare,
   Star,
   DollarSign,
+  Layers,
+  UserCheck,
+  Gauge,
+  AlertTriangle,
+  Network,
+  CalendarHeart,
+  Briefcase,
 } from 'lucide-react'
 import { trpc } from '@/lib/trpc-client'
 import { NotificationBell } from '@/features/shared/components/NotificationBell'
@@ -70,6 +77,20 @@ const NAV_GROUPS: NavGroup[] = [
       { href: '/manager/pulse', label: 'Encuestas de pulso', icon: BarChart2 },
       { href: '/manager/training', label: 'Capacitaciones', icon: BookOpen },
       { href: '/manager/feedback360', label: 'Feedback 360°', icon: Star },
+      { href: '/manager/pip', label: 'Planes de mejora', icon: AlertTriangle },
+      { href: '/manager/onboarding', label: 'Onboarding', icon: UserCheck },
+      { href: '/manager/milestones', label: 'Aniversarios', icon: CalendarHeart },
+    ],
+  },
+  {
+    label: 'Equipo',
+    defaultOpen: false,
+    items: [
+      { href: '/manager/orgchart', label: 'Organigrama', icon: Network },
+      { href: '/manager/skills', label: 'Competencias', icon: Layers },
+      { href: '/manager/workload', label: 'Carga de trabajo', icon: Gauge },
+      { href: '/manager/compensation', label: 'Compensación', icon: DollarSign },
+      { href: '/manager/hiring', label: 'Contrataciones', icon: Briefcase },
     ],
   },
   {
@@ -81,7 +102,7 @@ const NAV_GROUPS: NavGroup[] = [
       { href: '/manager/trends', label: 'Tendencias', icon: TrendingUp },
       { href: '/manager/calendar', label: 'Calendario', icon: CalendarDays },
       { href: '/manager/comparison', label: 'Comparativa', icon: GitCompare },
-      { href: '/manager/budget', label: 'Presupuesto', icon: DollarSign },
+      { href: '/manager/budget', label: 'Presupuesto', icon: Wallet },
     ],
   },
   {

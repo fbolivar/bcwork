@@ -2311,4 +2311,580 @@ export const managerRouter = router({
       if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
       return { ok: true }
     }),
+
+  // ─── Matriz de competencias ───────────────────────────────────────────────
+
+  getTeamSkills: managerProcedure
+    .input(z.object({ teamId: z.string().uuid().optional() }))
+    .query(async ({ ctx, input }) => {
+      const tenantId = ctx.user!.tid
+      const { data: members } = await ctx.db
+        .from('team_members')
+        .select('user_id, users!inner(id, full_name, email, department, position)')
+        .eq('tenant_id', tenantId)
+        .eq(input.teamId ? 'team_id' : 'tenant_id', input.teamId ?? tenantId)
+      const userIds = (members ?? []).map((m) => m.user_id)
+      const { data: skills } = (await (ctx.db as any)
+        .from('employee_skills')
+        .select('*')
+        .eq('tenant_id', tenantId)
+        .in(
+          'user_id',
+          userIds.length > 0 ? userIds : ['00000000-0000-0000-0000-000000000000'],
+        )) as { data: any[] | null }
+      return {
+        members: (members ?? []).map((m) => ({ ...(m.users as any) })),
+        skills: skills ?? [],
+      }
+    }),
+
+  upsertSkill: managerProcedure
+    .input(
+      z.object({
+        user_id: z.string().uuid(),
+        skill_name: z.string().min(1),
+        category: z.string().default('general'),
+        level: z.number().int().min(1).max(5),
+        notes: z.string().optional(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const tenantId = ctx.user!.tid
+      const { error } = await (ctx.db as any).from('employee_skills').upsert(
+        {
+          tenant_id: tenantId,
+          user_id: input.user_id,
+          skill_name: input.skill_name,
+          category: input.category,
+          level: input.level,
+          notes: input.notes ?? null,
+          created_by: ctx.user!.sub,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: 'tenant_id,user_id,skill_name' },
+      )
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      return { ok: true }
+    }),
+
+  deleteSkill: managerProcedure
+    .input(z.object({ id: z.string().uuid() }))
+    .mutation(async ({ ctx, input }) => {
+      const tenantId = ctx.user!.tid
+      const { error } = await (ctx.db as any)
+        .from('employee_skills')
+        .delete()
+        .eq('id', input.id)
+        .eq('tenant_id', tenantId)
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      return { ok: true }
+    }),
+
+  // ─── Onboarding tracking ──────────────────────────────────────────────────
+
+  getOnboardingProgress: managerProcedure
+    .input(z.object({ teamId: z.string().uuid().optional() }))
+    .query(async ({ ctx, input }) => {
+      const tenantId = ctx.user!.tid
+      let empQ = (ctx.db as any)
+        .from('users')
+        .select('id, full_name, email, hire_date, position, department')
+        .eq('tenant_id', tenantId)
+        .eq('status', 'active')
+      if (input.teamId) {
+        const { data: members } = await ctx.db
+          .from('team_members')
+          .select('user_id')
+          .eq('team_id', input.teamId)
+          .eq('tenant_id', tenantId)
+        const ids = (members ?? []).map((m) => m.user_id)
+        if (ids.length > 0) empQ = empQ.in('id', ids)
+      }
+      const { data: employees } = (await empQ) as { data: any[] | null }
+      const thirtyDaysAgo = new Date()
+      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 45)
+      const newHires = (employees ?? []).filter((e: any) => {
+        if (!e.hire_date) return false
+        return new Date(e.hire_date) >= thirtyDaysAgo
+      })
+      const newHireIds = newHires.map((e: any) => e.id)
+      const { data: tasks } = await ctx.db
+        .from('onboarding_tasks')
+        .select('*')
+        .eq('tenant_id', tenantId)
+        .in(
+          'employee_id',
+          newHireIds.length > 0 ? newHireIds : ['00000000-0000-0000-0000-000000000000'],
+        )
+      return {
+        employees: employees ?? [],
+        new_hires: newHires,
+        tasks: tasks ?? [],
+      }
+    }),
+
+  createOnboardingTask: managerProcedure
+    .input(
+      z.object({
+        employee_id: z.string().uuid(),
+        title: z.string().min(1),
+        description: z.string().optional(),
+        category: z.string().default('general'),
+        task_type: z.string().default('action'),
+        due_date: z.string().optional(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const tenantId = ctx.user!.tid
+      const { data: maxOrder } = await ctx.db
+        .from('onboarding_tasks')
+        .select('order_index')
+        .eq('employee_id', input.employee_id)
+        .order('order_index', { ascending: false })
+        .limit(1)
+        .single()
+      const { error } = await ctx.db.from('onboarding_tasks').insert({
+        tenant_id: tenantId,
+        employee_id: input.employee_id,
+        title: input.title,
+        description: input.description ?? null,
+        category: input.category,
+        task_type: input.task_type,
+        due_date: input.due_date ?? null,
+        order_index: ((maxOrder as any)?.order_index ?? 0) + 1,
+        created_by: ctx.user!.sub,
+      } as any)
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      return { ok: true }
+    }),
+
+  toggleOnboardingTask: managerProcedure
+    .input(z.object({ id: z.string().uuid(), completed: z.boolean() }))
+    .mutation(async ({ ctx, input }) => {
+      const tenantId = ctx.user!.tid
+      const { error } = await ctx.db
+        .from('onboarding_tasks')
+        .update({ completed_at: input.completed ? new Date().toISOString() : null } as any)
+        .eq('id', input.id)
+        .eq('tenant_id', tenantId)
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      return { ok: true }
+    }),
+
+  // ─── Distribución de carga ────────────────────────────────────────────────
+
+  getWorkloadDistribution: managerProcedure
+    .input(z.object({ teamId: z.string().uuid().optional(), days: z.number().default(7) }))
+    .query(async ({ ctx, input }) => {
+      const tenantId = ctx.user!.tid
+      const since = new Date()
+      since.setDate(since.getDate() - input.days)
+      const sinceStr = since.toISOString().slice(0, 10)
+      let memberIds: string[] = []
+      if (input.teamId) {
+        const { data: members } = await ctx.db
+          .from('team_members')
+          .select('user_id')
+          .eq('team_id', input.teamId)
+          .eq('tenant_id', tenantId)
+        memberIds = (members ?? []).map((m) => m.user_id)
+      } else {
+        const { data: users } = await ctx.db
+          .from('users')
+          .select('id')
+          .eq('tenant_id', tenantId)
+          .eq('status', 'active')
+        memberIds = (users ?? []).map((u) => u.id)
+      }
+      const { data: metrics } = await ctx.db
+        .from('daily_user_metrics')
+        .select('user_id, active_seconds, productivity_ratio, metric_date')
+        .eq('tenant_id', tenantId)
+        .in('user_id', memberIds.length > 0 ? memberIds : ['00000000-0000-0000-0000-000000000000'])
+        .gte('metric_date', sinceStr)
+      const { data: goals } = await ctx.db
+        .from('employee_goals')
+        .select('employee_id, status')
+        .eq('tenant_id', tenantId)
+        .in(
+          'employee_id',
+          memberIds.length > 0 ? memberIds : ['00000000-0000-0000-0000-000000000000'],
+        )
+        .eq('status', 'active')
+      const { data: users } = await ctx.db
+        .from('users')
+        .select('id, full_name, email, department, position')
+        .eq('tenant_id', tenantId)
+        .in('id', memberIds.length > 0 ? memberIds : ['00000000-0000-0000-0000-000000000000'])
+      const goalCountByUser = (goals ?? []).reduce((acc: Record<string, number>, g) => {
+        acc[g.employee_id] = (acc[g.employee_id] ?? 0) + 1
+        return acc
+      }, {})
+      const metricsByUser: Record<
+        string,
+        { total_seconds: number; days: number; prod_sum: number }
+      > = {}
+      for (const m of metrics ?? []) {
+        if (!metricsByUser[m.user_id])
+          metricsByUser[m.user_id] = { total_seconds: 0, days: 0, prod_sum: 0 }
+        metricsByUser[m.user_id]!.total_seconds += m.active_seconds ?? 0
+        metricsByUser[m.user_id]!.days += 1
+        metricsByUser[m.user_id]!.prod_sum += m.productivity_ratio ?? 0
+      }
+      return (users ?? []).map((u) => {
+        const m = metricsByUser[u.id]
+        const avgDailyHours = m ? m.total_seconds / 3600 / m.days : 0
+        const avgProd = m ? m.prod_sum / m.days : 0
+        const activeGoals = goalCountByUser[u.id] ?? 0
+        const load = avgDailyHours >= 9 ? 'high' : avgDailyHours >= 6 ? 'medium' : 'low'
+        return {
+          ...u,
+          avg_daily_hours: Math.round(avgDailyHours * 10) / 10,
+          avg_productivity: Math.round(avgProd * 100),
+          active_goals: activeGoals,
+          load_level: load,
+          days_active: m?.days ?? 0,
+        }
+      })
+    }),
+
+  // ─── Plan de mejora de desempeño (PIP) ────────────────────────────────────
+
+  getTeamPIPs: managerProcedure
+    .input(z.object({ teamId: z.string().uuid().optional(), status: z.string().optional() }))
+    .query(async ({ ctx, input }) => {
+      const tenantId = ctx.user!.tid
+      const qb = (ctx.db as any)
+        .from('pip_plans')
+        .select(
+          '*, employee:users!pip_plans_employee_id_fkey(full_name, email, department, position)',
+        )
+        .eq('tenant_id', tenantId)
+        .order('created_at', { ascending: false })
+      const { data, error } = (await (input.status ? qb.eq('status', input.status) : qb)) as {
+        data: any[] | null
+        error: any
+      }
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      return (data ?? []).map((p: any) => ({
+        ...p,
+        employee_name: p.employee?.full_name ?? p.employee?.email ?? '',
+        employee_dept: p.employee?.department ?? '',
+        employee_position: p.employee?.position ?? '',
+      }))
+    }),
+
+  createPIP: managerProcedure
+    .input(
+      z.object({
+        employee_id: z.string().uuid(),
+        title: z.string().min(1),
+        reason: z.string().optional(),
+        goals: z.string().optional(),
+        start_date: z.string(),
+        end_date: z.string().optional(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const tenantId = ctx.user!.tid
+      const { error } = await (ctx.db as any).from('pip_plans').insert({
+        tenant_id: tenantId,
+        employee_id: input.employee_id,
+        manager_id: ctx.user!.sub,
+        title: input.title,
+        reason: input.reason ?? null,
+        goals: input.goals ?? null,
+        start_date: input.start_date,
+        end_date: input.end_date ?? null,
+        status: 'draft',
+      })
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      return { ok: true }
+    }),
+
+  updatePIPStatus: managerProcedure
+    .input(
+      z.object({
+        id: z.string().uuid(),
+        status: z.enum(['draft', 'active', 'completed', 'cancelled']),
+        outcome_notes: z.string().optional(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const tenantId = ctx.user!.tid
+      const { error } = await (ctx.db as any)
+        .from('pip_plans')
+        .update({
+          status: input.status,
+          outcome_notes: input.outcome_notes ?? null,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', input.id)
+        .eq('tenant_id', tenantId)
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      return { ok: true }
+    }),
+
+  // ─── Org chart ────────────────────────────────────────────────────────────
+
+  getTeamOrgChart: managerProcedure
+    .input(z.object({ teamId: z.string().uuid().optional() }))
+    .query(async ({ ctx, input }) => {
+      const tenantId = ctx.user!.tid
+      const { data: users } = await ctx.db
+        .from('users')
+        .select('id, full_name, email, department, position, manager_id, role, status')
+        .eq('tenant_id', tenantId)
+        .in('status', ['active', 'invited'])
+      return users ?? []
+    }),
+
+  updateUserManager: managerProcedure
+    .input(z.object({ user_id: z.string().uuid(), manager_id: z.string().uuid().nullable() }))
+    .mutation(async ({ ctx, input }) => {
+      const tenantId = ctx.user!.tid
+      const { error } = await ctx.db
+        .from('users')
+        .update({ manager_id: input.manager_id } as any)
+        .eq('id', input.user_id)
+        .eq('tenant_id', tenantId)
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      return { ok: true }
+    }),
+
+  // ─── Compensación ─────────────────────────────────────────────────────────
+
+  getCompensationRecords: managerProcedure
+    .input(z.object({ teamId: z.string().uuid().optional(), userId: z.string().uuid().optional() }))
+    .query(async ({ ctx, input }) => {
+      const tenantId = ctx.user!.tid
+      let userIds: string[] = []
+      if (input.userId) {
+        userIds = [input.userId]
+      } else if (input.teamId) {
+        const { data: members } = await ctx.db
+          .from('team_members')
+          .select('user_id')
+          .eq('team_id', input.teamId)
+          .eq('tenant_id', tenantId)
+        userIds = (members ?? []).map((m) => m.user_id)
+      } else {
+        const { data: users } = await ctx.db
+          .from('users')
+          .select('id')
+          .eq('tenant_id', tenantId)
+          .eq('status', 'active')
+        userIds = (users ?? []).map((u) => u.id)
+      }
+      const { data: records } = (await (ctx.db as any)
+        .from('compensation_records')
+        .select(
+          '*, employee:users!compensation_records_user_id_fkey(full_name, email, department, position)',
+        )
+        .eq('tenant_id', tenantId)
+        .in('user_id', userIds.length > 0 ? userIds : ['00000000-0000-0000-0000-000000000000'])
+        .order('effective_date', { ascending: false })) as { data: any[] | null }
+      return (records ?? []).map((r: any) => ({
+        ...r,
+        employee_name: r.employee?.full_name ?? r.employee?.email ?? '',
+        employee_dept: r.employee?.department ?? '',
+        employee_position: r.employee?.position ?? '',
+      }))
+    }),
+
+  addCompensationRecord: managerProcedure
+    .input(
+      z.object({
+        user_id: z.string().uuid(),
+        effective_date: z.string(),
+        salary_amount: z.number().min(0),
+        currency: z.string().default('COP'),
+        compensation_type: z.enum(['salary', 'bonus', 'raise', 'adjustment']),
+        reason: z.string().optional(),
+        notes: z.string().optional(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const tenantId = ctx.user!.tid
+      const { error } = await (ctx.db as any).from('compensation_records').insert({
+        tenant_id: tenantId,
+        user_id: input.user_id,
+        effective_date: input.effective_date,
+        salary_amount: input.salary_amount,
+        currency: input.currency,
+        compensation_type: input.compensation_type,
+        reason: input.reason ?? null,
+        approved_by: ctx.user!.sub,
+        notes: input.notes ?? null,
+      })
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      return { ok: true }
+    }),
+
+  // ─── Aniversarios y hitos ─────────────────────────────────────────────────
+
+  getTeamMilestones: managerProcedure
+    .input(z.object({ teamId: z.string().uuid().optional(), months_ahead: z.number().default(1) }))
+    .query(async ({ ctx, input }) => {
+      const tenantId = ctx.user!.tid
+      const { data: users } = (await (ctx.db as any)
+        .from('users')
+        .select('id, full_name, email, department, position, hire_date, birthdate')
+        .eq('tenant_id', tenantId)
+        .eq('status', 'active')) as { data: any[] | null }
+      const today = new Date()
+      const futureDate = new Date()
+      futureDate.setMonth(futureDate.getMonth() + input.months_ahead)
+      const milestones: Array<{
+        user_id: string
+        name: string
+        type: string
+        date: string
+        years?: number
+      }> = []
+      for (const u of users ?? []) {
+        const hireDate = u.hire_date
+        const birthdate = u.birthdate
+        const name = u.full_name ?? u.email
+        if (hireDate) {
+          const hire = new Date(hireDate)
+          const thisYearAnniv = new Date(today.getFullYear(), hire.getMonth(), hire.getDate())
+          const nextAnniv =
+            thisYearAnniv < today
+              ? new Date(today.getFullYear() + 1, hire.getMonth(), hire.getDate())
+              : thisYearAnniv
+          if (nextAnniv <= futureDate) {
+            const years = nextAnniv.getFullYear() - hire.getFullYear()
+            milestones.push({
+              user_id: u.id,
+              name,
+              type: 'anniversary',
+              date: nextAnniv.toISOString().slice(0, 10),
+              years,
+            })
+          }
+        }
+        if (birthdate) {
+          const bday = new Date(birthdate)
+          const thisYearBday = new Date(today.getFullYear(), bday.getMonth(), bday.getDate())
+          const nextBday =
+            thisYearBday < today
+              ? new Date(today.getFullYear() + 1, bday.getMonth(), bday.getDate())
+              : thisYearBday
+          if (nextBday <= futureDate) {
+            milestones.push({
+              user_id: u.id,
+              name,
+              type: 'birthday',
+              date: nextBday.toISOString().slice(0, 10),
+            })
+          }
+        }
+      }
+      milestones.sort((a, b) => a.date.localeCompare(b.date))
+      return { milestones, employees: users ?? [] }
+    }),
+
+  updateUserMilestoneData: managerProcedure
+    .input(
+      z.object({
+        user_id: z.string().uuid(),
+        hire_date: z.string().optional(),
+        birthdate: z.string().optional(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const tenantId = ctx.user!.tid
+      const update: Record<string, string | null> = {}
+      if (input.hire_date !== undefined) update.hire_date = input.hire_date || null
+      if (input.birthdate !== undefined) update.birthdate = input.birthdate || null
+      const { error } = await ctx.db
+        .from('users')
+        .update(update as any)
+        .eq('id', input.user_id)
+        .eq('tenant_id', tenantId)
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      return { ok: true }
+    }),
+
+  // ─── Solicitudes de contratación ─────────────────────────────────────────
+
+  getHiringRequests: managerProcedure
+    .input(z.object({ status: z.string().optional() }))
+    .query(async ({ ctx, input }) => {
+      const tenantId = ctx.user!.tid
+      let q = (ctx.db as any)
+        .from('hiring_requests')
+        .select(
+          '*, team:teams(name), requester:users!hiring_requests_requested_by_fkey(full_name, email)',
+        )
+        .eq('tenant_id', tenantId)
+        .order('created_at', { ascending: false })
+      if (input.status) q = q.eq('status', input.status)
+      const { data, error } = (await q) as { data: any[] | null; error: any }
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      return (data ?? []).map((r: any) => ({
+        ...r,
+        team_name: r.team?.name ?? '',
+        requester_name: r.requester?.full_name ?? r.requester?.email ?? '',
+      }))
+    }),
+
+  createHiringRequest: managerProcedure
+    .input(
+      z.object({
+        title: z.string().min(1),
+        department: z.string().optional(),
+        description: z.string().optional(),
+        seniority_level: z.enum(['junior', 'mid', 'senior', 'lead', 'manager']).default('mid'),
+        headcount: z.number().int().min(1).default(1),
+        priority: z.enum(['low', 'medium', 'high', 'urgent']).default('medium'),
+        due_date: z.string().optional(),
+        notes: z.string().optional(),
+        teamId: z.string().uuid().optional(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const tenantId = ctx.user!.tid
+      const { error } = await (ctx.db as any).from('hiring_requests').insert({
+        tenant_id: tenantId,
+        team_id: input.teamId ?? null,
+        requested_by: ctx.user!.sub,
+        title: input.title,
+        department: input.department ?? null,
+        description: input.description ?? null,
+        seniority_level: input.seniority_level,
+        headcount: input.headcount,
+        priority: input.priority,
+        due_date: input.due_date ?? null,
+        notes: input.notes ?? null,
+        status: 'open',
+      })
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      return { ok: true }
+    }),
+
+  updateHiringRequest: managerProcedure
+    .input(
+      z.object({
+        id: z.string().uuid(),
+        status: z.enum(['draft', 'open', 'interviewing', 'filled', 'cancelled']).optional(),
+        notes: z.string().optional(),
+        priority: z.enum(['low', 'medium', 'high', 'urgent']).optional(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const tenantId = ctx.user!.tid
+      const update: Record<string, unknown> = { updated_at: new Date().toISOString() }
+      if (input.status !== undefined) update.status = input.status
+      if (input.notes !== undefined) update.notes = input.notes
+      if (input.priority !== undefined) update.priority = input.priority
+      const { error } = await (ctx.db as any)
+        .from('hiring_requests')
+        .update(update)
+        .eq('id', input.id)
+        .eq('tenant_id', tenantId)
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      return { ok: true }
+    }),
 })
