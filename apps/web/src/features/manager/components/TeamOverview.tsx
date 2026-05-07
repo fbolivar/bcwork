@@ -186,7 +186,7 @@ function UserDetail({
                 key={a.identifier}
                 className="rounded-full border border-blue-100 bg-white px-2 py-0.5 text-xs text-gray-600"
               >
-                {a.identifier.split('.').slice(-2).join('.')} · {fmtHours(a.secs)}
+                {(a.identifier ?? '').split('.').slice(-2).join('.')} · {fmtHours(a.secs)}
               </span>
             ))}
           </div>
