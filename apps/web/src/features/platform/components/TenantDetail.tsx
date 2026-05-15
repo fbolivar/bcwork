@@ -8,6 +8,7 @@ import { StatusBadge } from './StatusBadge'
 import { LicenseCard } from './LicenseCard'
 import { AuditLogTable } from './AuditLogTable'
 import { TenantNotes } from './TenantNotes'
+import { TenantTimeline } from './TenantTimeline'
 import { formatDate } from '@/lib/format'
 import { useEffect, useRef } from 'react'
 import {
@@ -22,6 +23,8 @@ import {
   Wrench,
   CalendarPlus,
   Check,
+  Mail,
+  Send,
 } from 'lucide-react'
 
 type ConfirmAction = 'suspend' | 'reactivate' | 'cancel'
@@ -131,6 +134,10 @@ export function TenantDetail({ tenantId }: { tenantId: string }) {
   const [maintenanceMsg, setMaintenanceMsg] = useState('')
   const [showMaintMsg, setShowMaintMsg] = useState(false)
   const [extendDone, setExtendDone] = useState(false)
+  const [showEmailModal, setShowEmailModal] = useState(false)
+  const [emailSubject, setEmailSubject] = useState('')
+  const [emailBody, setEmailBody] = useState('')
+  const [emailSentOk, setEmailSentOk] = useState(false)
 
   const { data: tenant, isLoading, refetch } = trpc.platform.getTenant.useQuery({ id: tenantId })
 
@@ -146,6 +153,18 @@ export function TenantDetail({ tenantId }: { tenantId: string }) {
       setExtendDone(true)
       refetch()
       setTimeout(() => setExtendDone(false), 2500)
+    },
+  })
+
+  const emailMutation = trpc.platform.sendEmailToTenant.useMutation({
+    onSuccess: () => {
+      setEmailSentOk(true)
+      setEmailSubject('')
+      setEmailBody('')
+      setTimeout(() => {
+        setEmailSentOk(false)
+        setShowEmailModal(false)
+      }, 2500)
     },
   })
 
@@ -303,6 +322,15 @@ export function TenantDetail({ tenantId }: { tenantId: string }) {
                 Entrar como este tenant
               </button>
 
+              <button
+                type="button"
+                onClick={() => setShowEmailModal(true)}
+                className="flex w-full items-center justify-center gap-2 rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
+              >
+                <Mail className="h-3.5 w-3.5" />
+                Enviar email al admin
+              </button>
+
               {/* Extender trial */}
               {isTrialOrActive && (
                 <div className="rounded-md border border-gray-200 p-2">
@@ -424,6 +452,9 @@ export function TenantDetail({ tenantId }: { tenantId: string }) {
 
           {/* Notas internas */}
           <TenantNotes tenantId={tenantId} />
+
+          {/* Timeline */}
+          <TenantTimeline tenantId={tenantId} />
         </div>
 
         {/* Licencias */}
@@ -441,6 +472,79 @@ export function TenantDetail({ tenantId }: { tenantId: string }) {
           <AuditLogTable tenantId={tenantId} />
         </div>
       </div>
+
+      {showEmailModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-md rounded-2xl bg-white shadow-2xl">
+            <div className="flex items-center justify-between border-b border-gray-100 px-5 py-4">
+              <div className="flex items-center gap-2">
+                <Mail className="h-4 w-4 text-gray-400" />
+                <h3 className="text-sm font-semibold text-gray-900">Enviar email al admin</h3>
+              </div>
+              <button type="button" onClick={() => setShowEmailModal(false)} title="Cerrar">
+                <X className="h-4 w-4 text-gray-400 hover:text-gray-600" />
+              </button>
+            </div>
+            <div className="space-y-3 px-5 py-4">
+              <div>
+                <label className="mb-1 block text-xs font-medium text-gray-500">Asunto</label>
+                <input
+                  type="text"
+                  value={emailSubject}
+                  onChange={(e) => setEmailSubject(e.target.value)}
+                  maxLength={200}
+                  placeholder="Ej: Aviso sobre tu cuenta BCWork"
+                  className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-medium text-gray-500">Mensaje</label>
+                <textarea
+                  value={emailBody}
+                  onChange={(e) => setEmailBody(e.target.value)}
+                  maxLength={5000}
+                  rows={5}
+                  placeholder="Escribe el mensaje para el admin de la empresa..."
+                  className="w-full resize-none rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+                <p className="mt-1 text-right text-xs text-gray-400">{emailBody.length}/5000</p>
+              </div>
+              {emailMutation.error && (
+                <p className="text-xs text-red-500">{emailMutation.error.message}</p>
+              )}
+              {emailSentOk && (
+                <p className="flex items-center gap-1 text-xs text-green-600">
+                  <Check className="h-3.5 w-3.5" /> Email enviado correctamente
+                </p>
+              )}
+            </div>
+            <div className="flex gap-2 border-t border-gray-100 px-5 py-3">
+              <button
+                type="button"
+                onClick={() => setShowEmailModal(false)}
+                className="flex-1 rounded-lg border border-gray-200 py-2 text-sm text-gray-600 hover:bg-gray-50"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                disabled={!emailSubject.trim() || !emailBody.trim() || emailMutation.isPending}
+                onClick={() =>
+                  emailMutation.mutate({ tenantId, subject: emailSubject, body: emailBody })
+                }
+                className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-blue-600 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-50"
+              >
+                {emailMutation.isPending ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <Send className="h-3.5 w-3.5" />
+                )}
+                {emailMutation.isPending ? 'Enviando...' : 'Enviar'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {confirmAction && (
         <ConfirmModal

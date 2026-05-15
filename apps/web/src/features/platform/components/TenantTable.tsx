@@ -18,6 +18,7 @@ import {
   Download,
   CalendarPlus,
   Check,
+  CalendarClock,
 } from 'lucide-react'
 import { trpc } from '@/lib/trpc-client'
 import { StatusBadge } from './StatusBadge'
@@ -893,7 +894,18 @@ export function TenantTable() {
   const [showNew, setShowNew] = useState(false)
   const [editId, setEditId] = useState<string | null>(null)
   const [exporting, setExporting] = useState(false)
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const [bulkDone, setBulkDone] = useState(false)
   const utils = trpc.useUtils()
+
+  const bulkExtend = trpc.platform.bulkExtendTrial.useMutation({
+    onSuccess: () => {
+      setBulkDone(true)
+      setSelectedIds(new Set())
+      utils.platform.listTenants.invalidate()
+      setTimeout(() => setBulkDone(false), 2500)
+    },
+  })
 
   async function handleExportCsv() {
     setExporting(true)
@@ -963,15 +975,156 @@ export function TenantTable() {
     }
   }
 
+  function toggleSelect(id: string) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  function toggleSelectAll(ids: string[]) {
+    const allSelected = ids.every((id) => selectedIds.has(id))
+    if (allSelected) {
+      setSelectedIds((prev) => {
+        const next = new Set(prev)
+        ids.forEach((id) => next.delete(id))
+        return next
+      })
+    } else {
+      setSelectedIds((prev) => {
+        const next = new Set(prev)
+        ids.forEach((id) => next.add(id))
+        return next
+      })
+    }
+  }
+
+  function handleExportSelected(
+    rows: Array<{
+      id: string
+      trade_name: string | null
+      legal_name: string
+      nit: string
+      contact_email: string
+      status: string
+      created_at: string | null
+      licenses: unknown
+    }>,
+  ) {
+    type LicRow = {
+      status: string
+      seats_total: number
+      ends_at: string | null
+      trial_ends_at: string | null
+      plans: { code: string; monthly_price_per_seat_cop: number } | null
+    }
+    const selected = rows.filter((t) => selectedIds.has(t.id))
+    const csvRows = selected.map((t) => {
+      const lic = (t.licenses as unknown as LicRow[])?.[0]
+      const mrr =
+        lic?.status === 'active'
+          ? (lic.plans?.monthly_price_per_seat_cop ?? 0) * lic.seats_total
+          : 0
+      const endDate = lic?.trial_ends_at ?? lic?.ends_at ?? ''
+      return [
+        t.trade_name ?? t.legal_name,
+        t.legal_name,
+        t.nit,
+        t.contact_email,
+        lic?.plans?.code ?? '',
+        lic?.seats_total ?? 0,
+        mrr,
+        t.status,
+        formatDate(t.created_at ?? ''),
+        endDate ? formatDate(endDate) : '',
+      ]
+    })
+    const header = [
+      'Empresa',
+      'Razón Social',
+      'NIT',
+      'Email',
+      'Plan',
+      'Seats',
+      'MRR COP',
+      'Estado',
+      'Creado',
+      'Vence',
+    ]
+    const csv = [header, ...csvRows]
+      .map((row) => row.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(','))
+      .join('\n')
+    const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `seleccion-${new Date().toISOString().slice(0, 10)}.csv`
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
   const { data, isLoading } = trpc.platform.listTenants.useQuery(
     { search: search || undefined, status, page, pageSize: 20 },
     { placeholderData: keepPreviousData },
   )
 
+  const pageRows = data?.data ?? []
+  const pageIds = pageRows.map((t) => t.id)
+
   return (
     <div className="space-y-4">
       {showNew && <NewTenantModal onClose={() => setShowNew(false)} />}
       {editId && <EditTenantModal tenantId={editId} onClose={() => setEditId(null)} />}
+
+      {/* Floating bulk action bar */}
+      {selectedIds.size > 0 && (
+        <div className="fixed bottom-6 left-1/2 z-40 -translate-x-1/2">
+          <div className="flex items-center gap-3 rounded-2xl border border-gray-200 bg-white px-5 py-3 shadow-xl">
+            <span className="text-sm font-semibold text-gray-800">
+              {selectedIds.size} seleccionada{selectedIds.size !== 1 ? 's' : ''}
+            </span>
+            <div className="h-4 w-px bg-gray-200" />
+            <button
+              type="button"
+              disabled={bulkExtend.isPending}
+              onClick={() => bulkExtend.mutate({ tenantIds: Array.from(selectedIds), days: 30 })}
+              className="flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-700 disabled:opacity-50"
+            >
+              {bulkExtend.isPending ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <CalendarClock className="h-3.5 w-3.5" />
+              )}
+              Extender trial +30d
+            </button>
+            <button
+              type="button"
+              onClick={() =>
+                handleExportSelected(pageRows as Parameters<typeof handleExportSelected>[0])
+              }
+              className="flex items-center gap-1.5 rounded-lg border border-gray-300 px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-50"
+            >
+              <Download className="h-3.5 w-3.5" />
+              Exportar CSV
+            </button>
+            {bulkDone && (
+              <span className="flex items-center gap-1 text-xs text-green-600">
+                <Check className="h-3.5 w-3.5" /> Hecho
+              </span>
+            )}
+            <button
+              type="button"
+              onClick={() => setSelectedIds(new Set())}
+              className="rounded-lg p-1 text-gray-400 hover:bg-gray-100"
+              title="Cancelar selección"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Filtros + botón nueva empresa */}
       <div className="flex flex-col gap-3 sm:flex-row">
@@ -1029,6 +1182,15 @@ export function TenantTable() {
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-gray-100 bg-gray-50">
+              <th className="w-10 px-4 py-3">
+                <input
+                  type="checkbox"
+                  title="Seleccionar todos en esta página"
+                  checked={pageIds.length > 0 && pageIds.every((id) => selectedIds.has(id))}
+                  onChange={() => toggleSelectAll(pageIds)}
+                  className="rounded border-gray-300"
+                />
+              </th>
               <th className="px-4 py-3 text-left font-medium text-gray-500">Empresa</th>
               <th className="px-4 py-3 text-left font-medium text-gray-500">NIT</th>
               <th className="px-4 py-3 text-left font-medium text-gray-500">Plan</th>
@@ -1042,19 +1204,19 @@ export function TenantTable() {
           <tbody className="divide-y divide-gray-50">
             {isLoading && (
               <tr>
-                <td colSpan={7} className="px-4 py-8 text-center text-gray-400">
+                <td colSpan={8} className="px-4 py-8 text-center text-gray-400">
                   Cargando...
                 </td>
               </tr>
             )}
-            {!isLoading && (data?.data ?? []).length === 0 && (
+            {!isLoading && pageRows.length === 0 && (
               <tr>
-                <td colSpan={7} className="px-4 py-8 text-center text-gray-400">
+                <td colSpan={8} className="px-4 py-8 text-center text-gray-400">
                   Sin resultados
                 </td>
               </tr>
             )}
-            {(data?.data ?? []).map((tenant) => {
+            {pageRows.map((tenant) => {
               const license = (
                 tenant.licenses as unknown as Array<{
                   id: string
@@ -1072,7 +1234,19 @@ export function TenantTable() {
               const endDate = license?.trial_ends_at ?? license?.ends_at
 
               return (
-                <tr key={tenant.id} className="hover:bg-gray-50">
+                <tr
+                  key={tenant.id}
+                  className={`hover:bg-gray-50 ${selectedIds.has(tenant.id) ? 'bg-blue-50' : ''}`}
+                >
+                  <td className="px-4 py-3">
+                    <input
+                      type="checkbox"
+                      title="Seleccionar"
+                      checked={selectedIds.has(tenant.id)}
+                      onChange={() => toggleSelect(tenant.id)}
+                      className="rounded border-gray-300"
+                    />
+                  </td>
                   <td className="px-4 py-3">
                     <Link
                       href={`/super-admin/tenants/${tenant.id}`}

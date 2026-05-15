@@ -226,6 +226,42 @@ export async function sendWelcomeEmail({
   })
 }
 
+// ─── Email: Mensaje desde el panel super-admin al tenant ─────────────────────
+
+export async function sendPlatformEmail({
+  to,
+  subject,
+  recipientName,
+  body: bodyText,
+  tenantName,
+}: {
+  to: string
+  subject: string
+  recipientName: string
+  body: string
+  tenantName: string
+}) {
+  const resend = getResend()
+  if (!resend) return null
+
+  const bodyHtml = `
+    ${h1(subject)}
+    ${p(`Hola ${recipientName},`)}
+    ${bodyText
+      .split('\n')
+      .map((line) => (line.trim() ? p(line) : ''))
+      .join('')}
+    ${tenantName ? `<p style="margin:24px 0 0;font-size:12px;color:#94a3b8;">Empresa: ${tenantName}</p>` : ''}
+  `
+  const result = await resend.emails.send({
+    from: FROM,
+    to,
+    subject,
+    html: baseHtml(subject, bodyHtml),
+  })
+  return !result.error
+}
+
 // ─── Email: Colilla de nómina emitida ────────────────────────────────────────
 
 export async function sendPayslipIssuedEmail({

@@ -4,7 +4,7 @@ import { trpc } from '@/lib/trpc-client'
 import { MetricCard } from './MetricCard'
 import { formatCOP } from '@/lib/format'
 
-export function MetricsSummary() {
+export function MetricsSummary({ compact }: { compact?: boolean }) {
   const { data, isLoading } = trpc.platform.getMetrics.useQuery(undefined, {
     refetchInterval: 60_000,
   })
@@ -12,7 +12,7 @@ export function MetricsSummary() {
   if (isLoading) {
     return (
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        {[...Array(8)].map((_, i) => (
+        {[...Array(compact ? 4 : 8)].map((_, i) => (
           <div key={i} className="h-24 animate-pulse rounded-xl bg-gray-100" />
         ))}
       </div>
@@ -48,19 +48,21 @@ export function MetricsSummary() {
         />
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-3">
-        <MetricCard label="Total empresas" value={data.totalTenants} />
-        <MetricCard
-          label="Suspendidos"
-          value={data.suspendedTenants}
-          {...(data.suspendedTenants > 0 ? { accent: 'yellow' as const } : {})}
-        />
-        <MetricCard
-          label="Churn últimos 30 días"
-          value={data.churnedLast30Days}
-          {...(data.churnedLast30Days > 0 ? { accent: 'red' as const } : {})}
-        />
-      </div>
+      {!compact && (
+        <div className="grid gap-4 sm:grid-cols-3">
+          <MetricCard label="Total empresas" value={data.totalTenants} />
+          <MetricCard
+            label="Suspendidos"
+            value={data.suspendedTenants}
+            {...(data.suspendedTenants > 0 ? { accent: 'yellow' as const } : {})}
+          />
+          <MetricCard
+            label="Churn últimos 30 días"
+            value={data.churnedLast30Days}
+            {...(data.churnedLast30Days > 0 ? { accent: 'red' as const } : {})}
+          />
+        </div>
+      )}
     </div>
   )
 }

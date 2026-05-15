@@ -3,7 +3,15 @@
 import Link from 'next/link'
 import Image from 'next/image'
 import { usePathname, useRouter } from 'next/navigation'
-import { LayoutDashboard, Building2, CreditCard, ScrollText, LogOut, Users } from 'lucide-react'
+import {
+  LayoutDashboard,
+  Building2,
+  CreditCard,
+  ScrollText,
+  LogOut,
+  Users,
+  BarChart2,
+} from 'lucide-react'
 import { cn } from '@bcwork/ui'
 import { trpc } from '@/lib/trpc-client'
 
@@ -11,6 +19,7 @@ const NAV = [
   { href: '/super-admin/metrics', label: 'Métricas', icon: LayoutDashboard },
   { href: '/super-admin/tenants', label: 'Empresas', icon: Building2 },
   { href: '/super-admin/users', label: 'Usuarios', icon: Users },
+  { href: '/super-admin/revenue', label: 'Revenue', icon: BarChart2 },
   { href: '/super-admin/plans', label: 'Planes', icon: CreditCard },
   { href: '/super-admin/audit', label: 'Auditoría', icon: ScrollText },
 ]

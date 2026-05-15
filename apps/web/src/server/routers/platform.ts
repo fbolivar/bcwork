@@ -657,6 +657,175 @@ export const platformRouter = router({
       return { success: true }
     }),
 
+  // ─── ACCIONES EN MASA ────────────────────────────────────────────────────
+  bulkExtendTrial: platformAdminProcedure
+    .input(
+      z.object({
+        tenantIds: z.array(z.string().uuid()).min(1).max(50),
+        days: z.number().int().min(1).max(365),
+      }),
+    )
+    .mutation(async ({ input, ctx }) => {
+      const results = await Promise.allSettled(
+        input.tenantIds.map(async (tenantId) => {
+          const { data: license } = await ctx.db
+            .from('licenses')
+            .select('id, trial_ends_at, ends_at')
+            .eq('tenant_id', tenantId)
+            .in('status', ['trial', 'active'])
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .single()
+
+          if (!license) return
+
+          const base = new Date(license.trial_ends_at ?? license.ends_at ?? new Date())
+          const newDate = new Date(base)
+          newDate.setDate(newDate.getDate() + input.days)
+          const newIso = newDate.toISOString()
+
+          await ctx.db
+            .from('licenses')
+            .update({
+              trial_ends_at: newIso,
+              ends_at: newIso,
+              updated_at: new Date().toISOString(),
+            })
+            .eq('id', license.id)
+        }),
+      )
+      const failed = results.filter((r) => r.status === 'rejected').length
+      return { success: true, processed: input.tenantIds.length, failed }
+    }),
+
+  // ─── TIMELINE DEL TENANT ─────────────────────────────────────────────────
+  getTenantTimeline: platformAdminProcedure
+    .input(z.object({ tenantId: z.string().uuid() }))
+    .query(async ({ input, ctx }) => {
+      const { data, error } = await ctx.db
+        .from('audit_logs')
+        .select('id, action, occurred_at, after_state, actor_user_id')
+        .eq('entity_id', input.tenantId)
+        .order('occurred_at', { ascending: false })
+        .limit(30)
+
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      return data ?? []
+    }),
+
+  // ─── EMAIL AL ADMIN DEL TENANT ───────────────────────────────────────────
+  sendEmailToTenant: platformAdminProcedure
+    .input(
+      z.object({
+        tenantId: z.string().uuid(),
+        subject: z.string().min(1).max(200),
+        body: z.string().min(1).max(5000),
+      }),
+    )
+    .mutation(async ({ input, ctx }) => {
+      // Buscar tenant admin
+      const { data: admin, error: adminErr } = await ctx.db
+        .from('users')
+        .select('id, email, full_name')
+        .eq('tenant_id', input.tenantId)
+        .eq('role', 'tenant_admin')
+        .eq('status', 'active')
+        .single()
+
+      if (adminErr || !admin)
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'No hay tenant_admin activo' })
+
+      const { data: tenant } = await ctx.db
+        .from('tenants')
+        .select('legal_name, trade_name')
+        .eq('id', input.tenantId)
+        .single()
+
+      const { sendPlatformEmail } = await import('@/lib/email')
+      const sent = await sendPlatformEmail({
+        to: admin.email,
+        subject: input.subject,
+        recipientName: admin.full_name ?? admin.email,
+        body: input.body,
+        tenantName: tenant?.trade_name ?? tenant?.legal_name ?? '',
+      })
+
+      if (!sent)
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: 'No se pudo enviar el email',
+        })
+
+      await ctx.db.from('audit_logs').insert({
+        actor_user_id: ctx.user.sub,
+        action: 'tenant.updated',
+        entity_type: 'tenant',
+        entity_id: input.tenantId,
+        after_state: { email_sent_to: admin.email, subject: input.subject } as unknown as AuditJson,
+      })
+
+      return { success: true, sentTo: admin.email }
+    }),
+
+  // ─── DATOS DE REVENUE ─────────────────────────────────────────────────────
+  getRevenueData: platformAdminProcedure.query(async ({ ctx }) => {
+    const db = ctx.db
+
+    const [licensesRes, plansRes, tenantsRes] = await Promise.all([
+      db
+        .from('licenses')
+        .select('id, tenant_id, status, seats_total, plan_id, starts_at, ends_at')
+        .in('status', ['active', 'trial']),
+      db.from('plans').select('id, code, name, monthly_price_per_seat_cop'),
+      db.from('tenants').select('id, legal_name, trade_name, status'),
+    ])
+
+    const licenses = licensesRes.data ?? []
+    const plans = plansRes.data ?? []
+    const tenants = tenantsRes.data ?? []
+
+    const planMap = Object.fromEntries(plans.map((p) => [p.id, p]))
+    const tenantMap = Object.fromEntries(tenants.map((t) => [t.id, t]))
+
+    const byPlan = plans.map((plan) => {
+      const planLicenses = licenses.filter((l) => l.plan_id === plan.id && l.status === 'active')
+      const seats = planLicenses.reduce((s, l) => s + (l.seats_total ?? 0), 0)
+      const mrr = seats * (plan.monthly_price_per_seat_cop ?? 0)
+      return {
+        planId: plan.id,
+        planName: plan.name,
+        planCode: plan.code,
+        seats,
+        mrr,
+        count: planLicenses.length,
+      }
+    })
+
+    const activeLicenses = licenses.filter((l) => l.status === 'active')
+    const totalMrr = activeLicenses.reduce((sum, l) => {
+      const plan = planMap[l.plan_id ?? '']
+      return sum + (l.seats_total ?? 0) * (plan?.monthly_price_per_seat_cop ?? 0)
+    }, 0)
+
+    const topTenants = activeLicenses
+      .map((l) => {
+        const plan = planMap[l.plan_id ?? '']
+        const tenant = tenantMap[l.tenant_id ?? '']
+        const mrr = (l.seats_total ?? 0) * (plan?.monthly_price_per_seat_cop ?? 0)
+        return {
+          tenantId: l.tenant_id,
+          tenantName: tenant?.trade_name ?? tenant?.legal_name ?? '—',
+          mrr,
+          seats: l.seats_total ?? 0,
+          planName: plan?.name ?? '—',
+        }
+      })
+      .sort((a, b) => b.mrr - a.mrr)
+      .slice(0, 10)
+
+    return { totalMrr, byPlan, topTenants }
+  }),
+
   // ─── IMPERSONACIÓN ────────────────────────────────────────────────────────
   impersonateTenant: platformAdminProcedure
     .input(z.object({ tenantId: z.string().uuid() }))
