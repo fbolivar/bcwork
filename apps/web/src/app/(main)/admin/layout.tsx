@@ -2,6 +2,7 @@ import { headers } from 'next/headers'
 import { redirect } from 'next/navigation'
 import { getDb } from '@/lib/db'
 import { AdminNav } from '@/features/admin/components/AdminNav'
+import { NotificationBell } from '@/features/shared/components/NotificationBell'
 
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
   const h = await headers()
@@ -25,7 +26,12 @@ export default async function AdminLayout({ children }: { children: React.ReactN
   return (
     <div className="flex min-h-screen bg-gray-50">
       <AdminNav />
-      <main className="min-w-0 flex-1 p-6 lg:p-8">{children}</main>
+      <div className="flex min-w-0 flex-1 flex-col">
+        <header className="flex h-12 shrink-0 items-center justify-end border-b border-gray-200 bg-white px-6">
+          <NotificationBell />
+        </header>
+        <main className="flex-1 overflow-y-auto p-6 lg:p-8">{children}</main>
+      </div>
     </div>
   )
 }

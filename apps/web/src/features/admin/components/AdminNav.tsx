@@ -49,7 +49,6 @@ import {
 } from 'lucide-react'
 import { trpc } from '@/lib/trpc-client'
 import { useRouter } from 'next/navigation'
-import { NotificationBell } from '@/features/shared/components/NotificationBell'
 import { useState, useEffect } from 'react'
 
 type NavItem = { href: string; label: string; icon: React.ElementType }
@@ -204,15 +203,12 @@ export function AdminNav() {
 
   return (
     <aside className="flex w-56 flex-col border-r border-gray-200 bg-white">
-      <div className="flex items-center justify-between border-b border-gray-100 px-4 py-3">
-        <div className="flex items-center gap-2.5">
-          <Image src="/brand/icon.svg" alt="BCWork" width={32} height={32} />
-          <div>
-            <span className="text-sm font-bold tracking-tight text-slate-800">BCWork</span>
-            <p className="text-xs text-gray-400">Panel de administración</p>
-          </div>
+      <div className="flex items-center gap-2.5 border-b border-gray-100 px-4 py-3">
+        <Image src="/brand/icon.svg" alt="BCWork" width={32} height={32} />
+        <div>
+          <span className="text-sm font-bold tracking-tight text-slate-800">BCWork</span>
+          <p className="text-xs text-gray-400">Panel de administración</p>
         </div>
-        <NotificationBell />
       </div>
 
       <nav className="flex-1 overflow-y-auto p-2">
