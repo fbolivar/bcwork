@@ -391,6 +391,37 @@ export const platformRouter = router({
       return { data: data ?? [], total: count ?? 0, page: input.page, pageSize: input.pageSize }
     }),
 
+  // ─── DATOS DE CRECIMIENTO ────────────────────────────────────────────────
+  getGrowthData: platformAdminProcedure.query(async ({ ctx }) => {
+    const sixMonthsAgo = new Date()
+    sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 5)
+    sixMonthsAgo.setDate(1)
+    sixMonthsAgo.setHours(0, 0, 0, 0)
+
+    const { data: tenants } = await ctx.db
+      .from('tenants')
+      .select('created_at, status')
+      .gte('created_at', sixMonthsAgo.toISOString())
+
+    // Agrupar por mes
+    const countMap: Record<string, number> = {}
+    for (const t of tenants ?? []) {
+      const key = (t.created_at ?? '').slice(0, 7)
+      if (key) countMap[key] = (countMap[key] ?? 0) + 1
+    }
+
+    // Generar los últimos 6 meses (incluye meses con 0 registros)
+    const months = Array.from({ length: 6 }, (_, i) => {
+      const d = new Date()
+      d.setMonth(d.getMonth() - (5 - i))
+      const key = d.toISOString().slice(0, 7)
+      const label = d.toLocaleDateString('es-CO', { month: 'short', year: '2-digit' })
+      return { key, label, nuevos: countMap[key] ?? 0 }
+    })
+
+    return months
+  }),
+
   // ─── TENANTS EN RIESGO ───────────────────────────────────────────────────
   getAtRiskTenants: platformAdminProcedure.query(async ({ ctx }) => {
     const db = ctx.db
