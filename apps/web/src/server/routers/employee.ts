@@ -1800,6 +1800,57 @@ export const employeeRouter = router({
             }
           }
         }
+        // Send Slack notification to the channel if configured
+        void (async () => {
+          try {
+            const { data: slackIntegration } = await ctx.db
+              .from('integrations')
+              .select('config')
+              .eq('tenant_id', ctx.user!.tid)
+              .eq('type', 'slack')
+              .eq('active', true)
+              .maybeSingle()
+
+            const slackConfig = slackIntegration?.config as
+              | Record<string, string>
+              | null
+              | undefined
+            if (!slackConfig?.webhook_url) return
+
+            const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'https://app.bcwork.co'
+            const fmt = (d: string) =>
+              new Date(d).toLocaleDateString('es-CO', {
+                day: '2-digit',
+                month: 'short',
+                year: 'numeric',
+              })
+            const { data: employee } = await ctx.db
+              .from('users')
+              .select('full_name')
+              .eq('id', ctx.user!.sub)
+              .single()
+            const employeeName =
+              (employee as { full_name?: string } | null)?.full_name ?? 'Un colaborador'
+
+            const { sendSlackMessage, buildAbsenceRequestedBlocks } =
+              await import('@/lib/integrations/slack')
+            const blocks = buildAbsenceRequestedBlocks({
+              employeeName,
+              type: input.type,
+              startDate: fmt(input.start_date),
+              endDate: fmt(input.end_date),
+              days: input.days_count,
+              appUrl,
+            })
+            await sendSlackMessage(
+              slackConfig.webhook_url,
+              `Nueva solicitud de ausencia de ${employeeName}`,
+              blocks,
+            )
+          } catch {
+            // Slack errors are non-critical
+          }
+        })()
       }
 
       return data

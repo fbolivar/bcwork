@@ -2033,20 +2033,21 @@ export const adminRouter = router({
           .select('full_name, email')
           .eq('id', req.employee_id)
           .single()
+        const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'https://app.bcwork.co'
+        const r = req as unknown as {
+          type: string
+          start_date: string
+          end_date: string
+          days_count: number
+        }
+        const fmt = (d: string) =>
+          new Date(d).toLocaleDateString('es-CO', {
+            day: '2-digit',
+            month: 'short',
+            year: 'numeric',
+          })
+
         if (emp?.email) {
-          const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'https://app.bcwork.co'
-          const r = req as unknown as {
-            type: string
-            start_date: string
-            end_date: string
-            days_count: number
-          }
-          const fmt = (d: string) =>
-            new Date(d).toLocaleDateString('es-CO', {
-              day: '2-digit',
-              month: 'short',
-              year: 'numeric',
-            })
           if (isApproved) {
             void sendAbsenceApprovedEmail({
               to: emp.email,
@@ -2070,6 +2071,52 @@ export const adminRouter = router({
             })
           }
         }
+
+        // Send Slack notification if tenant has Slack integration active
+        void (async () => {
+          try {
+            const { data: slackIntegration } = await ctx.db
+              .from('integrations')
+              .select('config')
+              .eq('tenant_id', ctx.user!.tid)
+              .eq('type', 'slack')
+              .eq('active', true)
+              .maybeSingle()
+
+            const slackConfig = slackIntegration?.config as
+              | Record<string, string>
+              | null
+              | undefined
+            if (!slackConfig?.webhook_url) return
+
+            const { data: reviewer } = await ctx.db
+              .from('users')
+              .select('full_name')
+              .eq('id', ctx.user!.sub)
+              .single()
+
+            const { sendSlackMessage, buildAbsenceReviewedBlocks } =
+              await import('@/lib/integrations/slack')
+            const blocks = buildAbsenceReviewedBlocks({
+              employeeName: emp?.full_name ?? 'Colaborador',
+              type: r.type,
+              startDate: fmt(r.start_date),
+              endDate: fmt(r.end_date),
+              days: Number(r.days_count),
+              status: isApproved ? 'approved' : 'rejected',
+              reviewerName: reviewer?.full_name ?? 'Manager',
+              note: input.manager_note ?? undefined,
+              appUrl,
+            })
+            await sendSlackMessage(
+              slackConfig.webhook_url,
+              `Ausencia ${isApproved ? 'aprobada' : 'rechazada'} para ${emp?.full_name ?? 'Colaborador'}`,
+              blocks,
+            )
+          } catch {
+            // Slack errors are non-critical; don't fail the request
+          }
+        })()
       }
 
       return { ok: true }

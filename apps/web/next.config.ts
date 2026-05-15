@@ -1,4 +1,5 @@
 import type { NextConfig } from 'next'
+import { withSentryConfig } from '@sentry/nextjs'
 
 const isDev = process.env.NODE_ENV === 'development'
 
@@ -19,8 +20,8 @@ const nextConfig: NextConfig = {
       "img-src 'self' data: blob: https://*.supabase.co",
       "font-src 'self'",
       isDev
-        ? "connect-src 'self' https://*.supabase.co wss://*.supabase.co ws://localhost:* ws://127.0.0.1:* https://www.googleapis.com https://graph.facebook.com"
-        : "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://www.googleapis.com https://graph.facebook.com",
+        ? "connect-src 'self' https://*.supabase.co wss://*.supabase.co ws://localhost:* ws://127.0.0.1:* https://www.googleapis.com https://graph.facebook.com https://*.sentry.io"
+        : "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://www.googleapis.com https://graph.facebook.com https://*.sentry.io",
       "frame-ancestors 'none'",
       "base-uri 'self'",
       "form-action 'self'",
@@ -68,4 +69,19 @@ const nextConfig: NextConfig = {
   },
 }
 
-export default nextConfig
+export default withSentryConfig(nextConfig, {
+  org: 'bcwork',
+  project: 'bcwork-web',
+
+  // Only upload source maps in CI/production to avoid slowing down local dev
+  silent: true,
+  disableLogger: true,
+
+  // Automatically tree-shake Sentry logger statements to reduce bundle size
+  widenClientFileUpload: true,
+
+  // Disable source map upload when no auth token is set
+  sourcemaps: {
+    disable: !process.env.SENTRY_AUTH_TOKEN,
+  },
+})
