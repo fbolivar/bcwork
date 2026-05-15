@@ -372,58 +372,127 @@ function IntegrationsTab() {
 
 function DangerTab() {
   const [confirm, setConfirm] = useState('')
+  const [cancelConfirm, setCancelConfirm] = useState(false)
+  const [exportDone, setExportDone] = useState(false)
+
+  const exportData = api.admin.exportData.useMutation({
+    onSuccess: (data) => {
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `bcwork-export-${new Date().toISOString().slice(0, 10)}.json`
+      a.click()
+      URL.revokeObjectURL(url)
+      setExportDone(true)
+      setTimeout(() => setExportDone(false), 4000)
+    },
+  })
+
+  const cancelSub = api.admin.cancelSubscription.useMutation({
+    onSuccess: () => {
+      setCancelConfirm(false)
+      window.location.href = '/login'
+    },
+  })
+
+  const deleteAccount = api.admin.deleteAccount.useMutation({
+    onSuccess: () => {
+      window.location.href = '/login'
+    },
+  })
 
   return (
     <div className="max-w-2xl space-y-4">
-      <div className="rounded-xl border border-red-200 bg-white p-5">
-        <h2 className="mb-1 text-sm font-semibold text-red-700">Exportar todos los datos</h2>
+      {/* Exportar */}
+      <div className="rounded-xl border border-gray-200 bg-white p-5">
+        <h2 className="mb-1 text-sm font-semibold text-gray-800">Exportar todos los datos</h2>
         <p className="mb-3 text-xs text-gray-500">
-          Descarga un archivo ZIP con toda la información de tu empresa almacenada en BCWork.
+          Descarga un archivo JSON con toda la información de tu empresa: empleados, sesiones,
+          ausencias, nómina, proyectos y más.
         </p>
+        {exportData.error && (
+          <p className="mb-2 text-xs text-red-600">{exportData.error.message}</p>
+        )}
         <button
           type="button"
-          className="rounded-lg border border-gray-200 px-4 py-2 text-sm text-gray-600 hover:bg-gray-50"
+          disabled={exportData.isPending}
+          onClick={() => exportData.mutate()}
+          className="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50"
         >
-          Solicitar exportación
+          {exportData.isPending
+            ? 'Generando exportación…'
+            : exportDone
+              ? '✓ Descarga iniciada'
+              : 'Descargar exportación'}
         </button>
       </div>
 
+      {/* Cancelar suscripción */}
       <div className="rounded-xl border border-red-200 bg-white p-5">
         <h2 className="mb-1 text-sm font-semibold text-red-700">Cancelar suscripción</h2>
         <p className="mb-3 text-xs text-gray-500">
-          Al cancelar, tu cuenta pasará a modo solo lectura al vencer el período actual. Los datos
-          se conservan 30 días antes de eliminarse.
+          Tu cuenta pasará a estado <strong>cancelado</strong>. Los datos se conservan 30 días antes
+          de eliminarse permanentemente.
         </p>
-        <button
-          type="button"
-          className="rounded-lg border border-red-200 px-4 py-2 text-sm text-red-600 hover:bg-red-50"
-        >
-          Cancelar suscripción
-        </button>
+        {cancelSub.error && <p className="mb-2 text-xs text-red-600">{cancelSub.error.message}</p>}
+        {!cancelConfirm ? (
+          <button
+            type="button"
+            onClick={() => setCancelConfirm(true)}
+            className="rounded-lg border border-red-200 px-4 py-2 text-sm text-red-600 hover:bg-red-50"
+          >
+            Cancelar suscripción
+          </button>
+        ) : (
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-gray-600">¿Confirmas la cancelación?</span>
+            <button
+              type="button"
+              disabled={cancelSub.isPending}
+              onClick={() => cancelSub.mutate()}
+              className="rounded-lg bg-red-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-red-700 disabled:opacity-50"
+            >
+              {cancelSub.isPending ? 'Cancelando…' : 'Sí, cancelar'}
+            </button>
+            <button
+              type="button"
+              onClick={() => setCancelConfirm(false)}
+              className="rounded-lg border border-gray-200 px-3 py-1.5 text-xs text-gray-600 hover:bg-gray-50"
+            >
+              No, volver
+            </button>
+          </div>
+        )}
       </div>
 
+      {/* Eliminar cuenta */}
       <div className="rounded-xl border-2 border-red-300 bg-red-50 p-5">
         <h2 className="mb-1 text-sm font-semibold text-red-800">Eliminar cuenta permanentemente</h2>
         <p className="mb-3 text-xs text-red-700">
-          Esta acción es <strong>irreversible</strong>. Se eliminarán todos los datos de tu empresa,
-          empleados, registros y configuraciones.
+          Esta acción es <strong>irreversible</strong>. Se eliminarán todos los datos: empleados,
+          registros de actividad, nómina, documentos y configuraciones.
         </p>
-        <p className="mb-2 text-xs text-gray-600">
+        <p className="mb-2 text-xs text-gray-700">
           Escribe <strong>ELIMINAR</strong> para confirmar:
         </p>
         <input
           type="text"
           value={confirm}
           onChange={(e) => setConfirm(e.target.value)}
-          className="mb-3 w-full rounded-lg border border-red-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-400"
+          className="mb-3 w-full rounded-lg border border-red-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-400"
           placeholder="ELIMINAR"
         />
+        {deleteAccount.error && (
+          <p className="mb-2 text-xs text-red-600">{deleteAccount.error.message}</p>
+        )}
         <button
           type="button"
-          disabled={confirm !== 'ELIMINAR'}
+          disabled={confirm !== 'ELIMINAR' || deleteAccount.isPending}
+          onClick={() => deleteAccount.mutate({ confirmation: 'ELIMINAR' })}
           className="rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-40"
         >
-          Eliminar cuenta
+          {deleteAccount.isPending ? 'Eliminando todo…' : 'Eliminar cuenta permanentemente'}
         </button>
       </div>
     </div>

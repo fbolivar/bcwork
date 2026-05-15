@@ -3830,4 +3830,113 @@ export const adminRouter = router({
       if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
       return { ok: true }
     }),
+
+  // ─── Zona de peligro ─────────────────────────────────────────────────────
+
+  exportData: adminProcedure.mutation(async ({ ctx }) => {
+    const tid = ctx.user!.tid
+    const db = ctx.db
+
+    const [
+      { data: tenant },
+      { data: users },
+      { data: teams },
+      { data: teamMembers },
+      { data: workSessions },
+      { data: absenceRequests },
+      { data: payrollPeriods },
+      { data: payslips },
+      { data: projects },
+      { data: projectTasks },
+      { data: trainingCourses },
+      { data: trainingEnrollments },
+      { data: devices },
+      { data: alertRules },
+      { data: auditLogs },
+    ] = await Promise.all([
+      db.from('tenants').select('*').eq('id', tid).single(),
+      db.from('users').select('*').eq('tenant_id', tid),
+      db.from('teams').select('*').eq('tenant_id', tid),
+      db.from('team_members').select('*').eq('tenant_id', tid),
+      db
+        .from('work_sessions')
+        .select('*')
+        .eq('tenant_id', tid)
+        .order('started_at', { ascending: false })
+        .limit(5000),
+      db.from('absence_requests').select('*').eq('tenant_id', tid),
+      db.from('payroll_periods').select('*').eq('tenant_id', tid),
+      db.from('payslips').select('*').eq('tenant_id', tid),
+      db.from('projects').select('*').eq('tenant_id', tid),
+      db.from('project_tasks').select('*').eq('tenant_id', tid),
+      db.from('training_courses').select('*').eq('tenant_id', tid),
+      db.from('training_enrollments').select('*').eq('tenant_id', tid),
+      db.from('agent_devices').select('*').eq('tenant_id', tid),
+      db.from('alert_rules').select('*').eq('tenant_id', tid),
+      db
+        .from('audit_logs')
+        .select('*')
+        .eq('tenant_id', tid)
+        .order('created_at', { ascending: false })
+        .limit(1000),
+    ])
+
+    await logAudit(db, {
+      tenantId: tid,
+      actorUserId: ctx.user!.sub,
+      action: 'tenant.data_exported',
+      entityType: 'tenant',
+      entityId: tid,
+      ipInet: ctx.ip,
+      userAgent: ctx.userAgent,
+    })
+
+    return {
+      exported_at: new Date().toISOString(),
+      tenant,
+      users: users ?? [],
+      teams: teams ?? [],
+      team_members: teamMembers ?? [],
+      work_sessions: workSessions ?? [],
+      absence_requests: absenceRequests ?? [],
+      payroll_periods: payrollPeriods ?? [],
+      payslips: payslips ?? [],
+      projects: projects ?? [],
+      project_tasks: projectTasks ?? [],
+      training_courses: trainingCourses ?? [],
+      training_enrollments: trainingEnrollments ?? [],
+      agent_devices: devices ?? [],
+      alert_rules: alertRules ?? [],
+      audit_logs: auditLogs ?? [],
+    }
+  }),
+
+  cancelSubscription: adminProcedure.mutation(async ({ ctx }) => {
+    const tid = ctx.user!.tid
+    const { error } = await ctx.db
+      .from('tenants')
+      .update({ status: 'cancelled', updated_at: new Date().toISOString() })
+      .eq('id', tid)
+    if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+
+    await logAudit(ctx.db, {
+      tenantId: tid,
+      actorUserId: ctx.user!.sub,
+      action: 'tenant.subscription_cancelled',
+      entityType: 'tenant',
+      entityId: tid,
+      ipInet: ctx.ip,
+      userAgent: ctx.userAgent,
+    })
+    return { ok: true }
+  }),
+
+  deleteAccount: adminProcedure
+    .input(z.object({ confirmation: z.literal('ELIMINAR') }))
+    .mutation(async ({ ctx }) => {
+      const tid = ctx.user!.tid
+      const { error } = await ctx.db.rpc('delete_tenant_data', { p_tenant_id: tid })
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      return { ok: true }
+    }),
 })
