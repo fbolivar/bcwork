@@ -10,6 +10,9 @@ import {
   Rocket,
   Puzzle,
   TrendingUp,
+  Mail,
+  Zap,
+  Megaphone,
 } from 'lucide-react'
 
 const LINKS = [
@@ -68,6 +71,27 @@ const LINKS = [
     label: 'Cohorts',
     desc: 'Retención de clientes por cohorte',
     color: 'bg-fuchsia-50 text-fuchsia-600',
+  },
+  {
+    href: '/super-admin/upsell',
+    icon: Zap,
+    label: 'Upsell',
+    desc: 'Pipeline de oportunidades de expansión',
+    color: 'bg-yellow-50 text-yellow-600',
+  },
+  {
+    href: '/super-admin/bulk-email',
+    icon: Mail,
+    label: 'Email masivo',
+    desc: 'Enviar emails segmentados a empresas',
+    color: 'bg-sky-50 text-sky-600',
+  },
+  {
+    href: '/super-admin/announcements',
+    icon: Megaphone,
+    label: 'Anuncios',
+    desc: 'Gestionar changelog y comunicados',
+    color: 'bg-pink-50 text-pink-600',
   },
   {
     href: '/super-admin/plans',

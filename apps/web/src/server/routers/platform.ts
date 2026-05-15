@@ -1426,6 +1426,411 @@ export const platformRouter = router({
     return { cohorts }
   }),
 
+  // ─── ACTIVIDAD EN TIEMPO REAL ────────────────────────────────────────────
+  getLiveActivity: platformAdminProcedure.query(async ({ ctx }) => {
+    const db = ctx.db
+    const since = new Date(Date.now() - 15 * 60 * 1000).toISOString()
+    const yesterdaySince = new Date(Date.now() - 15 * 60 * 1000 - 24 * 60 * 60 * 1000).toISOString()
+    const yesterdayUntil = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
+
+    const [sessionsRes, yesterdayRes, tenantsRes] = await Promise.all([
+      db
+        .from('work_sessions')
+        .select('tenant_id, user_id, started_at, status')
+        .or(`status.eq.open,ended_at.gte.${since}`)
+        .gte('started_at', new Date(Date.now() - 8 * 60 * 60 * 1000).toISOString()),
+      db
+        .from('work_sessions')
+        .select('tenant_id, user_id')
+        .gte('started_at', yesterdaySince)
+        .lte('started_at', yesterdayUntil),
+      db.from('tenants').select('id, trade_name, legal_name, status'),
+    ])
+
+    const sessions = sessionsRes.data ?? []
+    const yesterdaySessions = yesterdayRes.data ?? []
+    const tenants = tenantsRes.data ?? []
+
+    type LiveTenantStat = { userIds: Set<string>; lastSeen: string }
+    const now: Record<string, LiveTenantStat> = {}
+    for (const s of sessions) {
+      if (!now[s.tenant_id]) now[s.tenant_id] = { userIds: new Set(), lastSeen: s.started_at }
+      now[s.tenant_id]!.userIds.add(s.user_id)
+      if (s.started_at > now[s.tenant_id]!.lastSeen) now[s.tenant_id]!.lastSeen = s.started_at
+    }
+
+    const yesterday: Record<string, Set<string>> = {}
+    for (const s of yesterdaySessions) {
+      if (!yesterday[s.tenant_id]) yesterday[s.tenant_id] = new Set()
+      yesterday[s.tenant_id]!.add(s.user_id)
+    }
+
+    const tenantMap = Object.fromEntries(tenants.map((t) => [t.id, t]))
+
+    const active = Object.entries(now)
+      .map(([tenantId, stat]) => {
+        const t = tenantMap[tenantId]
+        return {
+          tenantId,
+          tenantName: t?.trade_name ?? t?.legal_name ?? tenantId,
+          tenantStatus: t?.status ?? 'unknown',
+          activeUsers: stat.userIds.size,
+          yesterdayUsers: yesterday[tenantId]?.size ?? 0,
+          lastSeen: stat.lastSeen,
+        }
+      })
+      .sort((a, b) => b.activeUsers - a.activeUsers)
+
+    return {
+      activeTenants: active.length,
+      totalActiveUsers: active.reduce((s, t) => s + t.activeUsers, 0),
+      tenants: active,
+    }
+  }),
+
+  // ─── EMAIL MASIVO POR SEGMENTO ────────────────────────────────────────────
+  getBulkEmailTargets: platformAdminProcedure
+    .input(
+      z.object({
+        tags: z.array(z.string()).optional(),
+        status: z.enum(['active', 'trial', 'suspended', 'cancelled']).optional(),
+        planCode: z.string().optional(),
+      }),
+    )
+    .query(async ({ ctx, input }) => {
+      const db = ctx.db
+
+      let q = db.from('tenants').select('id, trade_name, legal_name, contact_email, status, tags')
+
+      if (input.status) q = q.eq('status', input.status)
+      if (input.tags && input.tags.length > 0) q = q.overlaps('tags', input.tags)
+
+      const { data: tenants } = await q
+
+      let filtered = tenants ?? []
+
+      if (input.planCode) {
+        const { data: licenses } = await db
+          .from('licenses')
+          .select('tenant_id, plan_id')
+          .eq('status', 'active')
+        const { data: plans } = await db.from('plans').select('id, code').eq('code', input.planCode)
+        const planIds = new Set((plans ?? []).map((p) => p.id))
+        const tenantIds = new Set(
+          (licenses ?? []).filter((l) => planIds.has(l.plan_id)).map((l) => l.tenant_id),
+        )
+        filtered = filtered.filter((t) => tenantIds.has(t.id))
+      }
+
+      return filtered.map((t) => ({
+        id: t.id,
+        name: t.trade_name ?? t.legal_name,
+        email: t.contact_email,
+        status: t.status,
+        tags: (t.tags as string[] | null) ?? [],
+      }))
+    }),
+
+  sendBulkEmail: platformAdminProcedure
+    .input(
+      z.object({
+        tenantIds: z.array(z.string().uuid()).min(1).max(500),
+        subject: z.string().min(2).max(200),
+        body: z.string().min(10).max(10000),
+        channel: z.enum(['email']).default('email'),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const db = ctx.db
+      const { sendPlatformEmail } = await import('@/lib/email')
+
+      const { data: tenants } = await db
+        .from('tenants')
+        .select('id, trade_name, legal_name, contact_email')
+        .in('id', input.tenantIds)
+
+      let sent = 0
+      let failed = 0
+
+      for (const tenant of tenants ?? []) {
+        try {
+          const name = tenant.trade_name ?? tenant.legal_name
+          await sendPlatformEmail({
+            to: tenant.contact_email,
+            subject: input.subject,
+            recipientName: name,
+            body: input.body,
+            tenantName: name,
+          })
+          await db.from('tenant_communications').insert({
+            tenant_id: tenant.id,
+            channel: 'email',
+            subject: input.subject,
+            body: input.body,
+            sent_by: ctx.user.email ?? 'platform_admin',
+          })
+          sent++
+        } catch {
+          failed++
+        }
+      }
+
+      return { sent, failed, total: (tenants ?? []).length }
+    }),
+
+  // ─── PIPELINE DE UPSELL ───────────────────────────────────────────────────
+  getUpsellPipeline: platformAdminProcedure.query(async ({ ctx }) => {
+    const db = ctx.db
+
+    const [tenantsRes, licensesRes, plansRes, usersRes, sessionsRes] = await Promise.all([
+      db.from('tenants').select('id, trade_name, legal_name, status, tags'),
+      db
+        .from('licenses')
+        .select('id, tenant_id, plan_id, seats_total, status')
+        .eq('status', 'active'),
+      db.from('plans').select('id, code, name, monthly_price_per_seat_cop'),
+      db.from('users').select('id, tenant_id, status').neq('role', 'platform_admin'),
+      db
+        .from('work_sessions')
+        .select('tenant_id, user_id')
+        .gte('started_at', new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()),
+    ])
+
+    const tenants = tenantsRes.data ?? []
+    const licenses = licensesRes.data ?? []
+    const plans = plansRes.data ?? []
+    const users = usersRes.data ?? []
+    const sessions = sessionsRes.data ?? []
+
+    const planMap = Object.fromEntries(plans.map((p) => [p.id, p]))
+    const tenantMap = Object.fromEntries(tenants.map((t) => [t.id, t]))
+
+    type UserCount = { total: number; active: number }
+    const usersByTenant: Record<string, UserCount> = {}
+    for (const u of users) {
+      if (!u.tenant_id) continue
+      if (!usersByTenant[u.tenant_id]) usersByTenant[u.tenant_id] = { total: 0, active: 0 }
+      const ust = usersByTenant[u.tenant_id] as UserCount
+      ust.total++
+      if (u.status === 'active') ust.active++
+    }
+
+    type SessionCount = { count: number }
+    const sessionsByTenant: Record<string, SessionCount> = {}
+    for (const s of sessions) {
+      if (!sessionsByTenant[s.tenant_id]) sessionsByTenant[s.tenant_id] = { count: 0 }
+      ;(sessionsByTenant[s.tenant_id] as SessionCount).count++
+    }
+
+    const opportunities: {
+      tenantId: string
+      tenantName: string
+      type: 'seat_expansion' | 'plan_upgrade' | 'reactivation'
+      priority: 'high' | 'medium' | 'low'
+      currentPlan: string
+      seats: { used: number; total: number }
+      weeklyActivity: number
+      tags: string[]
+      notes: string
+    }[] = []
+
+    for (const license of licenses) {
+      const tenant = tenantMap[license.tenant_id]
+      if (!tenant) continue
+      const plan = planMap[license.plan_id]
+      const usedSeats = (usersByTenant[license.tenant_id] as UserCount | undefined)?.active ?? 0
+      const utilization = license.seats_total > 0 ? usedSeats / license.seats_total : 0
+      const weeklyActivity =
+        (sessionsByTenant[license.tenant_id] as SessionCount | undefined)?.count ?? 0
+
+      if (utilization >= 0.8) {
+        opportunities.push({
+          tenantId: license.tenant_id,
+          tenantName: tenant.trade_name ?? tenant.legal_name,
+          type: 'seat_expansion',
+          priority: utilization >= 0.95 ? 'high' : 'medium',
+          currentPlan: plan?.code ?? 'unknown',
+          seats: { used: usedSeats, total: license.seats_total },
+          weeklyActivity,
+          tags: (tenant.tags as string[] | null) ?? [],
+          notes: `${Math.round(utilization * 100)}% de capacidad utilizada`,
+        })
+      } else if (weeklyActivity > 50 && plan?.code === 'basic') {
+        opportunities.push({
+          tenantId: license.tenant_id,
+          tenantName: tenant.trade_name ?? tenant.legal_name,
+          type: 'plan_upgrade',
+          priority: weeklyActivity > 100 ? 'high' : 'medium',
+          currentPlan: plan.code,
+          seats: { used: usedSeats, total: license.seats_total },
+          weeklyActivity,
+          tags: (tenant.tags as string[] | null) ?? [],
+          notes: `Alta actividad (${weeklyActivity} sesiones/semana) en plan básico`,
+        })
+      }
+    }
+
+    const cancelledTenants = tenants.filter((t) => t.status === 'cancelled')
+    for (const tenant of cancelledTenants) {
+      opportunities.push({
+        tenantId: tenant.id,
+        tenantName: tenant.trade_name ?? tenant.legal_name,
+        type: 'reactivation',
+        priority: 'low',
+        currentPlan: 'cancelled',
+        seats: { used: 0, total: 0 },
+        weeklyActivity: 0,
+        tags: (tenant.tags as string[] | null) ?? [],
+        notes: 'Cuenta cancelada — candidato a reactivación',
+      })
+    }
+
+    const priorityOrder = { high: 0, medium: 1, low: 2 }
+    opportunities.sort((a, b) => priorityOrder[a.priority] - priorityOrder[b.priority])
+
+    return {
+      total: opportunities.length,
+      high: opportunities.filter((o) => o.priority === 'high').length,
+      medium: opportunities.filter((o) => o.priority === 'medium').length,
+      low: opportunities.filter((o) => o.priority === 'low').length,
+      items: opportunities,
+    }
+  }),
+
+  // ─── ANUNCIOS PLATAFORMA ─────────────────────────────────────────────────
+  getAdminAnnouncements: platformAdminProcedure.query(async ({ ctx }) => {
+    const { data } = await ctx.db
+      .from('platform_announcements')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(50)
+    return data ?? []
+  }),
+
+  createAnnouncement: platformAdminProcedure
+    .input(
+      z.object({
+        title: z.string().min(2).max(200),
+        body: z.string().min(5).max(5000),
+        type: z.enum(['info', 'warning', 'feature', 'maintenance']).default('info'),
+        ctaLabel: z.string().max(80).optional(),
+        ctaUrl: z.string().url().optional(),
+        targetAll: z.boolean().default(true),
+        targetPlans: z.array(z.string()).default([]),
+        targetTags: z.array(z.string()).default([]),
+        pinned: z.boolean().default(false),
+        expiresAt: z.string().datetime().optional(),
+        publishNow: z.boolean().default(false),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { data, error } = await ctx.db
+        .from('platform_announcements')
+        .insert({
+          title: input.title,
+          body: input.body,
+          type: input.type,
+          cta_label: input.ctaLabel ?? null,
+          cta_url: input.ctaUrl ?? null,
+          target_all: input.targetAll,
+          target_plans: input.targetPlans,
+          target_tags: input.targetTags,
+          pinned: input.pinned,
+          expires_at: input.expiresAt ?? null,
+          is_published: input.publishNow,
+          published_at: input.publishNow ? new Date().toISOString() : null,
+          created_by: ctx.user.sub,
+        })
+        .select('id')
+        .single()
+
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      return { id: data.id }
+    }),
+
+  updateAnnouncement: platformAdminProcedure
+    .input(
+      z.object({
+        id: z.string().uuid(),
+        title: z.string().min(2).max(200).optional(),
+        body: z.string().min(5).max(5000).optional(),
+        type: z.enum(['info', 'warning', 'feature', 'maintenance']).optional(),
+        ctaLabel: z.string().max(80).nullable().optional(),
+        ctaUrl: z.string().url().nullable().optional(),
+        pinned: z.boolean().optional(),
+        expiresAt: z.string().datetime().nullable().optional(),
+        isPublished: z.boolean().optional(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { id, ...rest } = input
+      type AnnUpdate = Database['public']['Tables']['platform_announcements']['Update']
+      const patch: AnnUpdate = { updated_at: new Date().toISOString() }
+      if (rest.title !== undefined) patch.title = rest.title
+      if (rest.body !== undefined) patch.body = rest.body
+      if (rest.type !== undefined) patch.type = rest.type
+      if (rest.ctaLabel !== undefined) patch.cta_label = rest.ctaLabel
+      if (rest.ctaUrl !== undefined) patch.cta_url = rest.ctaUrl
+      if (rest.pinned !== undefined) patch.pinned = rest.pinned
+      if (rest.expiresAt !== undefined) patch.expires_at = rest.expiresAt
+      if (rest.isPublished !== undefined) {
+        patch.is_published = rest.isPublished
+        if (rest.isPublished) patch.published_at = new Date().toISOString()
+      }
+
+      const { error } = await ctx.db.from('platform_announcements').update(patch).eq('id', id)
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      return { ok: true }
+    }),
+
+  deleteAnnouncement: platformAdminProcedure
+    .input(z.object({ id: z.string().uuid() }))
+    .mutation(async ({ ctx, input }) => {
+      const { error } = await ctx.db.from('platform_announcements').delete().eq('id', input.id)
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      return { ok: true }
+    }),
+
+  getActiveAnnouncements: platformAdminProcedure
+    .input(
+      z.object({
+        tenantPlan: z.string().optional(),
+        tenantTags: z.array(z.string()).optional(),
+      }),
+    )
+    .query(async ({ ctx, input }) => {
+      const now = new Date().toISOString()
+      const { data } = await ctx.db
+        .from('platform_announcements')
+        .select('*')
+        .eq('is_published', true)
+        .lte('published_at', now)
+        .or(`expires_at.is.null,expires_at.gte.${now}`)
+        .order('pinned', { ascending: false })
+        .order('published_at', { ascending: false })
+        .limit(10)
+
+      const announcements = data ?? []
+
+      const filtered = announcements.filter((a) => {
+        if (a.target_all) return true
+        if (
+          input.tenantPlan &&
+          (a.target_plans as string[]).length > 0 &&
+          (a.target_plans as string[]).includes(input.tenantPlan)
+        )
+          return true
+        if (
+          input.tenantTags &&
+          (a.target_tags as string[]).some((tag) => input.tenantTags!.includes(tag))
+        )
+          return true
+        return false
+      })
+
+      return filtered
+    }),
+
   // ─── IMPERSONACIÓN ────────────────────────────────────────────────────────
   impersonateTenant: platformAdminProcedure
     .input(z.object({ tenantId: z.string().uuid() }))

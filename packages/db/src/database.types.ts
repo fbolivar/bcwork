@@ -4389,6 +4389,63 @@ export type Database = {
           },
         ]
       }
+      platform_announcements: {
+        Row: {
+          id: string
+          created_by: string | null
+          title: string
+          body: string
+          type: string
+          cta_label: string | null
+          cta_url: string | null
+          target_all: boolean
+          target_plans: string[]
+          target_tags: string[]
+          is_published: boolean
+          pinned: boolean
+          published_at: string | null
+          expires_at: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          created_by?: string | null
+          title: string
+          body: string
+          type?: string
+          cta_label?: string | null
+          cta_url?: string | null
+          target_all?: boolean
+          target_plans?: string[]
+          target_tags?: string[]
+          is_published?: boolean
+          pinned?: boolean
+          published_at?: string | null
+          expires_at?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          created_by?: string | null
+          title?: string
+          body?: string
+          type?: string
+          cta_label?: string | null
+          cta_url?: string | null
+          target_all?: boolean
+          target_plans?: string[]
+          target_tags?: string[]
+          is_published?: boolean
+          pinned?: boolean
+          published_at?: string | null
+          expires_at?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       tenant_communications: {
         Row: {
           body: string

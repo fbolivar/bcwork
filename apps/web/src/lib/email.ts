@@ -384,3 +384,68 @@ export async function sendPlatformAdminAlert({
     html: baseHtml('Alerta de plataforma', body),
   })
 }
+
+// ─── Email: Reporte semanal super-admin ──────────────────────────────────────
+
+export async function sendPlatformWeeklyDigest({
+  adminEmail,
+  week,
+  newSignups,
+  mrrCop,
+  mrrDeltaCop,
+  activeTenants,
+  trialTenants,
+  atRiskTenants,
+  renewalsThisWeek,
+}: {
+  adminEmail: string
+  week: string
+  newSignups: number
+  mrrCop: number
+  mrrDeltaCop: number
+  activeTenants: number
+  trialTenants: number
+  atRiskTenants: number
+  renewalsThisWeek: number
+}) {
+  const resend = getResend()
+  if (!resend) return null
+
+  const fmt = (n: number) =>
+    n >= 1_000_000
+      ? `$${(n / 1_000_000).toFixed(1)}M`
+      : n >= 1_000
+        ? `$${(n / 1_000).toFixed(0)}K`
+        : `$${n}`
+
+  const delta = mrrDeltaCop >= 0 ? `+${fmt(mrrDeltaCop)}` : fmt(mrrDeltaCop)
+  const deltaColor = mrrDeltaCop >= 0 ? '#16a34a' : '#dc2626'
+
+  const body = `
+    ${h1('Resumen semanal de plataforma')}
+    ${p(`Semana del ${week}`)}
+
+    <table cellpadding="0" cellspacing="0" style="margin:0 0 24px;width:100%;border:1px solid #e2e8f0;border-radius:12px;overflow:hidden;">
+      <tr style="background:#f8fafc;">
+        <td style="padding:12px 16px;font-size:13px;color:#64748b;font-weight:600;">Métrica</td>
+        <td style="padding:12px 16px;font-size:13px;color:#64748b;font-weight:600;text-align:right;">Valor</td>
+      </tr>
+      ${infoRow('Nuevos registros', `${newSignups} empresa${newSignups !== 1 ? 's' : ''}`)}
+      ${infoRow('MRR actual', `${fmt(mrrCop)} COP`)}
+      ${infoRow('Variación MRR', `<span style="color:${deltaColor};font-weight:600;">${delta} COP</span>`)}
+      ${infoRow('Tenants activos', `${activeTenants}`)}
+      ${infoRow('En trial', `${trialTenants}`)}
+      ${infoRow('En riesgo', atRiskTenants > 0 ? `<span style="color:#dc2626;font-weight:600;">${atRiskTenants}</span>` : '0')}
+      ${infoRow('Renovaciones esta semana', renewalsThisWeek > 0 ? `${badge(`${renewalsThisWeek} renovaciones`, 'blue')}` : '0')}
+    </table>
+
+    ${ctaButton('Ver panel super-admin', `${process.env.NEXT_PUBLIC_APP_URL ?? 'https://app.bcwork.co'}/super-admin`)}
+  `
+
+  return resend.emails.send({
+    from: FROM,
+    to: adminEmail,
+    subject: `[BCWork] Resumen semanal — ${week} · ${newSignups} nuevos · MRR ${fmt(mrrCop)}`,
+    html: baseHtml('Resumen semanal BCWork', body),
+  })
+}

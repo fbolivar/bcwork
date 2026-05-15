@@ -15,6 +15,9 @@ import {
   Rocket,
   Puzzle,
   TrendingUp,
+  Mail,
+  Zap,
+  Megaphone,
 } from 'lucide-react'
 import { cn } from '@bcwork/ui'
 import { trpc } from '@/lib/trpc-client'
@@ -28,6 +31,9 @@ const NAV = [
   { href: '/super-admin/onboarding', label: 'Onboarding', icon: Rocket },
   { href: '/super-admin/features', label: 'Features', icon: Puzzle },
   { href: '/super-admin/cohorts', label: 'Cohorts', icon: TrendingUp },
+  { href: '/super-admin/upsell', label: 'Upsell', icon: Zap },
+  { href: '/super-admin/bulk-email', label: 'Email masivo', icon: Mail },
+  { href: '/super-admin/announcements', label: 'Anuncios', icon: Megaphone },
   { href: '/super-admin/plans', label: 'Planes', icon: CreditCard },
   { href: '/super-admin/audit', label: 'Auditoría', icon: ScrollText },
 ]

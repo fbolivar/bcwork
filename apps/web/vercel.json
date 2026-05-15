@@ -15,6 +15,10 @@
     {
       "path": "/api/cron/platform-alerts",
       "schedule": "0 9 * * *"
+    },
+    {
+      "path": "/api/cron/platform-weekly",
+      "schedule": "0 7 * * 1"
     }
   ]
 }
