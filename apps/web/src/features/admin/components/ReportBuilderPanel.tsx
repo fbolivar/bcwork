@@ -2,24 +2,62 @@
 
 import { useState } from 'react'
 import { trpc as api } from '@/lib/trpc-client'
-import { BarChart2, Download, Play, Calendar } from 'lucide-react'
+import {
+  BarChart2,
+  Download,
+  Play,
+  Calendar,
+  LayoutDashboard,
+  Clock,
+  TrendingUp,
+  CalendarOff,
+  DollarSign,
+} from 'lucide-react'
 
 type ReportType = 'overview' | 'attendance' | 'productivity' | 'absences' | 'payroll'
 
-const REPORT_TYPES: { value: ReportType; label: string; description: string }[] = [
+const REPORT_TYPES: {
+  value: ReportType
+  label: string
+  description: string
+  icon: React.ElementType
+  columns: string
+}[] = [
   {
     value: 'overview',
     label: 'Resumen general',
     description: 'Horas + productividad por empleado',
+    icon: LayoutDashboard,
+    columns: 'Nombre, Departamento, Cargo, Horas totales, Productividad %',
   },
-  { value: 'attendance', label: 'Asistencia', description: 'Sesiones de trabajo detalladas' },
+  {
+    value: 'attendance',
+    label: 'Asistencia',
+    description: 'Sesiones de trabajo detalladas',
+    icon: Clock,
+    columns: 'Empleado, Inicio, Fin, Duración',
+  },
   {
     value: 'productivity',
     label: 'Productividad',
     description: 'Métricas diarias de productividad',
+    icon: TrendingUp,
+    columns: 'Empleado, Fecha, Segundos productivos',
   },
-  { value: 'absences', label: 'Ausencias', description: 'Todas las ausencias aprobadas' },
-  { value: 'payroll', label: 'Nómina', description: 'Colillas de pago del período' },
+  {
+    value: 'absences',
+    label: 'Ausencias',
+    description: 'Todas las ausencias aprobadas',
+    icon: CalendarOff,
+    columns: 'Empleado, Inicio, Fin, Tipo, Estado',
+  },
+  {
+    value: 'payroll',
+    label: 'Nómina',
+    description: 'Colillas de pago del período',
+    icon: DollarSign,
+    columns: 'Empleado, Período, Bruto, Deducciones, Neto',
+  },
 ]
 
 function toISO(date: string) {
@@ -97,89 +135,116 @@ export function ReportBuilderPanel() {
     net_amount: 'Neto',
   }
 
+  const selected = REPORT_TYPES.find((r) => r.value === reportType)!
+
   return (
     <div className="space-y-5">
       {/* Configuración */}
       <div className="rounded-xl border border-gray-100 bg-white p-5">
-        <div className="mb-4 flex items-center gap-2">
-          <BarChart2 className="h-4 w-4 text-blue-500" />
-          <h3 className="text-sm font-semibold text-gray-700">Configurar informe</h3>
+        {/* Paso 1 */}
+        <div className="mb-5">
+          <p className="mb-3 text-xs font-semibold uppercase tracking-widest text-gray-400">
+            1 · Elige el tipo de informe
+          </p>
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
+            {REPORT_TYPES.map((rt) => {
+              const Icon = rt.icon
+              const active = reportType === rt.value
+              return (
+                <button
+                  key={rt.value}
+                  type="button"
+                  onClick={() => {
+                    setReportType(rt.value)
+                    setEnabled(false)
+                  }}
+                  className={`rounded-lg border p-3 text-left transition-colors ${
+                    active ? 'border-blue-300 bg-blue-50' : 'border-gray-100 hover:bg-gray-50'
+                  }`}
+                >
+                  <Icon
+                    className={`mb-1.5 h-4 w-4 ${active ? 'text-blue-600' : 'text-gray-400'}`}
+                  />
+                  <p
+                    className={`text-xs font-semibold ${active ? 'text-blue-700' : 'text-gray-700'}`}
+                  >
+                    {rt.label}
+                  </p>
+                  <p className="mt-0.5 text-[10px] text-gray-400">{rt.description}</p>
+                </button>
+              )
+            })}
+          </div>
+          {/* Columnas del tipo seleccionado */}
+          <p className="mt-2 text-[11px] text-gray-400">
+            <span className="font-medium text-gray-500">Columnas:</span> {selected.columns}
+          </p>
         </div>
 
-        {/* Selector de tipo */}
-        <div className="mb-4 grid grid-cols-2 gap-2 sm:grid-cols-5">
-          {REPORT_TYPES.map((rt) => (
+        {/* Paso 2 */}
+        <div className="mb-5">
+          <p className="mb-3 text-xs font-semibold uppercase tracking-widest text-gray-400">
+            2 · Selecciona el rango de fechas
+          </p>
+          <div className="flex flex-wrap items-end gap-3">
+            <div>
+              <label className="mb-1 block text-xs text-gray-500">
+                <Calendar className="mr-1 inline h-3 w-3" />
+                Desde
+              </label>
+              <input
+                type="date"
+                value={dateFrom}
+                title="Fecha desde"
+                onChange={(e) => {
+                  setDateFrom(e.target.value)
+                  setEnabled(false)
+                }}
+                className="rounded-lg border border-gray-200 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-300"
+              />
+            </div>
+            <div>
+              <label className="mb-1 block text-xs text-gray-500">Hasta</label>
+              <input
+                type="date"
+                value={dateTo}
+                title="Fecha hasta"
+                onChange={(e) => {
+                  setDateTo(e.target.value)
+                  setEnabled(false)
+                }}
+                className="rounded-lg border border-gray-200 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-300"
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* Paso 3 */}
+        <div>
+          <p className="mb-3 text-xs font-semibold uppercase tracking-widest text-gray-400">
+            3 · Genera y exporta
+          </p>
+          <div className="flex flex-wrap gap-2">
             <button
-              key={rt.value}
               type="button"
-              onClick={() => {
-                setReportType(rt.value)
-                setEnabled(false)
-              }}
-              className={`rounded-lg border p-3 text-left transition-colors ${
-                reportType === rt.value
-                  ? 'border-blue-300 bg-blue-50'
-                  : 'border-gray-100 hover:bg-gray-50'
-              }`}
+              onClick={run}
+              disabled={isFetching}
+              className="flex items-center gap-1.5 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
             >
-              <p
-                className={`text-xs font-semibold ${reportType === rt.value ? 'text-blue-700' : 'text-gray-700'}`}
+              <Play className="h-3.5 w-3.5" />
+              {isFetching ? 'Generando...' : 'Generar informe'}
+            </button>
+            {rows.length > 0 && (
+              <button
+                type="button"
+                onClick={() => downloadCSV(rows, `bcwork-${reportType}-${dateFrom}-${dateTo}.csv`)}
+                className="flex items-center gap-1.5 rounded-lg border border-gray-200 px-4 py-2 text-sm text-gray-600 hover:bg-gray-50"
               >
-                {rt.label}
-              </p>
-              <p className="mt-0.5 text-[10px] text-gray-400">{rt.description}</p>
-            </button>
-          ))}
-        </div>
-
-        {/* Rango de fechas */}
-        <div className="flex flex-wrap items-end gap-3">
-          <div>
-            <label className="mb-1 block text-xs text-gray-500">
-              <Calendar className="mr-1 inline h-3 w-3" />
-              Desde
-            </label>
-            <input
-              type="date"
-              value={dateFrom}
-              onChange={(e) => {
-                setDateFrom(e.target.value)
-                setEnabled(false)
-              }}
-              className="rounded-lg border border-gray-200 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-300"
-            />
+                <Download className="h-3.5 w-3.5" />
+                Exportar CSV
+              </button>
+            )}
           </div>
-          <div>
-            <label className="mb-1 block text-xs text-gray-500">Hasta</label>
-            <input
-              type="date"
-              value={dateTo}
-              onChange={(e) => {
-                setDateTo(e.target.value)
-                setEnabled(false)
-              }}
-              className="rounded-lg border border-gray-200 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-300"
-            />
-          </div>
-          <button
-            type="button"
-            onClick={run}
-            disabled={isFetching}
-            className="flex items-center gap-1.5 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
-          >
-            <Play className="h-3.5 w-3.5" />
-            {isFetching ? 'Generando...' : 'Generar'}
-          </button>
-          {rows.length > 0 && (
-            <button
-              type="button"
-              onClick={() => downloadCSV(rows, `bcwork-${reportType}-${dateFrom}-${dateTo}.csv`)}
-              className="flex items-center gap-1.5 rounded-lg border border-gray-200 px-4 py-2 text-sm text-gray-600 hover:bg-gray-50"
-            >
-              <Download className="h-3.5 w-3.5" />
-              Exportar CSV
-            </button>
-          )}
         </div>
       </div>
 
