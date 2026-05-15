@@ -138,7 +138,6 @@ const GROUPS: NavGroup[] = [
       { href: '/admin/metrics', label: 'Métricas', icon: BarChart2 },
       { href: '/admin/alerts', label: 'Alertas', icon: Bell },
       { href: '/admin/audit', label: 'Auditoría', icon: Shield },
-      { href: '/admin/integrations', label: 'Integraciones', icon: Plug },
     ],
   },
   {
