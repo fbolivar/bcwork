@@ -44,7 +44,6 @@ import {
   ShieldCheck,
   CreditCard,
   UserSearch,
-  BotMessageSquare,
 } from 'lucide-react'
 import { trpc } from '@/lib/trpc-client'
 import { useRouter } from 'next/navigation'
@@ -90,7 +89,6 @@ const NAV = [
   { href: '/admin/audit', label: 'Auditoría', icon: Shield },
   { href: '/admin/recruitment', label: 'Reclutamiento', icon: UserSearch },
   { href: '/admin/billing', label: 'Facturación', icon: CreditCard },
-  { href: '/admin/ai-assistant', label: 'Asistente HR', icon: BotMessageSquare },
   { href: '/admin/settings', label: 'Configuración', icon: Settings },
   { href: '/admin/downloads', label: 'Descargas', icon: Download },
 ]
