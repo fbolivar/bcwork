@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getDb } from '@/lib/db'
 import { dispatchWebhook } from '@/lib/webhooks'
+import { sendTeamsNotification } from '@/lib/integrations/teams'
+import { sendWhatsAppMessage } from '@/lib/integrations/whatsapp'
 
 export async function GET(req: NextRequest) {
   const secret = req.headers.get('authorization')
@@ -42,7 +44,7 @@ export async function GET(req: NextRequest) {
     notifications = alertData as number
     console.log(`[cron] evaluate_alerts created ${notifications} notifications`)
 
-    // Disparar webhooks de alerta si se generaron notificaciones
+    // Disparar webhooks, Teams y WhatsApp si se generaron notificaciones
     if (notifications > 0) {
       const { data: tenants } = await db.from('tenants').select('id').eq('status', 'active')
       await Promise.allSettled(
@@ -50,6 +52,31 @@ export async function GET(req: NextRequest) {
           dispatchWebhook(t.id, 'alert.fired', { date, notifications_count: notifications }),
         ),
       )
+
+      const [{ data: teamsRows }, { data: waRows }] = await Promise.all([
+        db.from('integrations').select('config').eq('type', 'teams').eq('active', true),
+        db.from('integrations').select('config').eq('type', 'whatsapp').eq('active', true),
+      ])
+
+      const msg = `Se generaron ${notifications} alerta(s) para el ${date}. Revisa el panel BCWork.`
+      await Promise.allSettled([
+        ...(teamsRows ?? []).map((r) => {
+          const c = r.config as { webhook_url?: string }
+          return c.webhook_url
+            ? sendTeamsNotification(c.webhook_url, 'BCWork — Alertas disparadas', msg)
+            : Promise.resolve()
+        }),
+        ...(waRows ?? []).map((r) => {
+          const c = r.config as {
+            phone_number_id?: string
+            access_token?: string
+            to_phone?: string
+          }
+          return c.phone_number_id && c.access_token && c.to_phone
+            ? sendWhatsAppMessage(c.phone_number_id, c.access_token, c.to_phone, `BCWork: ${msg}`)
+            : Promise.resolve()
+        }),
+      ])
     }
   }
 

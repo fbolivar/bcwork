@@ -2147,7 +2147,17 @@ export const adminRouter = router({
   saveIntegration: adminProcedure
     .input(
       z.object({
-        type: z.enum(['slack', 'jira', 'asana', 'github', 'trello', 'webhook']),
+        type: z.enum([
+          'slack',
+          'jira',
+          'asana',
+          'github',
+          'trello',
+          'webhook',
+          'teams',
+          'whatsapp',
+          'google_calendar',
+        ]),
         label: z.string().max(100).optional(),
         config: z.record(z.string()),
         active: z.boolean().default(true),

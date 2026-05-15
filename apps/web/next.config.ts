@@ -16,11 +16,11 @@ const nextConfig: NextConfig = {
         ? "script-src 'self' 'unsafe-eval' 'unsafe-inline'"
         : "script-src 'self' 'unsafe-inline'",
       "style-src 'self' 'unsafe-inline'",
-      "img-src 'self' data: blob:",
+      "img-src 'self' data: blob: https://*.supabase.co",
       "font-src 'self'",
       isDev
-        ? "connect-src 'self' https://*.supabase.co wss://*.supabase.co ws://localhost:* ws://127.0.0.1:*"
-        : "connect-src 'self' https://*.supabase.co wss://*.supabase.co",
+        ? "connect-src 'self' https://*.supabase.co wss://*.supabase.co ws://localhost:* ws://127.0.0.1:* https://www.googleapis.com https://graph.facebook.com"
+        : "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://www.googleapis.com https://graph.facebook.com",
       "frame-ancestors 'none'",
       "base-uri 'self'",
       "form-action 'self'",

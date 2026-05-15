@@ -103,6 +103,70 @@ const INTEGRATION_DEFS = {
     ],
     docsUrl: '',
   },
+  teams: {
+    label: 'Microsoft Teams',
+    description: 'Recibe alertas y notificaciones críticas en canales de Teams.',
+    color: 'bg-indigo-100',
+    textColor: 'text-indigo-700',
+    fields: [
+      {
+        key: 'webhook_url',
+        label: 'Incoming Webhook URL',
+        type: 'url',
+        placeholder: 'https://outlook.office.com/webhook/...',
+      },
+    ],
+    docsUrl:
+      'https://learn.microsoft.com/microsoftteams/platform/webhooks-and-connectors/how-to/add-incoming-webhook',
+  },
+  whatsapp: {
+    label: 'WhatsApp Business',
+    description: 'Envía alertas críticas al teléfono del administrador vía WhatsApp.',
+    color: 'bg-green-100',
+    textColor: 'text-green-700',
+    fields: [
+      {
+        key: 'phone_number_id',
+        label: 'Phone Number ID',
+        type: 'text',
+        placeholder: '123456789012345',
+      },
+      {
+        key: 'access_token',
+        label: 'Access Token (Meta)',
+        type: 'password',
+        placeholder: 'EAABs...',
+      },
+      {
+        key: 'to_phone',
+        label: 'Teléfono destino (con código de país)',
+        type: 'text',
+        placeholder: '573001234567',
+      },
+    ],
+    docsUrl: 'https://developers.facebook.com/docs/whatsapp/cloud-api/get-started',
+  },
+  google_calendar: {
+    label: 'Google Calendar',
+    description: 'Importa eventos (vacaciones, festivos) como ausencias automáticamente.',
+    color: 'bg-red-100',
+    textColor: 'text-red-700',
+    fields: [
+      {
+        key: 'calendar_id',
+        label: 'Calendar ID',
+        type: 'text',
+        placeholder: 'correo@group.calendar.google.com',
+      },
+      {
+        key: 'api_key',
+        label: 'Google API Key',
+        type: 'password',
+        placeholder: 'AIzaSy...',
+      },
+    ],
+    docsUrl: 'https://developers.google.com/calendar/api/guides/auth',
+  },
 } as const
 
 type IntegrationType = keyof typeof INTEGRATION_DEFS
@@ -256,19 +320,36 @@ function IntegrationForm({
 export function IntegrationsManager() {
   const [configuring, setConfiguring] = useState<IntegrationType | null>(null)
   const [testingId, setTestingId] = useState<string | null>(null)
-  const [testResult, setTestResult] = useState<{ id: string; ok: boolean } | null>(null)
+  const [testResult, setTestResult] = useState<{ id: string; ok: boolean; detail?: string } | null>(
+    null,
+  )
+  const [syncingId, setSyncingId] = useState<string | null>(null)
+  const [syncResult, setSyncResult] = useState<{ id: string; detail: string } | null>(null)
   const { data: integrations, isLoading } = trpc.admin.getIntegrations.useQuery()
 
-  const testWebhook = trpc.integrations.testWebhook.useMutation({
-    onSuccess: (_data, variables) => {
+  const testIntegration = trpc.integrations.testIntegration.useMutation({
+    onSuccess: (data, variables) => {
       setTestingId(null)
-      setTestResult({ id: variables.id, ok: true })
-      setTimeout(() => setTestResult(null), 3000)
+      setTestResult({ id: variables.id, ok: true, detail: data.detail })
+      setTimeout(() => setTestResult(null), 4000)
     },
     onError: (_err, variables) => {
       setTestingId(null)
       setTestResult({ id: variables.id, ok: false })
-      setTimeout(() => setTestResult(null), 3000)
+      setTimeout(() => setTestResult(null), 4000)
+    },
+  })
+
+  const syncCalendar = trpc.integrations.syncGoogleCalendar.useMutation({
+    onSuccess: (data, variables) => {
+      setSyncingId(null)
+      setSyncResult({ id: variables.id, detail: `${data.absences_created} ausencias creadas` })
+      setTimeout(() => setSyncResult(null), 4000)
+    },
+    onError: (err, variables) => {
+      setSyncingId(null)
+      setSyncResult({ id: variables.id, detail: err.message })
+      setTimeout(() => setSyncResult(null), 4000)
     },
   })
 
@@ -353,33 +434,64 @@ export function IntegrationsManager() {
                       </>
                     )}
                   </button>
-                  {isConfigured && existing && (
+
+                  {isConfigured && existing && type === 'google_calendar' && (
                     <button
                       type="button"
-                      title="Probar webhook"
-                      disabled={testingId === existing.id}
+                      title="Sincronizar calendario"
+                      disabled={syncingId === existing.id}
                       onClick={() => {
-                        setTestingId(existing.id)
-                        testWebhook.mutate({ id: existing.id })
+                        setSyncingId(existing.id)
+                        syncCalendar.mutate({ id: existing.id })
                       }}
                       className={`flex items-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-medium transition-colors ${
-                        testResult?.id === existing.id
-                          ? testResult.ok
-                            ? 'border-green-200 bg-green-50 text-green-700'
-                            : 'border-red-200 bg-red-50 text-red-700'
+                        syncResult?.id === existing.id
+                          ? 'border-green-200 bg-green-50 text-green-700'
                           : 'border-gray-200 text-gray-500 hover:bg-gray-50'
                       }`}
                     >
                       <Zap className="h-3.5 w-3.5" />
-                      {testingId === existing.id
-                        ? 'Probando…'
-                        : testResult?.id === existing.id
-                          ? testResult.ok
-                            ? 'OK'
-                            : 'Error'
-                          : 'Test'}
+                      {syncingId === existing.id
+                        ? 'Sincronizando…'
+                        : syncResult?.id === existing.id
+                          ? syncResult.detail
+                          : 'Sync'}
                     </button>
                   )}
+
+                  {isConfigured &&
+                    existing &&
+                    type !== 'google_calendar' &&
+                    type !== 'jira' &&
+                    type !== 'asana' &&
+                    type !== 'github' &&
+                    type !== 'trello' && (
+                      <button
+                        type="button"
+                        title="Probar integración"
+                        disabled={testingId === existing.id}
+                        onClick={() => {
+                          setTestingId(existing.id)
+                          testIntegration.mutate({ id: existing.id })
+                        }}
+                        className={`flex items-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-medium transition-colors ${
+                          testResult?.id === existing.id
+                            ? testResult.ok
+                              ? 'border-green-200 bg-green-50 text-green-700'
+                              : 'border-red-200 bg-red-50 text-red-700'
+                            : 'border-gray-200 text-gray-500 hover:bg-gray-50'
+                        }`}
+                      >
+                        <Zap className="h-3.5 w-3.5" />
+                        {testingId === existing.id
+                          ? 'Probando…'
+                          : testResult?.id === existing.id
+                            ? testResult.ok
+                              ? 'OK'
+                              : 'Error'
+                            : 'Test'}
+                      </button>
+                    )}
                 </div>
               </div>
             )
