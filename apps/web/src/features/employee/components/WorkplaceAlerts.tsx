@@ -58,7 +58,7 @@ function AlertBanner({
 
   return (
     <div
-      className={`fixed bottom-6 right-6 z-50 flex w-full max-w-sm flex-col gap-3 rounded-2xl border p-5 shadow-2xl ${
+      className={`fixed right-6 top-6 z-50 flex w-full max-w-sm flex-col gap-3 rounded-2xl border p-5 shadow-2xl ${
         isBreak ? 'border-blue-200 bg-white' : 'border-amber-200 bg-amber-50'
       }`}
     >
