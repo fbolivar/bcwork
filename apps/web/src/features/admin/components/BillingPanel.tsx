@@ -1,8 +1,36 @@
 'use client'
 
 import { useState } from 'react'
+import {
+  CreditCard,
+  Users,
+  CheckCircle,
+  Clock,
+  AlertCircle,
+  X,
+  Mail,
+  ChevronDown,
+  ChevronUp,
+  Zap,
+  Receipt,
+} from 'lucide-react'
 import { trpc as api } from '@/lib/trpc-client'
-import { CreditCard, Users, Zap, CheckCircle, Clock, AlertCircle, X, Mail } from 'lucide-react'
+
+function fmt(n: number) {
+  return new Intl.NumberFormat('es-CO', {
+    style: 'currency',
+    currency: 'COP',
+    maximumFractionDigits: 0,
+  }).format(n)
+}
+
+function fmtDate(s: string) {
+  return new Date(s).toLocaleDateString('es-CO', {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+  })
+}
 
 const PLAN_FEATURES: Record<string, string[]> = {
   starter: ['Hasta 10 empleados', 'Monitoreo básico', 'Reportes estándar', 'Soporte por email'],
@@ -29,27 +57,20 @@ const PLAN_FEATURES: Record<string, string[]> = {
   ],
 }
 
-function fmt(n: number) {
-  return new Intl.NumberFormat('es-CO', {
-    style: 'currency',
-    currency: 'COP',
-    maximumFractionDigits: 0,
-  }).format(n)
-}
+const AVAILABLE_PLANS = [
+  { code: 'starter', name: 'Starter', price: 49000, seats: 10 },
+  { code: 'growth', name: 'Growth', price: 149000, seats: 50 },
+  { code: 'enterprise', name: 'Enterprise', price: null, seats: null },
+]
 
-function fmtDate(s: string) {
-  return new Date(s).toLocaleDateString('es-CO', {
-    day: '2-digit',
-    month: 'short',
-    year: 'numeric',
-  })
-}
-
-const STATUS_CONFIG: Record<string, { label: string; color: string; icon: React.ElementType }> = {
-  trial: { label: 'Prueba gratuita', color: 'bg-amber-100 text-amber-700', icon: Clock },
-  active: { label: 'Activa', color: 'bg-green-100 text-green-700', icon: CheckCircle },
-  past_due: { label: 'Pago pendiente', color: 'bg-red-100 text-red-700', icon: AlertCircle },
-  cancelled: { label: 'Cancelada', color: 'bg-gray-100 text-gray-600', icon: AlertCircle },
+const EVENT_LABELS: Record<string, string> = {
+  invoice_created: 'Factura generada',
+  payment_received: 'Pago recibido',
+  payment_failed: 'Pago fallido',
+  seat_added: 'Asiento agregado',
+  seat_removed: 'Asiento eliminado',
+  trial_started: 'Prueba iniciada',
+  trial_expired: 'Prueba vencida',
 }
 
 function UpgradeModal({ planName, onClose }: { planName: string; onClose: () => void }) {
@@ -59,7 +80,7 @@ function UpgradeModal({ planName, onClose }: { planName: string; onClose: () => 
       <div className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-2xl">
         <div className="flex items-center justify-between">
           <h3 className="text-base font-semibold text-gray-900">
-            {sent ? '¡Solicitud enviada!' : `Actualizar a ${planName}`}
+            {sent ? '¡Solicitud enviada!' : `Cambiar a ${planName}`}
           </h3>
           <button
             type="button"
@@ -76,8 +97,7 @@ function UpgradeModal({ planName, onClose }: { planName: string; onClose: () => 
               <CheckCircle className="h-7 w-7 text-green-600" />
             </div>
             <p className="text-sm text-gray-700">
-              Nuestro equipo se pondrá en contacto contigo en menos de 24 horas para gestionar el
-              cambio de plan.
+              Nuestro equipo se pondrá en contacto contigo en menos de 24 horas.
             </p>
             <button
               type="button"
@@ -90,12 +110,11 @@ function UpgradeModal({ planName, onClose }: { planName: string; onClose: () => 
         ) : (
           <>
             <p className="mt-2 text-sm text-gray-500">
-              Un asesor de BCWork se pondrá en contacto contigo para procesar el cambio al plan{' '}
-              <strong>{planName}</strong>.
+              Un asesor de BCWork procesará el cambio al plan <strong>{planName}</strong>.
             </p>
             <div className="mt-4 rounded-xl border border-blue-100 bg-blue-50 px-4 py-3 text-xs text-blue-700">
               <Mail className="mr-1.5 inline h-3.5 w-3.5" />
-              Recibirás un correo de confirmación con los detalles del proceso de actualización.
+              Recibirás un correo de confirmación con los detalles.
             </div>
             <div className="mt-4 flex gap-2">
               <button
@@ -121,6 +140,7 @@ function UpgradeModal({ planName, onClose }: { planName: string; onClose: () => 
 }
 
 export function BillingPanel() {
+  const [showPlans, setShowPlans] = useState(false)
   const [upgrading, setUpgrading] = useState<string | null>(null)
   const { data, isLoading } = api.admin.getBillingInfo.useQuery()
   const { data: events = [] } = api.admin.listBillingEvents.useQuery()
@@ -129,184 +149,210 @@ export function BillingPanel() {
     return (
       <div className="space-y-4">
         {[1, 2, 3].map((i) => (
-          <div key={i} className="h-32 animate-pulse rounded-xl bg-gray-100" />
+          <div key={i} className="h-28 animate-pulse rounded-xl bg-gray-100" />
         ))}
       </div>
     )
   }
 
-  const status = (data?.status ?? 'trial') as keyof typeof STATUS_CONFIG
-  const statusCfg = STATUS_CONFIG[status] ?? STATUS_CONFIG['trial']!
-  const StatusIcon = statusCfg.icon
-  const planFeatures = PLAN_FEATURES[data?.plan?.code ?? 'pro'] ?? []
-  const seatPct = data?.seatsTotal ? Math.round((data.seatsUsed / data.seatsTotal) * 100) : 0
+  const status = data?.status ?? 'trial'
+  const daysLeft = data?.daysLeft ?? 0
+  const seatsUsed = data?.seatsUsed ?? 0
+  const seatsTotal = data?.seatsTotal ?? 0
+  const seatPct = seatsTotal ? Math.round((seatsUsed / seatsTotal) * 100) : 0
+  const planCode = data?.plan?.code ?? 'pro'
+  const planName = data?.plan?.name ?? 'Pro'
+  const planPrice = data?.plan?.monthly_price_per_seat_cop
+  const planFeatures = PLAN_FEATURES[planCode] ?? []
+
+  const statusBadge =
+    status === 'trial'
+      ? { label: 'Prueba gratuita', color: 'bg-amber-100 text-amber-700' }
+      : status === 'active'
+        ? { label: 'Activo', color: 'bg-green-100 text-green-700' }
+        : status === 'past_due'
+          ? { label: 'Pago pendiente', color: 'bg-red-100 text-red-700' }
+          : { label: 'Cancelado', color: 'bg-gray-100 text-gray-600' }
 
   return (
-    <div className="space-y-5">
-      {/* Trial banner */}
-      {status === 'trial' && data?.daysLeft !== null && (
+    <div className="space-y-4">
+      {/* Banner trial o pago pendiente */}
+      {(status === 'trial' || status === 'past_due') && (
         <div
-          className={`rounded-xl border px-5 py-4 ${(data?.daysLeft ?? 0) <= 3 ? 'border-red-200 bg-red-50' : 'border-amber-200 bg-amber-50'}`}
+          className={`flex items-center gap-4 rounded-xl border px-5 py-4 ${
+            status === 'past_due' || daysLeft <= 3
+              ? 'border-red-200 bg-red-50'
+              : 'border-amber-200 bg-amber-50'
+          }`}
         >
-          <div className="flex items-center gap-3">
+          {status === 'past_due' ? (
+            <AlertCircle className="h-5 w-5 shrink-0 text-red-500" />
+          ) : (
             <Clock
-              className={`h-5 w-5 shrink-0 ${(data?.daysLeft ?? 0) <= 3 ? 'text-red-500' : 'text-amber-500'}`}
+              className={`h-5 w-5 shrink-0 ${daysLeft <= 3 ? 'text-red-500' : 'text-amber-500'}`}
             />
-            <div>
-              <p
-                className={`text-sm font-semibold ${(data?.daysLeft ?? 0) <= 3 ? 'text-red-800' : 'text-amber-800'}`}
-              >
-                {data?.daysLeft === 0
-                  ? 'Tu prueba gratuita ha vencido'
-                  : `Tu prueba gratuita vence en ${data?.daysLeft} día${data?.daysLeft !== 1 ? 's' : ''}`}
-              </p>
-              <p
-                className={`text-xs ${(data?.daysLeft ?? 0) <= 3 ? 'text-red-600' : 'text-amber-600'}`}
-              >
-                Actualiza tu plan para continuar usando BCWork sin interrupciones.
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={() => setUpgrading('Growth')}
-              className="ml-auto shrink-0 rounded-lg bg-blue-600 px-4 py-2 text-xs font-semibold text-white hover:bg-blue-700"
+          )}
+          <div className="flex-1">
+            <p
+              className={`text-sm font-semibold ${status === 'past_due' || daysLeft <= 3 ? 'text-red-800' : 'text-amber-800'}`}
             >
-              Actualizar plan
-            </button>
+              {status === 'past_due'
+                ? 'Tienes un pago pendiente'
+                : daysLeft === 0
+                  ? 'Tu prueba gratuita ha vencido'
+                  : `Tu prueba gratuita vence en ${daysLeft} día${daysLeft !== 1 ? 's' : ''}`}
+            </p>
+            <p
+              className={`text-xs ${status === 'past_due' || daysLeft <= 3 ? 'text-red-600' : 'text-amber-600'}`}
+            >
+              {status === 'past_due'
+                ? 'Regulariza el pago para evitar la suspensión del servicio.'
+                : 'Activa un plan para continuar usando BCWork sin interrupciones.'}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setShowPlans(true)}
+            className="shrink-0 rounded-lg bg-blue-600 px-4 py-2 text-xs font-semibold text-white hover:bg-blue-700"
+          >
+            Ver planes
+          </button>
+        </div>
+      )}
+
+      {/* Plan contratado */}
+      <div className="rounded-xl border border-gray-100 bg-white p-5">
+        <div className="mb-1 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Zap className="h-4 w-4 text-blue-500" />
+            <h3 className="text-sm font-semibold text-gray-700">Tu plan</h3>
+          </div>
+          <span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${statusBadge.color}`}>
+            {statusBadge.label}
+          </span>
+        </div>
+
+        <div className="mt-3 flex items-end gap-3">
+          <p className="text-3xl font-bold capitalize text-gray-900">{planName}</p>
+          {planPrice && <p className="mb-1 text-sm text-gray-500">{fmt(planPrice)} / seat / mes</p>}
+        </div>
+
+        {data?.license?.ends_at && (
+          <p className="mt-1 text-xs text-gray-400">
+            Vigente hasta: {fmtDate(data.license.ends_at)}
+          </p>
+        )}
+
+        <ul className="mt-4 grid grid-cols-2 gap-x-4 gap-y-1.5">
+          {planFeatures.map((f) => (
+            <li key={f} className="flex items-center gap-2 text-xs text-gray-600">
+              <CheckCircle className="h-3.5 w-3.5 shrink-0 text-green-500" />
+              {f}
+            </li>
+          ))}
+        </ul>
+
+        <button
+          type="button"
+          onClick={() => setShowPlans((v) => !v)}
+          className="mt-4 flex items-center gap-1 text-xs font-medium text-blue-600 hover:text-blue-700"
+        >
+          {showPlans ? (
+            <>
+              <ChevronUp className="h-3.5 w-3.5" /> Ocultar planes
+            </>
+          ) : (
+            <>
+              <ChevronDown className="h-3.5 w-3.5" /> Cambiar plan
+            </>
+          )}
+        </button>
+      </div>
+
+      {/* Planes disponibles (colapsados) */}
+      {showPlans && (
+        <div className="rounded-xl border border-gray-100 bg-white p-5">
+          <h3 className="mb-3 text-sm font-semibold text-gray-700">Planes disponibles</h3>
+          <div className="grid gap-3 sm:grid-cols-3">
+            {AVAILABLE_PLANS.map((plan) => {
+              const isCurrent = planCode === plan.code
+              return (
+                <div
+                  key={plan.code}
+                  className={`rounded-xl border p-4 ${isCurrent ? 'border-blue-300 bg-blue-50 ring-2 ring-blue-400' : 'border-gray-100'}`}
+                >
+                  <div className="mb-2 flex items-center justify-between">
+                    <p className="text-sm font-bold text-gray-800">{plan.name}</p>
+                    {isCurrent && (
+                      <span className="rounded-full bg-blue-600 px-2 py-0.5 text-[10px] font-semibold text-white">
+                        Actual
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-base font-bold text-gray-900">
+                    {plan.price ? `${fmt(plan.price)}/seat` : 'A la medida'}
+                  </p>
+                  {plan.seats && (
+                    <p className="text-xs text-gray-400">Hasta {plan.seats} empleados</p>
+                  )}
+                  <ul className="mt-3 space-y-1">
+                    {(PLAN_FEATURES[plan.code] ?? []).map((f) => (
+                      <li key={f} className="flex items-center gap-1.5 text-xs text-gray-600">
+                        <CheckCircle className="h-3 w-3 shrink-0 text-green-500" /> {f}
+                      </li>
+                    ))}
+                  </ul>
+                  <button
+                    type="button"
+                    disabled={isCurrent}
+                    onClick={() => !isCurrent && setUpgrading(plan.name)}
+                    className={`mt-3 w-full rounded-lg py-1.5 text-xs font-semibold transition-colors disabled:cursor-default disabled:opacity-60 ${
+                      isCurrent
+                        ? 'border border-blue-300 text-blue-700'
+                        : 'bg-blue-600 text-white hover:bg-blue-700'
+                    }`}
+                  >
+                    {isCurrent ? 'Plan activo' : plan.price ? 'Seleccionar' : 'Contactar ventas'}
+                  </button>
+                </div>
+              )
+            })}
           </div>
         </div>
       )}
 
-      <div className="grid gap-4 sm:grid-cols-2">
-        {/* Plan actual */}
-        <div className="rounded-xl border border-gray-100 bg-white p-5">
-          <div className="mb-4 flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <Zap className="h-4 w-4 text-blue-500" />
-              <h3 className="text-sm font-semibold text-gray-700">Plan actual</h3>
-            </div>
-            <span
-              className={`flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-semibold ${statusCfg.color}`}
-            >
-              <StatusIcon className="h-3 w-3" />
-              {statusCfg.label}
-            </span>
-          </div>
-          <p className="text-2xl font-bold capitalize text-gray-900">{data?.plan?.name ?? 'Pro'}</p>
-          {data?.plan?.monthly_price_per_seat_cop && (
-            <p className="mt-1 text-sm text-gray-500">
-              {fmt(data.plan.monthly_price_per_seat_cop)} / seat / mes
-            </p>
-          )}
-          <ul className="mt-4 space-y-1.5">
-            {planFeatures.map((f) => (
-              <li key={f} className="flex items-center gap-2 text-xs text-gray-600">
-                <CheckCircle className="h-3.5 w-3.5 shrink-0 text-green-500" />
-                {f}
-              </li>
-            ))}
-          </ul>
-          {data?.license?.ends_at && (
-            <p className="mt-4 text-xs text-gray-400">
-              Válido hasta: {fmtDate(data.license.ends_at)}
-            </p>
-          )}
-        </div>
-
-        {/* Seats */}
-        <div className="rounded-xl border border-gray-100 bg-white p-5">
-          <div className="mb-4 flex items-center gap-2">
-            <Users className="h-4 w-4 text-purple-500" />
-            <h3 className="text-sm font-semibold text-gray-700">Uso de asientos</h3>
-          </div>
-          <div className="mb-2 flex items-end gap-1">
-            <span className="text-3xl font-bold text-gray-900">{data?.seatsUsed}</span>
-            <span className="mb-1 text-sm text-gray-400">/ {data?.seatsTotal} seats</span>
-          </div>
-          <div className="h-2.5 w-full overflow-hidden rounded-full bg-gray-100">
-            <div
-              className={`h-2.5 rounded-full transition-all ${seatPct >= 90 ? 'bg-red-500' : seatPct >= 70 ? 'bg-amber-500' : 'bg-blue-500'}`}
-              style={{ width: `${seatPct}%` }}
-            />
-          </div>
-          <p className="mt-2 text-xs text-gray-400">{seatPct}% de capacidad utilizada</p>
-          {seatPct >= 80 && (
-            <p className="mt-2 text-xs text-amber-600">
-              Considera ampliar tu plan para agregar más colaboradores.
-            </p>
-          )}
-          <button
-            type="button"
-            onClick={() => setUpgrading('Enterprise')}
-            className="mt-4 rounded-lg border border-gray-200 px-3 py-1.5 text-xs text-gray-600 hover:bg-gray-50"
-          >
-            Ampliar plan
-          </button>
-        </div>
-      </div>
-
-      {/* Planes disponibles */}
+      {/* Uso de asientos */}
       <div className="rounded-xl border border-gray-100 bg-white p-5">
-        <div className="mb-4 flex items-center gap-2">
-          <CreditCard className="h-4 w-4 text-blue-500" />
-          <h3 className="text-sm font-semibold text-gray-700">Planes disponibles</h3>
+        <div className="mb-3 flex items-center gap-2">
+          <Users className="h-4 w-4 text-purple-500" />
+          <h3 className="text-sm font-semibold text-gray-700">Uso de asientos</h3>
         </div>
-        <div className="grid gap-3 sm:grid-cols-3">
-          {[
-            { code: 'starter', name: 'Starter', price: 49000, seats: 10, highlight: false },
-            { code: 'growth', name: 'Growth', price: 149000, seats: 50, highlight: true },
-            { code: 'enterprise', name: 'Enterprise', price: null, seats: null, highlight: false },
-          ].map((plan) => (
-            <div
-              key={plan.code}
-              className={`rounded-xl border p-4 ${plan.highlight ? 'border-blue-300 bg-blue-50' : 'border-gray-100'} ${data?.plan?.code === plan.code ? 'ring-2 ring-blue-500' : ''}`}
-            >
-              <div className="mb-2 flex items-center justify-between">
-                <p
-                  className={`text-sm font-bold ${plan.highlight ? 'text-blue-800' : 'text-gray-800'}`}
-                >
-                  {plan.name}
-                </p>
-                {data?.plan?.code === plan.code && (
-                  <span className="rounded-full bg-blue-600 px-2 py-0.5 text-[10px] font-semibold text-white">
-                    Actual
-                  </span>
-                )}
-              </div>
-              <p className="text-lg font-bold text-gray-900">
-                {plan.price ? `${fmt(plan.price)}/seat` : 'A la medida'}
-              </p>
-              {plan.seats && <p className="text-xs text-gray-400">Hasta {plan.seats} empleados</p>}
-              <ul className="mt-3 space-y-1">
-                {(PLAN_FEATURES[plan.code] ?? []).slice(0, 3).map((f) => (
-                  <li key={f} className="flex items-center gap-1.5 text-xs text-gray-600">
-                    <CheckCircle className="h-3 w-3 text-green-500" /> {f}
-                  </li>
-                ))}
-              </ul>
-              <button
-                type="button"
-                disabled={data?.plan?.code === plan.code}
-                onClick={() => {
-                  if (data?.plan?.code !== plan.code) setUpgrading(plan.name)
-                }}
-                className={`mt-3 w-full rounded-lg py-1.5 text-xs font-semibold disabled:cursor-default disabled:opacity-60 ${plan.highlight ? 'bg-blue-600 text-white hover:bg-blue-700' : 'border border-gray-200 text-gray-600 hover:bg-gray-50'}`}
-              >
-                {data?.plan?.code === plan.code
-                  ? 'Plan activo'
-                  : plan.price
-                    ? 'Seleccionar'
-                    : 'Contactar ventas'}
-              </button>
-            </div>
-          ))}
+        <div className="mb-2 flex items-end gap-1">
+          <span className="text-3xl font-bold text-gray-900">{seatsUsed}</span>
+          <span className="mb-1 text-sm text-gray-400">/ {seatsTotal} asientos</span>
         </div>
+        <div className="h-2 w-full overflow-hidden rounded-full bg-gray-100">
+          <div
+            className={`h-2 rounded-full transition-all ${
+              seatPct >= 90 ? 'bg-red-500' : seatPct >= 70 ? 'bg-amber-500' : 'bg-blue-500'
+            }`}
+            // eslint-disable-next-line react/forbid-dom-props
+            style={{ width: `${Math.min(seatPct, 100)}%` }}
+          />
+        </div>
+        <p className="mt-1.5 text-xs text-gray-400">{seatPct}% de capacidad utilizada</p>
+        {seatPct >= 80 && (
+          <p className="mt-1 text-xs text-amber-600">
+            Estás cerca del límite. Considera ampliar tu plan.
+          </p>
+        )}
       </div>
 
-      {/* Historial de facturación */}
-      {events.length > 0 && (
+      {/* Historial */}
+      {(events as unknown[]).length > 0 && (
         <div className="rounded-xl border border-gray-100 bg-white">
-          <div className="border-b border-gray-50 px-5 py-3">
+          <div className="flex items-center gap-2 border-b border-gray-50 px-5 py-3">
+            <Receipt className="h-4 w-4 text-gray-400" />
             <h3 className="text-sm font-semibold text-gray-700">Historial de facturación</h3>
           </div>
           <table className="w-full text-xs">
@@ -318,9 +364,18 @@ export function BillingPanel() {
               </tr>
             </thead>
             <tbody>
-              {(events as any[]).map((ev) => (
+              {(
+                events as {
+                  id: string
+                  event_type: string
+                  amount_cop?: number
+                  occurred_at: string
+                }[]
+              ).map((ev) => (
                 <tr key={ev.id} className="border-b border-gray-50 last:border-0">
-                  <td className="px-4 py-2 text-gray-700">{ev.event_type}</td>
+                  <td className="px-4 py-2 text-gray-700">
+                    {EVENT_LABELS[ev.event_type] ?? ev.event_type}
+                  </td>
                   <td className="px-4 py-2 font-medium text-gray-800">
                     {ev.amount_cop ? fmt(ev.amount_cop) : '—'}
                   </td>
