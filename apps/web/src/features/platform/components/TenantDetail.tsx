@@ -1,16 +1,125 @@
 'use client'
 
+import { useState } from 'react'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import { trpc } from '@/lib/trpc-client'
 import { StatusBadge } from './StatusBadge'
 import { LicenseCard } from './LicenseCard'
 import { AuditLogTable } from './AuditLogTable'
 import { formatDate } from '@/lib/format'
-import { ArrowLeft } from 'lucide-react'
+import { ArrowLeft, AlertTriangle, X, LogIn, Loader2 } from 'lucide-react'
+
+type ConfirmAction = 'suspend' | 'reactivate' | 'cancel'
+
+const ACTION_CONFIG: Record<
+  ConfirmAction,
+  { title: string; message: string; confirmLabel: string; danger: boolean; newStatus: string }
+> = {
+  suspend: {
+    title: 'Suspender empresa',
+    message:
+      'Los empleados perderán acceso inmediatamente. El admin recibirá un aviso. Puedes reactivarla en cualquier momento.',
+    confirmLabel: 'Sí, suspender',
+    danger: false,
+    newStatus: 'suspended',
+  },
+  reactivate: {
+    title: 'Reactivar empresa',
+    message: 'La empresa recuperará acceso completo a la plataforma.',
+    confirmLabel: 'Sí, reactivar',
+    danger: false,
+    newStatus: 'active',
+  },
+  cancel: {
+    title: 'Cancelar empresa',
+    message:
+      'Esta acción marca la empresa como cancelada. Los datos se conservan según la política de retención configurada. No se puede deshacer automáticamente.',
+    confirmLabel: 'Sí, cancelar',
+    danger: true,
+    newStatus: 'cancelled',
+  },
+}
+
+function ConfirmModal({
+  action,
+  tenantName,
+  onConfirm,
+  onClose,
+  isPending,
+}: {
+  action: ConfirmAction
+  tenantName: string
+  onConfirm: () => void
+  onClose: () => void
+  isPending: boolean
+}) {
+  const cfg = ACTION_CONFIG[action]
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <div className="w-full max-w-sm rounded-2xl bg-white shadow-2xl">
+        <div className="flex items-center justify-between border-b border-gray-100 px-5 py-4">
+          <div className="flex items-center gap-2">
+            <AlertTriangle
+              className={`h-4 w-4 ${cfg.danger ? 'text-red-500' : 'text-amber-500'}`}
+            />
+            <h3 className="text-sm font-semibold text-gray-900">{cfg.title}</h3>
+          </div>
+          <button type="button" onClick={onClose} title="Cerrar">
+            <X className="h-4 w-4 text-gray-400 hover:text-gray-600" />
+          </button>
+        </div>
+        <div className="px-5 py-4">
+          <p className="text-sm font-medium text-gray-800">{tenantName}</p>
+          <p className="mt-1 text-xs leading-relaxed text-gray-500">{cfg.message}</p>
+        </div>
+        <div className="flex gap-2 border-t border-gray-100 px-5 py-3">
+          <button
+            type="button"
+            onClick={onClose}
+            className="flex-1 rounded-lg border border-gray-200 py-2 text-sm text-gray-600 hover:bg-gray-50"
+          >
+            Cancelar
+          </button>
+          <button
+            type="button"
+            onClick={onConfirm}
+            disabled={isPending}
+            className={`flex-1 rounded-lg py-2 text-sm font-semibold text-white disabled:opacity-50 ${
+              cfg.danger ? 'bg-red-600 hover:bg-red-700' : 'bg-blue-600 hover:bg-blue-700'
+            }`}
+          >
+            {isPending ? 'Procesando...' : cfg.confirmLabel}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
 
 export function TenantDetail({ tenantId }: { tenantId: string }) {
+  const router = useRouter()
+  const [confirmAction, setConfirmAction] = useState<ConfirmAction | null>(null)
+  const [impersonating, setImpersonating] = useState(false)
   const { data: tenant, isLoading, refetch } = trpc.platform.getTenant.useQuery({ id: tenantId })
-  const updateMutation = trpc.platform.updateTenant.useMutation({ onSuccess: () => refetch() })
+  const updateMutation = trpc.platform.updateTenant.useMutation({
+    onSuccess: () => {
+      refetch()
+      setConfirmAction(null)
+    },
+  })
+  const impersonateMutation = trpc.platform.impersonateTenant.useMutation({
+    onSuccess: async ({ token }) => {
+      setImpersonating(true)
+      await fetch('/api/auth/impersonate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token }),
+      })
+      router.push('/admin/dashboard')
+    },
+    onError: () => setImpersonating(false),
+  })
 
   if (isLoading) {
     return <div className="h-48 animate-pulse rounded-xl bg-gray-100" />
@@ -81,9 +190,28 @@ export function TenantDetail({ tenantId }: { tenantId: string }) {
           <div className="rounded-xl border border-gray-200 bg-white p-5">
             <h2 className="mb-3 text-sm font-semibold text-gray-700">Acciones rápidas</h2>
             <div className="space-y-2">
-              {tenant.status !== 'suspended' && (
+              <button
+                type="button"
+                onClick={() => impersonateMutation.mutate({ tenantId })}
+                disabled={
+                  impersonating ||
+                  impersonateMutation.isPending ||
+                  tenant.status === 'cancelled' ||
+                  tenant.status === 'suspended'
+                }
+                className="flex w-full items-center justify-center gap-2 rounded-md border border-blue-300 px-3 py-2 text-sm text-blue-700 hover:bg-blue-50 disabled:opacity-50"
+              >
+                {impersonating || impersonateMutation.isPending ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <LogIn className="h-3.5 w-3.5" />
+                )}
+                Entrar como este tenant
+              </button>
+              {tenant.status !== 'suspended' && tenant.status !== 'cancelled' && (
                 <button
-                  onClick={() => updateMutation.mutate({ id: tenantId, status: 'suspended' })}
+                  type="button"
+                  onClick={() => setConfirmAction('suspend')}
                   disabled={updateMutation.isPending}
                   className="w-full rounded-md border border-yellow-300 px-3 py-2 text-sm text-yellow-700 hover:bg-yellow-50 disabled:opacity-50"
                 >
@@ -92,7 +220,8 @@ export function TenantDetail({ tenantId }: { tenantId: string }) {
               )}
               {tenant.status === 'suspended' && (
                 <button
-                  onClick={() => updateMutation.mutate({ id: tenantId, status: 'active' })}
+                  type="button"
+                  onClick={() => setConfirmAction('reactivate')}
                   disabled={updateMutation.isPending}
                   className="w-full rounded-md border border-green-300 px-3 py-2 text-sm text-green-700 hover:bg-green-50 disabled:opacity-50"
                 >
@@ -101,11 +230,8 @@ export function TenantDetail({ tenantId }: { tenantId: string }) {
               )}
               {tenant.status !== 'cancelled' && (
                 <button
-                  onClick={() => {
-                    if (confirm('¿Cancelar esta empresa? Esta acción no se puede deshacer.')) {
-                      updateMutation.mutate({ id: tenantId, status: 'cancelled' })
-                    }
-                  }}
+                  type="button"
+                  onClick={() => setConfirmAction('cancel')}
                   disabled={updateMutation.isPending}
                   className="w-full rounded-md border border-red-300 px-3 py-2 text-sm text-red-700 hover:bg-red-50 disabled:opacity-50"
                 >
@@ -131,6 +257,24 @@ export function TenantDetail({ tenantId }: { tenantId: string }) {
           <AuditLogTable tenantId={tenantId} />
         </div>
       </div>
+
+      {confirmAction && (
+        <ConfirmModal
+          action={confirmAction}
+          tenantName={tenant.trade_name ?? tenant.legal_name}
+          isPending={updateMutation.isPending}
+          onConfirm={() =>
+            updateMutation.mutate({
+              id: tenantId,
+              status: ACTION_CONFIG[confirmAction].newStatus as
+                | 'active'
+                | 'suspended'
+                | 'cancelled',
+            })
+          }
+          onClose={() => setConfirmAction(null)}
+        />
+      )}
     </div>
   )
 }
@@ -138,8 +282,8 @@ export function TenantDetail({ tenantId }: { tenantId: string }) {
 function Row({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
   return (
     <div className="flex justify-between gap-2">
-      <dt className="text-gray-500">{label}</dt>
-      <dd className={`text-right text-gray-800 ${mono ? 'font-mono text-xs' : ''}`}>{value}</dd>
+      <span className="text-gray-500">{label}</span>
+      <span className={`text-right text-gray-800 ${mono ? 'font-mono text-xs' : ''}`}>{value}</span>
     </div>
   )
 }

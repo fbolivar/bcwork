@@ -390,4 +390,49 @@ export const platformRouter = router({
 
       return { data: data ?? [], total: count ?? 0, page: input.page, pageSize: input.pageSize }
     }),
+
+  // ─── IMPERSONACIÓN ────────────────────────────────────────────────────────
+  impersonateTenant: platformAdminProcedure
+    .input(z.object({ tenantId: z.string().uuid() }))
+    .mutation(async ({ ctx, input }) => {
+      const { signAccessToken } = await import('@/lib/auth/jwt')
+
+      // Buscar el tenant_admin de este tenant
+      const { data: adminUser, error } = await ctx.db
+        .from('users')
+        .select('id, email, role')
+        .eq('tenant_id', input.tenantId)
+        .eq('role', 'tenant_admin')
+        .eq('status', 'active')
+        .single()
+
+      if (error || !adminUser)
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'No hay tenant_admin activo para esta empresa',
+        })
+
+      // Token de 1 hora con flag de impersonación
+      const token = await signAccessToken({
+        sub: adminUser.id,
+        tid: input.tenantId,
+        role: 'tenant_admin',
+        email: adminUser.email,
+        imp: true,
+      } as Parameters<typeof signAccessToken>[0] & { imp: boolean })
+
+      // Auditoría
+      await ctx.db.from('audit_logs').insert({
+        actor_user_id: ctx.user.sub,
+        action: 'tenant.created', // reuse closest available action
+        entity_type: 'tenant',
+        entity_id: input.tenantId,
+        after_state: {
+          impersonated_as: adminUser.email,
+          by: ctx.user.email,
+        } as unknown as AuditJson,
+      })
+
+      return { token }
+    }),
 })

@@ -13,6 +13,7 @@ const PUBLIC_PATHS = new Set([
   '/api/trpc/auth.signupTenant',
   '/api/trpc/auth.refresh',
   '/api/auth/set-session',
+  '/api/auth/impersonate',
 ])
 
 // Rutas públicas por prefijo
@@ -134,6 +135,7 @@ export async function middleware(req: NextRequest) {
     headers.set('x-user-id', user.sub)
     headers.set('x-tenant-id', user.tid)
     headers.set('x-user-role', user.role)
+    if ((user as unknown as Record<string, unknown>)['imp']) headers.set('x-impersonating', '1')
 
     return NextResponse.next({ request: { headers } })
   } catch {

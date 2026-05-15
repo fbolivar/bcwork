@@ -1,0 +1,88 @@
+[    1128ms] [LOG] %c Console Ninja extension is connected to Next.js browser, background: rgb(30,30,30); color: rgb(255,213,92) see https://tinyurl.com/2vt8jxzw for more info. @ :0
+[    1241ms] [ERROR] Manifest: Line: 1, column: 1, Syntax error. @ http://localhost:3000/manifest.json:0
+[    1467ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ webpack-internal:///(app-pages-browser)/../../node_modules/.pnpm/next@15.5.15_@opentelemetry_def8fc46c0914663bed16e707dd599e8/node_modules/next/dist/compiled/react-dom/cjs/react-dom-client.development.js:25630
+[    1662ms] [ERROR] Manifest: Line: 1, column: 1, Syntax error. @ http://localhost:3000/manifest.json:0
+[    1837ms] [LOG] [Fast Refresh] rebuilding @ webpack-internal:///(app-pages-browser)/../../node_modules/.pnpm/next@15.5.15_@opentelemetry_def8fc46c0914663bed16e707dd599e8/node_modules/next/dist/client/dev/hot-reloader/app/hot-reloader-app.js:196
+[    3248ms] [LOG] [Fast Refresh] done in 1412ms @ webpack-internal:///(app-pages-browser)/../../node_modules/.pnpm/next@15.5.15_@opentelemetry_def8fc46c0914663bed16e707dd599e8/node_modules/next/dist/client/dev/report-hmr-latency.js:13
+[    4347ms] [ERROR] Manifest: Line: 1, column: 1, Syntax error. @ http://localhost:3000/manifest.json:0
+[    7357ms] [WARNING] The resource http://localhost:3000/_next/static/css/app/layout.css?v=1778877471857 was preloaded using link preload but not used within a few seconds from the window's load event. Please make sure it has an appropriate `as` value and it is preloaded intentionally. @ http://localhost:3000/login:0
+[    7357ms] [WARNING] The resource http://localhost:3000/_next/static/css/app/layout.css?v=1778877471463 was preloaded using link preload but not used within a few seconds from the window's load event. Please make sure it has an appropriate `as` value and it is preloaded intentionally. @ http://localhost:3000/login:0
+[    7357ms] [WARNING] The resource http://localhost:3000/_next/static/css/app/layout.css?v=1778877474475 was preloaded using link preload but not used within a few seconds from the window's load event. Please make sure it has an appropriate `as` value and it is preloaded intentionally. @ http://localhost:3000/login:0
+[  319764ms] [LOG] [Fast Refresh] rebuilding @ webpack-internal:///(app-pages-browser)/../../node_modules/.pnpm/next@15.5.15_@opentelemetry_def8fc46c0914663bed16e707dd599e8/node_modules/next/dist/client/dev/hot-reloader/app/hot-reloader-app.js:196
+[  320122ms] [LOG] [Fast Refresh] done in 359ms @ webpack-internal:///(app-pages-browser)/../../node_modules/.pnpm/next@15.5.15_@opentelemetry_def8fc46c0914663bed16e707dd599e8/node_modules/next/dist/client/dev/report-hmr-latency.js:13
+[  320552ms] [ERROR] ./src/app/super-admin/layout.tsx:4:1
+Module not found: Can't resolve '@/features/platform/components/SuperAdminTopBar'
+  2 | import { headers } from 'next/headers'
+  3 | import { SuperAdminNav } from '@/features/platform/components/SuperAdminNav'
+> 4 | import { SuperAdminTopBar } from '@/features/platform/components/SuperAdminTopBar'
+    | ^
+  5 |
+  6 | export default async function SuperAdminLayout({ children }: { children: React.ReactNode }) {
+  7 |   const headersList = await headers()
+
+https://nextjs.org/docs/messages/module-not-found @ :0
+[  320561ms] [LOG] {file: Object} @ webpack-internal:///(app-pages-browser)/../../node_modules/.pnpm/next@15.5.15_@opentelemetry_def8fc46c0914663bed16e707dd599e8/node_modules/next/dist/compiled/next-devtools/index.js:1630
+[  322189ms] [LOG] [Fast Refresh] done in 2426ms @ webpack-internal:///(app-pages-browser)/../../node_modules/.pnpm/next@15.5.15_@opentelemetry_def8fc46c0914663bed16e707dd599e8/node_modules/next/dist/client/dev/report-hmr-latency.js:13
+[  322804ms] [LOG] [Fast Refresh] done in 3041ms @ webpack-internal:///(app-pages-browser)/../../node_modules/.pnpm/next@15.5.15_@opentelemetry_def8fc46c0914663bed16e707dd599e8/node_modules/next/dist/client/dev/report-hmr-latency.js:13
+[  323633ms] [ERROR] ./src/app/super-admin/layout.tsx:4:1
+Module not found: Can't resolve '@/features/platform/components/SuperAdminTopBar'
+  2 | import { headers } from 'next/headers'
+  3 | import { SuperAdminNav } from '@/features/platform/components/SuperAdminNav'
+> 4 | import { SuperAdminTopBar } from '@/features/platform/components/SuperAdminTopBar'
+    | ^
+  5 |
+  6 | export default async function SuperAdminLayout({ children }: { children: React.ReactNode }) {
+  7 |   const headersList = await headers()
+
+https://nextjs.org/docs/messages/module-not-found @ :0
+[  323635ms] [LOG] {file: Object} @ webpack-internal:///(app-pages-browser)/../../node_modules/.pnpm/next@15.5.15_@opentelemetry_def8fc46c0914663bed16e707dd599e8/node_modules/next/dist/compiled/next-devtools/index.js:1630
+[  324101ms] [ERROR] Failed to load resource: the server responded with a status of 500 (Internal Server Error) @ http://localhost:3000/login?_rsc=9i6t2:0
+[  324187ms] [ERROR] Failed to load resource: the server responded with a status of 500 (Internal Server Error) @ http://localhost:3000/login?_rsc=9i6t2:0
+[  324263ms] [ERROR] Failed to load resource: the server responded with a status of 500 (Internal Server Error) @ http://localhost:3000/login?_rsc=9i6t2:0
+[  324322ms] [ERROR] Failed to load resource: the server responded with a status of 500 (Internal Server Error) @ http://localhost:3000/login?_rsc=9i6t2:0
+[  324393ms] [ERROR] Failed to load resource: the server responded with a status of 500 (Internal Server Error) @ http://localhost:3000/login:0
+[  324674ms] [LOG] %c Console Ninja extension is connected to Next.js browser, background: rgb(30,30,30); color: rgb(255,213,92) see https://tinyurl.com/2vt8jxzw for more info. @ :0
+[  324716ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ webpack-internal:///(pages-dir-browser)/../../node_modules/.pnpm/react-dom@19.2.5_react@19.2.5/node_modules/react-dom/cjs/react-dom-client.development.js:28004
+[  324816ms] Error: Module not found: Can't resolve '@/features/platform/components/SuperAdminTopBar'
+  2 | import { headers } from 'next/headers'
+  3 | import { SuperAdminNav } from '@/features/platform/components/SuperAdminNav'
+> 4 | import { SuperAdminTopBar } from '@/features/platform/components/SuperAdminTopBar'
+    | ^
+  5 |
+  6 | export default async function SuperAdminLayout({ children }: { children: React.ReactNode }) {
+  7 |   const headersList = await headers()
+
+https://nextjs.org/docs/messages/module-not-found
+
+    at <unknown> (https://nextjs.org/docs/messages/module-not-found)
+    at getNotFoundError (file://C:\bc-security\PROYECTOS\EMPRENDIMIENTO\BC FABRIC SAS\APP\bcwork\node_modules\.pnpm\next@15.5.15_@opentelemetry_def8fc46c0914663bed16e707dd599e8\node_modules\next\dist\build\webpack\plugins\wellknown-errors-plugin\parseNotFoundError.js:140:16)
+    at async getModuleBuildError (file://C:\bc-security\PROYECTOS\EMPRENDIMIENTO\BC FABRIC SAS\APP\bcwork\node_modules\.pnpm\next@15.5.15_@opentelemetry_def8fc46c0914663bed16e707dd599e8\node_modules\next\dist\build\webpack\plugins\wellknown-errors-plugin\webpackModuleError.js:103:27)
+    at async (file://C:\bc-security\PROYECTOS\EMPRENDIMIENTO\BC FABRIC SAS\APP\bcwork\node_modules\.pnpm\next@15.5.15_@opentelemetry_def8fc46c0914663bed16e707dd599e8\node_modules\next\dist\build\webpack\plugins\wellknown-errors-plugin\index.js:29:49)
+    at async (file://C:\bc-security\PROYECTOS\EMPRENDIMIENTO\BC FABRIC SAS\APP\bcwork\node_modules\.pnpm\next@15.5.15_@opentelemetry_def8fc46c0914663bed16e707dd599e8\node_modules\next\dist\build\webpack\plugins\wellknown-errors-plugin\index.js:27:21)
+[  324816ms] [LOG] [HMR] connected @ webpack-internal:///(pages-dir-browser)/../../node_modules/.pnpm/next@15.5.15_@opentelemetry_def8fc46c0914663bed16e707dd599e8/node_modules/next/dist/client/dev/hot-reloader/pages/websocket.js:45
+[  324819ms] [ERROR] ./src/app/super-admin/layout.tsx:4:1
+Module not found: Can't resolve '@/features/platform/components/SuperAdminTopBar'
+  2 | import { headers } from 'next/headers'
+  3 | import { SuperAdminNav } from '@/features/platform/components/SuperAdminNav'
+> 4 | import { SuperAdminTopBar } from '@/features/platform/components/SuperAdminTopBar'
+    | ^
+  5 |
+  6 | export default async function SuperAdminLayout({ children }: { children: React.ReactNode }) {
+  7 |   const headersList = await headers()
+
+https://nextjs.org/docs/messages/module-not-found @ :0
+[  324840ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://localhost:3000/favicon.ico:0
+[  324862ms] [LOG] {file: Object} @ webpack-internal:///(pages-dir-browser)/../../node_modules/.pnpm/next@15.5.15_@opentelemetry_def8fc46c0914663bed16e707dd599e8/node_modules/next/dist/compiled/next-devtools/index.js:1630
+[  326423ms] [LOG] [Fast Refresh] rebuilding @ webpack-internal:///(pages-dir-browser)/../../node_modules/.pnpm/next@15.5.15_@opentelemetry_def8fc46c0914663bed16e707dd599e8/node_modules/next/dist/client/dev/hot-reloader/pages/hot-reloader-pages.js:206
+[  326465ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://localhost:3000/_next/static/webpack/b9d48ac2d7ddf896.webpack.hot-update.json:0
+[  326465ms] [WARNING] [Fast Refresh] performing full reload because your application had an unrecoverable error @ webpack-internal:///(pages-dir-browser)/../../node_modules/.pnpm/next@15.5.15_@opentelemetry_def8fc46c0914663bed16e707dd599e8/node_modules/next/dist/client/dev/hot-reloader/pages/hot-reloader-pages.js:347
+[  328348ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://localhost:3000/_next/static/webpack/b9d48ac2d7ddf896.webpack.hot-update.json:0
+[  328348ms] [WARNING] [Fast Refresh] performing full reload because your application had an unrecoverable error @ webpack-internal:///(pages-dir-browser)/../../node_modules/.pnpm/next@15.5.15_@opentelemetry_def8fc46c0914663bed16e707dd599e8/node_modules/next/dist/client/dev/hot-reloader/pages/hot-reloader-pages.js:347
+[  329424ms] [LOG] %c Console Ninja extension is connected to Next.js browser, background: rgb(30,30,30); color: rgb(255,213,92) see https://tinyurl.com/2vt8jxzw for more info. @ :0
+[  329994ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ webpack-internal:///(app-pages-browser)/../../node_modules/.pnpm/next@15.5.15_@opentelemetry_def8fc46c0914663bed16e707dd599e8/node_modules/next/dist/compiled/react-dom/cjs/react-dom-client.development.js:25630
+[  345143ms] [LOG] [Fast Refresh] rebuilding @ webpack-internal:///(app-pages-browser)/../../node_modules/.pnpm/next@15.5.15_@opentelemetry_def8fc46c0914663bed16e707dd599e8/node_modules/next/dist/client/dev/hot-reloader/app/hot-reloader-app.js:196
+[  345620ms] [LOG] [Fast Refresh] done in 478ms @ webpack-internal:///(app-pages-browser)/../../node_modules/.pnpm/next@15.5.15_@opentelemetry_def8fc46c0914663bed16e707dd599e8/node_modules/next/dist/client/dev/report-hmr-latency.js:13
+[  361347ms] [LOG] [Fast Refresh] rebuilding @ webpack-internal:///(app-pages-browser)/../../node_modules/.pnpm/next@15.5.15_@opentelemetry_def8fc46c0914663bed16e707dd599e8/node_modules/next/dist/client/dev/hot-reloader/app/hot-reloader-app.js:196
+[  361620ms] [LOG] [Fast Refresh] done in 274ms @ webpack-internal:///(app-pages-browser)/../../node_modules/.pnpm/next@15.5.15_@opentelemetry_def8fc46c0914663bed16e707dd599e8/node_modules/next/dist/client/dev/report-hmr-latency.js:13
+[  368816ms] [LOG] [Fast Refresh] rebuilding @ webpack-internal:///(app-pages-browser)/../../node_modules/.pnpm/next@15.5.15_@opentelemetry_def8fc46c0914663bed16e707dd599e8/node_modules/next/dist/client/dev/hot-reloader/app/hot-reloader-app.js:196
+[  369024ms] [LOG] [Fast Refresh] done in 208ms @ webpack-internal:///(app-pages-browser)/../../node_modules/.pnpm/next@15.5.15_@opentelemetry_def8fc46c0914663bed16e707dd599e8/node_modules/next/dist/client/dev/report-hmr-latency.js:13
