@@ -302,3 +302,85 @@ export async function sendPayslipIssuedEmail({
     html: baseHtml('Recibo de nómina', body),
   })
 }
+
+// ─── Email: Alerta de plataforma para el super-admin ─────────────────────────
+
+type ExpiringLicense = {
+  id: string
+  ends_at: string | null
+  tenants: { legal_name: string; trade_name: string | null; contact_email: string } | null
+}
+
+type ChurnedTenant = {
+  id: string
+  legal_name: string
+  trade_name: string | null
+  contact_email: string
+}
+
+export async function sendPlatformAdminAlert({
+  expiring,
+  churned,
+  adminEmail,
+}: {
+  expiring: ExpiringLicense[]
+  churned: ChurnedTenant[]
+  adminEmail: string
+}) {
+  const resend = getResend()
+  if (!resend) return null
+
+  const expiringRows = expiring
+    .map((l) => {
+      const name = l.tenants?.trade_name ?? l.tenants?.legal_name ?? '—'
+      const days = l.ends_at
+        ? Math.ceil((new Date(l.ends_at).getTime() - Date.now()) / (1000 * 60 * 60 * 24))
+        : '?'
+      return infoRow(name, `Vence en ${days} día${days === 1 ? '' : 's'}`)
+    })
+    .join('')
+
+  const churnRows = churned
+    .map((t) => infoRow(t.trade_name ?? t.legal_name, t.contact_email))
+    .join('')
+
+  const body = `
+    ${h1('Alerta de plataforma BCWork')}
+    ${p(`Resumen del ${new Date().toLocaleDateString('es-CO', { weekday: 'long', day: '2-digit', month: 'long' })}`)}
+
+    ${
+      expiring.length > 0
+        ? `
+      <p style="margin:16px 0 8px;font-size:13px;font-weight:600;color:#b45309;">
+        ⚠️ ${expiring.length} licencia${expiring.length !== 1 ? 's' : ''} próximas a vencer (≤3 días)
+      </p>
+      <table cellpadding="0" cellspacing="0" style="margin:0 0 16px;width:100%;">
+        ${expiringRows}
+      </table>
+    `
+        : ''
+    }
+
+    ${
+      churned.length > 0
+        ? `
+      <p style="margin:16px 0 8px;font-size:13px;font-weight:600;color:#dc2626;">
+        ❌ ${churned.length} empresa${churned.length !== 1 ? 's' : ''} cancelada${churned.length !== 1 ? 's' : ''} (últimas 24h)
+      </p>
+      <table cellpadding="0" cellspacing="0" style="margin:0 0 16px;width:100%;">
+        ${churnRows}
+      </table>
+    `
+        : ''
+    }
+
+    ${ctaButton('Ver panel super-admin', `${process.env.NEXT_PUBLIC_APP_URL ?? 'https://app.bcwork.co'}/super-admin`)}
+  `
+
+  return resend.emails.send({
+    from: FROM,
+    to: adminEmail,
+    subject: `[BCWork] ${expiring.length > 0 ? `⚠️ ${expiring.length} licencias expiran pronto` : `❌ ${churned.length} cancelaciones`}`,
+    html: baseHtml('Alerta de plataforma', body),
+  })
+}

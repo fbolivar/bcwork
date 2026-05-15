@@ -2813,6 +2813,8 @@ export type Database = {
           feature_overrides: Json | null
           id: string
           plan_id: string
+          renewal_notes: string | null
+          renewal_status: string | null
           seats_total: number
           starts_at: string
           status: string
@@ -2826,6 +2828,8 @@ export type Database = {
           feature_overrides?: Json | null
           id?: string
           plan_id: string
+          renewal_notes?: string | null
+          renewal_status?: string | null
           seats_total: number
           starts_at: string
           status?: string
@@ -2839,6 +2843,8 @@ export type Database = {
           feature_overrides?: Json | null
           id?: string
           plan_id?: string
+          renewal_notes?: string | null
+          renewal_status?: string | null
           seats_total?: number
           starts_at?: string
           status?: string

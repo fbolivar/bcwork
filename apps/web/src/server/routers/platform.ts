@@ -826,6 +826,256 @@ export const platformRouter = router({
     return { totalMrr, byPlan, topTenants }
   }),
 
+  // ─── REVENUE TREND (MoM) ─────────────────────────────────────────────────
+  getRevenueTrend: platformAdminProcedure.query(async ({ ctx }) => {
+    const db = ctx.db
+
+    const [allLicensesRes, plansRes] = await Promise.all([
+      db
+        .from('licenses')
+        .select('id, tenant_id, plan_id, seats_total, status, starts_at, updated_at'),
+      db.from('plans').select('id, monthly_price_per_seat_cop'),
+    ])
+
+    const licenses = allLicensesRes.data ?? []
+    const plans = plansRes.data ?? []
+    const planMap = Object.fromEntries(plans.map((p) => [p.id, p.monthly_price_per_seat_cop ?? 0]))
+
+    const mrrOf = (l: { plan_id: string | null; seats_total: number | null }) =>
+      (l.seats_total ?? 0) * (planMap[l.plan_id ?? ''] ?? 0)
+
+    const now = new Date()
+    const firstOfThisMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString()
+    const firstOfLastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1).toISOString()
+
+    const activeLicenses = licenses.filter((l) => l.status === 'active')
+    const currentMrr = activeLicenses.reduce((s, l) => s + mrrOf(l), 0)
+
+    // Prev month MRR = licenses active before this month that are still active,
+    // plus licenses that churned THIS month (they were active last month)
+    const prevMonthMrr =
+      activeLicenses
+        .filter((l) => (l.starts_at ?? '') < firstOfThisMonth)
+        .reduce((s, l) => s + mrrOf(l), 0) +
+      licenses
+        .filter(
+          (l) =>
+            (l.status === 'cancelled' || l.status === 'suspended') &&
+            (l.updated_at ?? '') >= firstOfThisMonth &&
+            (l.starts_at ?? '') < firstOfThisMonth,
+        )
+        .reduce((s, l) => s + mrrOf(l), 0)
+
+    const newMrrThisMonth = activeLicenses
+      .filter((l) => (l.starts_at ?? '') >= firstOfThisMonth)
+      .reduce((s, l) => s + mrrOf(l), 0)
+
+    const churnedMrrThisMonth = licenses
+      .filter(
+        (l) =>
+          (l.status === 'cancelled' || l.status === 'suspended') &&
+          (l.updated_at ?? '') >= firstOfThisMonth,
+      )
+      .reduce((s, l) => s + mrrOf(l), 0)
+
+    // 6-month trend
+    const months: { label: string; newMrr: number; churnedMrr: number }[] = []
+    for (let i = 5; i >= 0; i--) {
+      const start = new Date(now.getFullYear(), now.getMonth() - i, 1)
+      const end = new Date(now.getFullYear(), now.getMonth() - i + 1, 1)
+      const label = start.toLocaleDateString('es-CO', { month: 'short', year: '2-digit' })
+      const newMrr = licenses
+        .filter((l) => {
+          const s = l.starts_at ?? ''
+          return s >= start.toISOString() && s < end.toISOString() && l.status === 'active'
+        })
+        .reduce((s, l) => s + mrrOf(l), 0)
+      const churnedMrr = licenses
+        .filter((l) => {
+          const u = l.updated_at ?? ''
+          return (
+            u >= start.toISOString() &&
+            u < end.toISOString() &&
+            (l.status === 'cancelled' || l.status === 'suspended')
+          )
+        })
+        .reduce((s, l) => s + mrrOf(l), 0)
+      months.push({ label, newMrr, churnedMrr })
+    }
+
+    const mrrChangePercent =
+      prevMonthMrr > 0 ? Math.round(((currentMrr - prevMonthMrr) / prevMonthMrr) * 100) : null
+
+    return {
+      currentMrr,
+      prevMonthMrr,
+      mrrChangePercent,
+      newMrrThisMonth,
+      churnedMrrThisMonth,
+      arr: currentMrr * 12,
+      prevArr: prevMonthMrr * 12,
+      monthlyTrend: months,
+    }
+  }),
+
+  // ─── FEATURE OVERRIDES ───────────────────────────────────────────────────
+  updateFeatureOverrides: platformAdminProcedure
+    .input(
+      z.object({
+        licenseId: z.string().uuid(),
+        overrides: z.record(z.boolean()),
+      }),
+    )
+    .mutation(async ({ input, ctx }) => {
+      const { error } = await ctx.db
+        .from('licenses')
+        .update({ feature_overrides: input.overrides, updated_at: new Date().toISOString() })
+        .eq('id', input.licenseId)
+
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      return { success: true }
+    }),
+
+  // ─── PIPELINE DE RENOVACIONES ────────────────────────────────────────────
+  getRenewalPipeline: platformAdminProcedure
+    .input(z.object({ daysAhead: z.number().int().min(1).max(180).default(60) }))
+    .query(async ({ input, ctx }) => {
+      const db = ctx.db
+      const now = new Date()
+      const cutoff = new Date(now.getTime() + input.daysAhead * 24 * 60 * 60 * 1000).toISOString()
+
+      const { data, error } = await db
+        .from('licenses')
+        .select(
+          `id, tenant_id, plan_id, seats_total, status, ends_at, trial_ends_at,
+           renewal_status, renewal_notes,
+           plans(code, name, monthly_price_per_seat_cop),
+           tenants(id, legal_name, trade_name, contact_email)`,
+        )
+        .in('status', ['active', 'trial'])
+        .not('ends_at', 'is', null)
+        .lte('ends_at', cutoff)
+        .order('ends_at', { ascending: true })
+
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      return data ?? []
+    }),
+
+  updateRenewalStatus: platformAdminProcedure
+    .input(
+      z.object({
+        licenseId: z.string().uuid(),
+        renewalStatus: z.enum(['contacted', 'negotiating', 'renewed', 'lost']).nullable(),
+        renewalNotes: z.string().max(2000).optional(),
+      }),
+    )
+    .mutation(async ({ input, ctx }) => {
+      const { error } = await ctx.db
+        .from('licenses')
+        .update({
+          renewal_status: input.renewalStatus,
+          renewal_notes: input.renewalNotes ?? null,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', input.licenseId)
+
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      return { success: true }
+    }),
+
+  // ─── ONBOARDING FUNNEL ───────────────────────────────────────────────────
+  getOnboardingFunnel: platformAdminProcedure.query(async ({ ctx }) => {
+    const db = ctx.db
+
+    const [tenantsRes, usersCountRes, schedulesRes] = await Promise.all([
+      db
+        .from('tenants')
+        .select(
+          'id, legal_name, trade_name, contact_email, created_at, onboarding_complete, logo_url, status',
+        ),
+      db.from('users').select('tenant_id, role').neq('role', 'platform_admin'),
+      db.from('work_schedules').select('tenant_id'),
+    ])
+
+    const tenants = tenantsRes.data ?? []
+    const users = usersCountRes.data ?? []
+    const schedules = schedulesRes.data ?? []
+
+    const userCountMap: Record<string, number> = {}
+    for (const u of users) {
+      if (u.tenant_id) userCountMap[u.tenant_id] = (userCountMap[u.tenant_id] ?? 0) + 1
+    }
+    const hasScheduleSet = new Set(schedules.map((s) => s.tenant_id))
+
+    const rows = tenants
+      .filter((t) => t.status !== 'cancelled')
+      .map((t) => {
+        const userCount = userCountMap[t.id] ?? 0
+        const hasLogo = !!t.logo_url
+        const hasEmployees = userCount > 1
+        const hasSchedule = hasScheduleSet.has(t.id)
+        const isComplete = !!t.onboarding_complete
+
+        const stepsCompleted =
+          (hasLogo ? 1 : 0) + (hasEmployees ? 1 : 0) + (hasSchedule ? 1 : 0) + (isComplete ? 1 : 0)
+
+        const daysSinceCreation = Math.floor(
+          (Date.now() - new Date(t.created_at ?? '').getTime()) / (1000 * 60 * 60 * 24),
+        )
+
+        return {
+          tenantId: t.id,
+          tenantName: t.trade_name ?? t.legal_name,
+          contactEmail: t.contact_email,
+          createdAt: t.created_at,
+          daysSinceCreation,
+          isComplete,
+          hasLogo,
+          hasEmployees,
+          hasSchedule,
+          stepsCompleted,
+          userCount,
+        }
+      })
+      .sort((a, b) => a.stepsCompleted - b.stepsCompleted)
+
+    const totalTenants = rows.length
+    const completedCount = rows.filter((r) => r.isComplete).length
+    const stuckCount = rows.filter((r) => !r.isComplete && r.daysSinceCreation > 3).length
+
+    return { rows, totalTenants, completedCount, stuckCount }
+  }),
+
+  // ─── PLATFORM ALERTS (para cron) ─────────────────────────────────────────
+  getPlatformAlerts: platformAdminProcedure.query(async ({ ctx }) => {
+    const db = ctx.db
+    const now = new Date()
+    const in3days = new Date(now.getTime() + 3 * 24 * 60 * 60 * 1000).toISOString()
+    const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000).toISOString()
+
+    const [expiringRes, churnedRes] = await Promise.all([
+      db
+        .from('licenses')
+        .select(
+          'id, tenant_id, ends_at, trial_ends_at, tenants(legal_name, trade_name, contact_email)',
+        )
+        .in('status', ['active', 'trial'])
+        .not('ends_at', 'is', null)
+        .lte('ends_at', in3days)
+        .gte('ends_at', now.toISOString()),
+      db
+        .from('tenants')
+        .select('id, legal_name, trade_name, contact_email, updated_at')
+        .eq('status', 'cancelled')
+        .gte('updated_at', yesterday),
+    ])
+
+    return {
+      expiringTrials: expiringRes.data ?? [],
+      recentChurn: churnedRes.data ?? [],
+    }
+  }),
+
   // ─── IMPERSONACIÓN ────────────────────────────────────────────────────────
   impersonateTenant: platformAdminProcedure
     .input(z.object({ tenantId: z.string().uuid() }))

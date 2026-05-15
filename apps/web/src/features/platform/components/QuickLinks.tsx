@@ -1,5 +1,14 @@
 import Link from 'next/link'
-import { Building2, Users, BarChart2, FileText, CreditCard, Shield } from 'lucide-react'
+import {
+  Building2,
+  Users,
+  BarChart2,
+  FileText,
+  CreditCard,
+  Shield,
+  RefreshCw,
+  Rocket,
+} from 'lucide-react'
 
 const LINKS = [
   {
@@ -17,18 +26,32 @@ const LINKS = [
     color: 'bg-violet-50 text-violet-600',
   },
   {
+    href: '/super-admin/revenue',
+    icon: CreditCard,
+    label: 'Revenue',
+    desc: 'MRR, ARR y tendencia mensual',
+    color: 'bg-amber-50 text-amber-600',
+  },
+  {
+    href: '/super-admin/renewals',
+    icon: RefreshCw,
+    label: 'Renovaciones',
+    desc: 'Pipeline de licencias por vencer',
+    color: 'bg-cyan-50 text-cyan-600',
+  },
+  {
+    href: '/super-admin/onboarding',
+    icon: Rocket,
+    label: 'Onboarding',
+    desc: 'Funnel de adopción de clientes',
+    color: 'bg-indigo-50 text-indigo-600',
+  },
+  {
     href: '/super-admin/metrics',
     icon: BarChart2,
     label: 'Métricas',
     desc: 'KPIs y gráficos de crecimiento',
     color: 'bg-emerald-50 text-emerald-600',
-  },
-  {
-    href: '/super-admin/revenue',
-    icon: CreditCard,
-    label: 'Revenue',
-    desc: 'Facturación y desglose de ingresos',
-    color: 'bg-amber-50 text-amber-600',
   },
   {
     href: '/super-admin/plans',

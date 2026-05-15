@@ -11,6 +11,8 @@ import {
   LogOut,
   Users,
   BarChart2,
+  RefreshCw,
+  Rocket,
 } from 'lucide-react'
 import { cn } from '@bcwork/ui'
 import { trpc } from '@/lib/trpc-client'
@@ -20,6 +22,8 @@ const NAV = [
   { href: '/super-admin/tenants', label: 'Empresas', icon: Building2 },
   { href: '/super-admin/users', label: 'Usuarios', icon: Users },
   { href: '/super-admin/revenue', label: 'Revenue', icon: BarChart2 },
+  { href: '/super-admin/renewals', label: 'Renovaciones', icon: RefreshCw },
+  { href: '/super-admin/onboarding', label: 'Onboarding', icon: Rocket },
   { href: '/super-admin/plans', label: 'Planes', icon: CreditCard },
   { href: '/super-admin/audit', label: 'Auditoría', icon: ScrollText },
 ]
