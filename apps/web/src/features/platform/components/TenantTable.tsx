@@ -22,6 +22,7 @@ import {
 } from 'lucide-react'
 import { trpc } from '@/lib/trpc-client'
 import { StatusBadge } from './StatusBadge'
+import { HealthScoreBadge } from './HealthScoreBadge'
 import { formatCOP, formatDate, daysUntil } from '@/lib/format'
 
 const EMPTY_FORM = {
@@ -890,6 +891,7 @@ export function TenantTable() {
   const [status, setStatus] = useState<'all' | 'trial' | 'active' | 'suspended' | 'cancelled'>(
     'all',
   )
+  const [tagFilter, setTagFilter] = useState<string>('all')
   const [page, setPage] = useState(1)
   const [showNew, setShowNew] = useState(false)
   const [editId, setEditId] = useState<string | null>(null)
@@ -1070,7 +1072,19 @@ export function TenantTable() {
     { placeholderData: keepPreviousData },
   )
 
-  const pageRows = data?.data ?? []
+  const { data: healthScores } = trpc.platform.getHealthScores.useQuery(undefined, {
+    refetchInterval: 300_000,
+    staleTime: 120_000,
+  })
+  const { data: allTags } = trpc.platform.getAllTags.useQuery()
+
+  const healthMap = Object.fromEntries((healthScores ?? []).map((s) => [s.tenantId, s]))
+
+  const pageRows = (data?.data ?? []).filter((t) => {
+    if (tagFilter === 'all') return true
+    const tags = (t as unknown as { tags?: string[] }).tags ?? []
+    return tags.includes(tagFilter)
+  })
   const pageIds = pageRows.map((t) => t.id)
 
   return (
@@ -1167,6 +1181,24 @@ export function TenantTable() {
           )}
           CSV
         </button>
+        {(allTags ?? []).length > 0 && (
+          <select
+            value={tagFilter}
+            title="Filtrar por etiqueta"
+            onChange={(e) => {
+              setTagFilter(e.target.value)
+              setPage(1)
+            }}
+            className="rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+          >
+            <option value="all">Todos los tags</option>
+            {(allTags ?? []).map((tag) => (
+              <option key={tag} value={tag}>
+                {tag}
+              </option>
+            ))}
+          </select>
+        )}
         <button
           type="button"
           onClick={() => setShowNew(true)}
@@ -1196,6 +1228,7 @@ export function TenantTable() {
               <th className="px-4 py-3 text-left font-medium text-gray-500">Plan</th>
               <th className="px-4 py-3 text-right font-medium text-gray-500">Seats</th>
               <th className="px-4 py-3 text-right font-medium text-gray-500">MRR</th>
+              <th className="px-4 py-3 text-left font-medium text-gray-500">Health</th>
               <th className="px-4 py-3 text-left font-medium text-gray-500">Estado</th>
               <th className="px-4 py-3 text-left font-medium text-gray-500">Vence</th>
               <th className="px-4 py-3 text-left font-medium text-gray-500">Acciones</th>
@@ -1204,14 +1237,14 @@ export function TenantTable() {
           <tbody className="divide-y divide-gray-50">
             {isLoading && (
               <tr>
-                <td colSpan={8} className="px-4 py-8 text-center text-gray-400">
+                <td colSpan={9} className="px-4 py-8 text-center text-gray-400">
                   Cargando...
                 </td>
               </tr>
             )}
             {!isLoading && pageRows.length === 0 && (
               <tr>
-                <td colSpan={8} className="px-4 py-8 text-center text-gray-400">
+                <td colSpan={9} className="px-4 py-8 text-center text-gray-400">
                   Sin resultados
                 </td>
               </tr>
@@ -1265,6 +1298,16 @@ export function TenantTable() {
                   <td className="px-4 py-3 text-right tabular-nums">{license?.seats_total ?? 0}</td>
                   <td className="px-4 py-3 text-right tabular-nums text-gray-700">
                     {license?.status === 'active' ? formatCOP(mrr) : '—'}
+                  </td>
+                  <td className="px-4 py-3">
+                    {healthMap[tenant.id] != null ? (
+                      <HealthScoreBadge
+                        score={healthMap[tenant.id]!.score}
+                        grade={healthMap[tenant.id]!.grade as 'healthy' | 'at_risk' | 'critical'}
+                      />
+                    ) : (
+                      <span className="text-xs text-gray-300">—</span>
+                    )}
                   </td>
                   <td className="px-4 py-3">
                     <StatusBadge status={license?.status ?? tenant.status} />

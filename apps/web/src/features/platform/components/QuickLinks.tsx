@@ -8,6 +8,8 @@ import {
   Shield,
   RefreshCw,
   Rocket,
+  Puzzle,
+  TrendingUp,
 } from 'lucide-react'
 
 const LINKS = [
@@ -52,6 +54,20 @@ const LINKS = [
     label: 'Métricas',
     desc: 'KPIs y gráficos de crecimiento',
     color: 'bg-emerald-50 text-emerald-600',
+  },
+  {
+    href: '/super-admin/features',
+    icon: Puzzle,
+    label: 'Features',
+    desc: 'Adopción de funcionalidades por tenant',
+    color: 'bg-teal-50 text-teal-600',
+  },
+  {
+    href: '/super-admin/cohorts',
+    icon: TrendingUp,
+    label: 'Cohorts',
+    desc: 'Retención de clientes por cohorte',
+    color: 'bg-fuchsia-50 text-fuchsia-600',
   },
   {
     href: '/super-admin/plans',

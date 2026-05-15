@@ -1,4 +1,5 @@
 import { RevenueDashboard } from '@/features/platform/components/RevenueDashboard'
+import { MrrWaterfall } from '@/features/platform/components/MrrWaterfall'
 
 export const metadata = { title: 'Revenue — BCWork Super Admin' }
 
@@ -10,6 +11,7 @@ export default function RevenuePage() {
         <p className="mt-1 text-sm text-gray-500">Desglose de ingresos y proyecciones MRR</p>
       </div>
       <RevenueDashboard />
+      <MrrWaterfall />
     </div>
   )
 }

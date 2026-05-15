@@ -4389,6 +4389,47 @@ export type Database = {
           },
         ]
       }
+      tenant_communications: {
+        Row: {
+          body: string
+          channel: string
+          id: string
+          metadata: Json | null
+          sent_at: string
+          sent_by: string
+          subject: string
+          tenant_id: string
+        }
+        Insert: {
+          body: string
+          channel?: string
+          id?: string
+          metadata?: Json | null
+          sent_at?: string
+          sent_by?: string
+          subject: string
+          tenant_id: string
+        }
+        Update: {
+          body?: string
+          channel?: string
+          id?: string
+          metadata?: Json | null
+          sent_at?: string
+          sent_by?: string
+          subject?: string
+          tenant_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "tenant_communications_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       tenants: {
         Row: {
           contact_email: string
@@ -4406,6 +4447,7 @@ export type Database = {
           notification_preferences: Json | null
           onboarding_complete: boolean
           status: string
+          tags: string[] | null
           timezone: string | null
           trade_name: string | null
           updated_at: string | null
@@ -4426,6 +4468,7 @@ export type Database = {
           notification_preferences?: Json | null
           onboarding_complete?: boolean
           status?: string
+          tags?: string[] | null
           timezone?: string | null
           trade_name?: string | null
           updated_at?: string | null
@@ -4446,6 +4489,7 @@ export type Database = {
           notification_preferences?: Json | null
           onboarding_complete?: boolean
           status?: string
+          tags?: string[] | null
           timezone?: string | null
           trade_name?: string | null
           updated_at?: string | null

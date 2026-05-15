@@ -9,6 +9,9 @@ import { LicenseCard } from './LicenseCard'
 import { AuditLogTable } from './AuditLogTable'
 import { TenantNotes } from './TenantNotes'
 import { TenantTimeline } from './TenantTimeline'
+import { CommunicationHistory } from './CommunicationHistory'
+import { HealthScorePanel } from './HealthScoreBadge'
+import { TenantTagsEditor } from './TenantTagsEditor'
 import { formatDate } from '@/lib/format'
 import { useEffect, useRef } from 'react'
 import {
@@ -449,6 +452,15 @@ export function TenantDetail({ tenantId }: { tenantId: string }) {
               )}
             </div>
           </div>
+
+          {/* Health Score */}
+          <HealthScorePanel tenantId={tenantId} />
+
+          {/* Segmentos / Tags */}
+          <TenantTagsEditor tenantId={tenantId} />
+
+          {/* Historial de comunicaciones */}
+          <CommunicationHistory tenantId={tenantId} />
 
           {/* Notas internas */}
           <TenantNotes tenantId={tenantId} />

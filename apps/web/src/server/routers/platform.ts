@@ -756,13 +756,26 @@ export const platformRouter = router({
           message: 'No se pudo enviar el email',
         })
 
-      await ctx.db.from('audit_logs').insert({
-        actor_user_id: ctx.user.sub,
-        action: 'tenant.updated',
-        entity_type: 'tenant',
-        entity_id: input.tenantId,
-        after_state: { email_sent_to: admin.email, subject: input.subject } as unknown as AuditJson,
-      })
+      await Promise.all([
+        ctx.db.from('audit_logs').insert({
+          actor_user_id: ctx.user.sub,
+          action: 'tenant.updated',
+          entity_type: 'tenant',
+          entity_id: input.tenantId,
+          after_state: {
+            email_sent_to: admin.email,
+            subject: input.subject,
+          } as unknown as AuditJson,
+        }),
+        ctx.db.from('tenant_communications').insert({
+          tenant_id: input.tenantId,
+          subject: input.subject,
+          body: input.body,
+          channel: 'email',
+          sent_by: ctx.user.email ?? 'platform_admin',
+          metadata: { to: admin.email, recipientName: admin.full_name ?? admin.email },
+        }),
+      ])
 
       return { success: true, sentTo: admin.email }
     }),
@@ -1074,6 +1087,343 @@ export const platformRouter = router({
       expiringTrials: expiringRes.data ?? [],
       recentChurn: churnedRes.data ?? [],
     }
+  }),
+
+  // ─── HEALTH SCORE ────────────────────────────────────────────────────────
+  getHealthScores: platformAdminProcedure.query(async ({ ctx }) => {
+    const db = ctx.db
+    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString()
+    const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()
+
+    const [tenantsRes, usersRes, sessionsRes] = await Promise.all([
+      db.from('tenants').select('id, status').neq('status', 'cancelled'),
+      db.from('users').select('id, tenant_id, status').neq('role', 'platform_admin'),
+      db
+        .from('work_sessions')
+        .select('tenant_id, user_id, started_at')
+        .gte('started_at', thirtyDaysAgo),
+    ])
+
+    const tenants = tenantsRes.data ?? []
+    const users = usersRes.data ?? []
+    const sessions = sessionsRes.data ?? []
+
+    type TenantUserStat = { total: number; active: number }
+    const usersByTenant: Record<string, TenantUserStat> = {}
+    for (const u of users) {
+      if (!u.tenant_id) continue
+      if (!usersByTenant[u.tenant_id]) usersByTenant[u.tenant_id] = { total: 0, active: 0 }
+      const uStat = usersByTenant[u.tenant_id] as TenantUserStat
+      uStat.total++
+      if (u.status === 'active') uStat.active++
+    }
+
+    type TenantSessionStat = { count: number; activeUsers: Set<string>; lastSeen: string }
+    const sessionsByTenant: Record<string, TenantSessionStat> = {}
+    for (const s of sessions) {
+      if (!s.tenant_id) continue
+      if (!sessionsByTenant[s.tenant_id])
+        sessionsByTenant[s.tenant_id] = { count: 0, activeUsers: new Set(), lastSeen: '' }
+      const entry = sessionsByTenant[s.tenant_id] as TenantSessionStat
+      entry.count++
+      if (s.user_id) entry.activeUsers.add(s.user_id)
+      if (!entry.lastSeen || (s.started_at && s.started_at > entry.lastSeen))
+        entry.lastSeen = s.started_at ?? ''
+    }
+
+    const recentSessions = sessions.filter((s) => s.started_at && s.started_at >= sevenDaysAgo)
+    const recentByTenant: Record<string, number> = {}
+    for (const s of recentSessions) {
+      if (s.tenant_id) recentByTenant[s.tenant_id] = (recentByTenant[s.tenant_id] ?? 0) + 1
+    }
+
+    return tenants.map((t) => {
+      const u = usersByTenant[t.id] ?? { total: 0, active: 0 }
+      const s = sessionsByTenant[t.id] ?? { count: 0, activeUsers: new Set(), lastSeen: '' }
+
+      // Adoption: active users / total users (30%)
+      const adoptionScore = u.total > 0 ? (u.active / u.total) * 30 : 0
+      // Activity: sessions in last 7 days, capped at 30 (30%)
+      const activityScore = Math.min((recentByTenant[t.id] ?? 0) / Math.max(u.total, 1), 1) * 30
+      // Recency: last session within 7 days = full, 14 days = half, else 0 (25%)
+      const daysSinceLastSession = s.lastSeen
+        ? (Date.now() - new Date(s.lastSeen).getTime()) / (1000 * 60 * 60 * 24)
+        : 999
+      const recencyScore = daysSinceLastSession <= 7 ? 25 : daysSinceLastSession <= 14 ? 12 : 0
+      // Base: just having users (15%)
+      const baseScore = u.total > 0 ? 15 : 0
+
+      const score = Math.round(adoptionScore + activityScore + recencyScore + baseScore)
+
+      return {
+        tenantId: t.id,
+        score,
+        grade: score >= 75 ? 'healthy' : score >= 45 ? 'at_risk' : 'critical',
+        activeUsers: s.activeUsers.size,
+        totalUsers: u.total,
+        sessionsLast7d: recentByTenant[t.id] ?? 0,
+        lastSeenAt: s.lastSeen || null,
+      }
+    })
+  }),
+
+  // ─── MRR WATERFALL ────────────────────────────────────────────────────────
+  getMrrWaterfall: platformAdminProcedure.query(async ({ ctx }) => {
+    const db = ctx.db
+
+    const sixMonthsAgo = new Date(Date.now() - 180 * 24 * 60 * 60 * 1000).toISOString()
+    const [licensesRes, plansRes] = await Promise.all([
+      db
+        .from('licenses')
+        .select('id, tenant_id, plan_id, seats_total, status, starts_at, updated_at, created_at')
+        .gte('created_at', sixMonthsAgo),
+      db.from('plans').select('id, monthly_price_per_seat_cop'),
+    ])
+
+    const licenses = licensesRes.data ?? []
+    const plans = plansRes.data ?? []
+    const priceMap = Object.fromEntries(plans.map((p) => [p.id, p.monthly_price_per_seat_cop]))
+
+    const monthKeys: string[] = []
+    for (let i = 5; i >= 0; i--) {
+      const d = new Date()
+      d.setMonth(d.getMonth() - i)
+      monthKeys.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`)
+    }
+
+    const waterfall = monthKeys.map((monthKey) => {
+      const parts = monthKey.split('-').map(Number)
+      const yr = parts[0] as number
+      const mo = parts[1] as number
+      const start = new Date(yr, mo - 1, 1).toISOString()
+      const end = new Date(yr, mo, 1).toISOString()
+
+      const newMrr = licenses
+        .filter((l) => l.starts_at >= start && l.starts_at < end && l.status !== 'cancelled')
+        .reduce((sum, l) => sum + (priceMap[l.plan_id] ?? 0) * l.seats_total, 0)
+
+      const churnedMrr = licenses
+        .filter(
+          (l) =>
+            l.status === 'cancelled' && l.updated_at && l.updated_at >= start && l.updated_at < end,
+        )
+        .reduce((sum, l) => sum + (priceMap[l.plan_id] ?? 0) * l.seats_total, 0)
+
+      return {
+        month: monthKey,
+        label: new Date(yr, mo - 1).toLocaleDateString('es-CO', {
+          month: 'short',
+          year: '2-digit',
+        }),
+        newMrr,
+        churnedMrr,
+        netNew: newMrr - churnedMrr,
+      }
+    })
+
+    return waterfall
+  }),
+
+  // ─── HISTORIAL DE COMUNICACIONES ─────────────────────────────────────────
+  getTenantCommunications: platformAdminProcedure
+    .input(z.object({ tenantId: z.string().uuid() }))
+    .query(async ({ input, ctx }) => {
+      const { data, error } = await ctx.db
+        .from('tenant_communications')
+        .select('id, subject, body, channel, sent_by, sent_at, metadata')
+        .eq('tenant_id', input.tenantId)
+        .order('sent_at', { ascending: false })
+        .limit(50)
+
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      return data ?? []
+    }),
+
+  logCommunication: platformAdminProcedure
+    .input(
+      z.object({
+        tenantId: z.string().uuid(),
+        subject: z.string().min(1).max(200),
+        body: z.string().min(1).max(5000),
+        channel: z.enum(['email', 'call', 'meeting', 'note']).default('note'),
+      }),
+    )
+    .mutation(async ({ input, ctx }) => {
+      const { error } = await ctx.db.from('tenant_communications').insert({
+        tenant_id: input.tenantId,
+        subject: input.subject,
+        body: input.body,
+        channel: input.channel,
+        sent_by: ctx.user.email ?? 'platform_admin',
+      })
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      return { success: true }
+    }),
+
+  // ─── ADOPCIÓN DE FEATURES ────────────────────────────────────────────────
+  getFeatureAdoption: platformAdminProcedure.query(async ({ ctx }) => {
+    const db = ctx.db
+
+    const [licensesRes, plansRes] = await Promise.all([
+      db
+        .from('licenses')
+        .select('id, tenant_id, plan_id, status, feature_overrides')
+        .in('status', ['active', 'trial']),
+      db.from('plans').select('id, code, features'),
+    ])
+
+    const licenses = licensesRes.data ?? []
+    const plans = plansRes.data ?? []
+    const planMap = Object.fromEntries(plans.map((p) => [p.id, p]))
+
+    const FEATURE_KEYS = [
+      'sso',
+      'api_access',
+      'payroll_export',
+      'office_vs_remote',
+      'productivity_map',
+      'scheduled_reports',
+      'extended_retention',
+    ]
+
+    const stats = FEATURE_KEYS.map((key) => {
+      let enabled = 0
+      let overridden = 0
+      const total = licenses.length
+
+      for (const lic of licenses) {
+        const plan = planMap[lic.plan_id]
+        const planDefault = (plan?.features as Record<string, boolean> | null)?.[key] ?? false
+        const override = (lic.feature_overrides as Record<string, boolean> | null)?.[key]
+        const effective = override !== undefined ? override : planDefault
+        if (effective) enabled++
+        if (override !== undefined && override !== planDefault) overridden++
+      }
+
+      return {
+        key,
+        enabled,
+        overridden,
+        total,
+        pct: total > 0 ? Math.round((enabled / total) * 100) : 0,
+      }
+    })
+
+    return { features: stats, totalLicenses: licenses.length }
+  }),
+
+  // ─── SEGMENTOS / TAGS ────────────────────────────────────────────────────
+  getTenantTags: platformAdminProcedure
+    .input(z.object({ tenantId: z.string().uuid() }))
+    .query(async ({ input, ctx }) => {
+      const { data } = await ctx.db.from('tenants').select('tags').eq('id', input.tenantId).single()
+      return (data?.tags as string[] | null) ?? []
+    }),
+
+  addTenantTag: platformAdminProcedure
+    .input(z.object({ tenantId: z.string().uuid(), tag: z.string().min(1).max(50) }))
+    .mutation(async ({ input, ctx }) => {
+      const { data: current } = await ctx.db
+        .from('tenants')
+        .select('tags')
+        .eq('id', input.tenantId)
+        .single()
+      const existing = (current?.tags as string[] | null) ?? []
+      if (existing.includes(input.tag)) return { success: true }
+      const { error } = await ctx.db
+        .from('tenants')
+        .update({ tags: [...existing, input.tag] })
+        .eq('id', input.tenantId)
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      return { success: true }
+    }),
+
+  removeTenantTag: platformAdminProcedure
+    .input(z.object({ tenantId: z.string().uuid(), tag: z.string().min(1).max(50) }))
+    .mutation(async ({ input, ctx }) => {
+      const { data: current } = await ctx.db
+        .from('tenants')
+        .select('tags')
+        .eq('id', input.tenantId)
+        .single()
+      const existing = (current?.tags as string[] | null) ?? []
+      const { error } = await ctx.db
+        .from('tenants')
+        .update({ tags: existing.filter((t) => t !== input.tag) })
+        .eq('id', input.tenantId)
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      return { success: true }
+    }),
+
+  getAllTags: platformAdminProcedure.query(async ({ ctx }) => {
+    const { data } = await ctx.db.from('tenants').select('tags').neq('status', 'cancelled')
+    const allTags = new Set<string>()
+    for (const row of data ?? []) {
+      for (const tag of (row.tags as string[] | null) ?? []) allTags.add(tag)
+    }
+    return Array.from(allTags).sort()
+  }),
+
+  // ─── COHORT ANALYSIS ─────────────────────────────────────────────────────
+  getCohortAnalysis: platformAdminProcedure.query(async ({ ctx }) => {
+    const db = ctx.db
+
+    const { data: tenants } = await db
+      .from('tenants')
+      .select('id, created_at, status, updated_at')
+      .order('created_at', { ascending: true })
+
+    if (!tenants?.length) return { cohorts: [] }
+
+    // Group tenants by acquisition month
+    type CohortEntry = {
+      total: number
+      retained: number[]
+      tenants: { id: string; status: string; updatedAt: string }[]
+    }
+    const cohortMap: Record<string, CohortEntry> = {}
+
+    for (const t of tenants) {
+      const d = new Date(t.created_at ?? '')
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+      if (!cohortMap[key]) cohortMap[key] = { total: 0, retained: [], tenants: [] }
+      cohortMap[key]!.total++
+      cohortMap[key]!.tenants.push({ id: t.id, status: t.status, updatedAt: t.updated_at ?? '' })
+    }
+
+    const MAX_MONTHS = 6
+    const cohorts = Object.entries(cohortMap)
+      .slice(-12)
+      .map(([month, data]) => {
+        const parts = month.split('-').map(Number)
+        const yr = parts[0] as number
+        const mo = parts[1] as number
+        const cohortStart = new Date(yr, mo - 1, 1)
+
+        const retained: number[] = []
+        for (let m = 0; m < MAX_MONTHS; m++) {
+          const cutoff = new Date(cohortStart)
+          cutoff.setMonth(cutoff.getMonth() + m + 1)
+          if (cutoff > new Date()) break
+
+          const activeCount = data.tenants.filter(
+            (t) => t.status !== 'cancelled' || (t.updatedAt && new Date(t.updatedAt) > cutoff),
+          ).length
+          retained.push(Math.round((activeCount / data.total) * 100))
+        }
+
+        return {
+          month,
+          label: new Date(yr, mo - 1).toLocaleDateString('es-CO', {
+            month: 'short',
+            year: '2-digit',
+          }),
+          total: data.total,
+          retained,
+        }
+      })
+
+    return { cohorts }
   }),
 
   // ─── IMPERSONACIÓN ────────────────────────────────────────────────────────
