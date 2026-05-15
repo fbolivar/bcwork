@@ -2530,6 +2530,34 @@ export const adminRouter = router({
       return data
     }),
 
+  submitPerformanceReview: adminProcedure
+    .input(
+      z.object({
+        review_id: z.string().uuid(),
+        responses: z.array(
+          z.object({
+            question_index: z.number().int().min(0),
+            rating: z.number().min(1).max(5).optional(),
+            text: z.string().max(2000).optional(),
+            choice: z.string().max(200).optional(),
+          }),
+        ),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { error } = await (ctx.db as any)
+        .from('performance_reviews')
+        .update({
+          responses: input.responses,
+          status: 'submitted',
+          submitted_at: new Date().toISOString(),
+        })
+        .eq('id', input.review_id)
+        .eq('tenant_id', ctx.user!.tid)
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      return { ok: true }
+    }),
+
   // ─── Expenses admin ───────────────────────────────────────────────────────
 
   getAdminExpenses: adminProcedure
