@@ -3935,7 +3935,8 @@ export const adminRouter = router({
     .input(z.object({ confirmation: z.literal('ELIMINAR') }))
     .mutation(async ({ ctx }) => {
       const tid = ctx.user!.tid
-      const { error } = await ctx.db.rpc('delete_tenant_data', { p_tenant_id: tid })
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { error } = await (ctx.db.rpc as any)('delete_tenant_data', { p_tenant_id: tid })
       if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
       return { ok: true }
     }),
