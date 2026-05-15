@@ -6,6 +6,7 @@ import { managerRouter } from './manager'
 import { employeeRouter } from './employee'
 import { notificationsRouter } from './notifications'
 import { integrationsRouter } from './integrations'
+import { billingRouter } from './billing'
 
 export const appRouter = router({
   auth: authRouter,
@@ -15,6 +16,7 @@ export const appRouter = router({
   employee: employeeRouter,
   notifications: notificationsRouter,
   integrations: integrationsRouter,
+  billing: billingRouter,
 })
 
 export type AppRouter = typeof appRouter

@@ -3688,20 +3688,27 @@ export const adminRouter = router({
   // ─── BILLING ─────────────────────────────────────────────────────────────
 
   getBillingInfo: adminProcedure.query(async ({ ctx }) => {
-    const { data: license } = await ctx.db
-      .from('licenses')
-      .select('*, plans(code, name, monthly_price_per_seat_cop, features)')
-      .eq('tenant_id', ctx.user!.tid)
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle()
+    const [licenseRes, seatsRes, tenantRes] = await Promise.all([
+      ctx.db
+        .from('licenses')
+        .select('*, plans(code, name, monthly_price_per_seat_cop, features)')
+        .eq('tenant_id', ctx.user!.tid)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle(),
+      ctx.db
+        .from('users')
+        .select('id', { count: 'exact', head: true })
+        .eq('tenant_id', ctx.user!.tid)
+        .eq('status', 'active'),
+      ctx.db
+        .from('tenants')
+        .select('legal_name, nit, contact_email')
+        .eq('id', ctx.user!.tid)
+        .single(),
+    ])
 
-    const { count: seatsUsed } = await ctx.db
-      .from('users')
-      .select('id', { count: 'exact', head: true })
-      .eq('tenant_id', ctx.user!.tid)
-      .eq('status', 'active')
-
+    const license = licenseRes.data
     const trialEndsAt = license?.trial_ends_at ? new Date(license.trial_ends_at) : null
     const daysLeft = trialEndsAt
       ? Math.max(0, Math.ceil((trialEndsAt.getTime() - Date.now()) / 86400000))
@@ -3710,10 +3717,11 @@ export const adminRouter = router({
     return {
       license: license ?? null,
       plan: (license as any)?.plans ?? null,
-      seatsUsed: seatsUsed ?? 0,
+      seatsUsed: seatsRes.count ?? 0,
       seatsTotal: license?.seats_total ?? 0,
       daysLeft,
       status: license?.status ?? 'trial',
+      tenant: tenantRes.data ?? null,
     }
   }),
 

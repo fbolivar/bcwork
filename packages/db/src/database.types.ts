@@ -1177,6 +1177,124 @@ export type Database = {
           },
         ]
       }
+      billing_invoices: {
+        Row: {
+          id: string
+          tenant_id: string
+          invoice_number: string
+          period_start: string
+          period_end: string
+          plan_code: string
+          plan_name: string
+          seats: number
+          unit_price_cop: number
+          subtotal_cop: number
+          tax_cop: number
+          total_cop: number
+          status: string
+          payment_method: string | null
+          payment_reference: string | null
+          due_date: string
+          paid_at: string | null
+          paid_by: string | null
+          notes: string | null
+          license_id: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          tenant_id: string
+          invoice_number: string
+          period_start: string
+          period_end: string
+          plan_code: string
+          plan_name: string
+          seats: number
+          unit_price_cop: number
+          subtotal_cop: number
+          tax_cop?: number
+          total_cop: number
+          status?: string
+          payment_method?: string | null
+          payment_reference?: string | null
+          due_date: string
+          paid_at?: string | null
+          paid_by?: string | null
+          notes?: string | null
+          license_id?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          tenant_id?: string
+          invoice_number?: string
+          period_start?: string
+          period_end?: string
+          plan_code?: string
+          plan_name?: string
+          seats?: number
+          unit_price_cop?: number
+          subtotal_cop?: number
+          tax_cop?: number
+          total_cop?: number
+          status?: string
+          payment_method?: string | null
+          payment_reference?: string | null
+          due_date?: string
+          paid_at?: string | null
+          paid_by?: string | null
+          notes?: string | null
+          license_id?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          { foreignKeyName: 'billing_invoices_tenant_id_fkey'; columns: ['tenant_id']; referencedRelation: 'tenants'; referencedColumns: ['id'] }
+        ]
+      }
+      wompi_transactions: {
+        Row: {
+          id: string
+          tenant_id: string
+          billing_invoice_id: string | null
+          reference: string
+          wompi_id: string | null
+          amount_cop: number
+          status: string
+          currency: string
+          payment_method_type: string | null
+          redirect_url: string | null
+          webhook_payload: Record<string, unknown> | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          tenant_id: string
+          billing_invoice_id?: string | null
+          reference: string
+          wompi_id?: string | null
+          amount_cop: number
+          status?: string
+          currency?: string
+          payment_method_type?: string | null
+          redirect_url?: string | null
+          webhook_payload?: Record<string, unknown> | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          wompi_id?: string | null
+          status?: string
+          payment_method_type?: string | null
+          webhook_payload?: Record<string, unknown> | null
+          updated_at?: string
+        }
+        Relationships: [
+          { foreignKeyName: 'wompi_transactions_tenant_id_fkey'; columns: ['tenant_id']; referencedRelation: 'tenants'; referencedColumns: ['id'] }
+        ]
+      }
       billing_events: {
         Row: {
           amount_cop: number | null

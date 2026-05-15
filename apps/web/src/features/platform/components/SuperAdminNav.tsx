@@ -18,6 +18,7 @@ import {
   Mail,
   Zap,
   Megaphone,
+  Receipt,
 } from 'lucide-react'
 import { cn } from '@bcwork/ui'
 import { trpc } from '@/lib/trpc-client'
@@ -34,6 +35,7 @@ const NAV = [
   { href: '/super-admin/upsell', label: 'Upsell', icon: Zap },
   { href: '/super-admin/bulk-email', label: 'Email masivo', icon: Mail },
   { href: '/super-admin/announcements', label: 'Anuncios', icon: Megaphone },
+  { href: '/super-admin/billing', label: 'Billing', icon: Receipt },
   { href: '/super-admin/plans', label: 'Planes', icon: CreditCard },
   { href: '/super-admin/audit', label: 'Auditoría', icon: ScrollText },
 ]
