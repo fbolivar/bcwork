@@ -1,9 +1,22 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import { keepPreviousData } from '@tanstack/react-query'
-import { Plus, X, CheckCircle2, Pencil } from 'lucide-react'
+import {
+  Plus,
+  X,
+  CheckCircle2,
+  MoreVertical,
+  Eye,
+  Pencil,
+  LogIn,
+  PauseCircle,
+  PlayCircle,
+  Loader2,
+  Download,
+} from 'lucide-react'
 import { trpc } from '@/lib/trpc-client'
 import { StatusBadge } from './StatusBadge'
 import { formatCOP, formatDate, daysUntil } from '@/lib/format'
@@ -637,6 +650,205 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
 const inp =
   'w-full rounded-lg border border-gray-200 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500'
 
+type TenantStatus = 'trial' | 'active' | 'suspended' | 'cancelled'
+
+function RowActionsMenu({
+  tenantId,
+  tenantStatus,
+  onEdit,
+  onStatusChanged,
+}: {
+  tenantId: string
+  tenantStatus: TenantStatus
+  onEdit: () => void
+  onStatusChanged: () => void
+}) {
+  const router = useRouter()
+  const btnRef = useRef<HTMLButtonElement>(null)
+  const menuRef = useRef<HTMLDivElement>(null)
+  const [open, setOpen] = useState(false)
+  const [pos, setPos] = useState({ top: 0, left: 0 })
+  const [confirm, setConfirm] = useState<'suspend' | 'reactivate' | null>(null)
+  const [impersonating, setImpersonating] = useState(false)
+
+  const updateMutation = trpc.platform.updateTenant.useMutation({
+    onSuccess: () => {
+      onStatusChanged()
+      setOpen(false)
+      setConfirm(null)
+    },
+  })
+
+  const impersonateMutation = trpc.platform.impersonateTenant.useMutation({
+    onSuccess: async ({ token }) => {
+      setImpersonating(true)
+      await fetch('/api/auth/impersonate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token }),
+      })
+      router.push('/admin/dashboard')
+    },
+    onError: () => setImpersonating(false),
+  })
+
+  function handleOpen(e: React.MouseEvent) {
+    e.stopPropagation()
+    if (btnRef.current) {
+      const rect = btnRef.current.getBoundingClientRect()
+      setPos({ top: rect.bottom + 4, left: rect.right - 176 })
+    }
+    setConfirm(null)
+    setOpen((v) => !v)
+  }
+
+  useEffect(() => {
+    if (!open) return
+    const close = () => setOpen(false)
+    document.addEventListener('click', close)
+    return () => document.removeEventListener('click', close)
+  }, [open])
+
+  useEffect(() => {
+    if (menuRef.current && open) {
+      menuRef.current.style.top = `${pos.top}px`
+      menuRef.current.style.left = `${pos.left}px`
+    }
+  }, [open, pos])
+
+  const isSuspended = tenantStatus === 'suspended'
+  const isCancelled = tenantStatus === 'cancelled'
+  const canImpersonate = !isSuspended && !isCancelled
+  const canSuspend = !isSuspended && !isCancelled
+  const canReactivate = isSuspended
+
+  return (
+    <>
+      <button
+        ref={btnRef}
+        type="button"
+        onClick={handleOpen}
+        title="Acciones"
+        className="rounded-md p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-700"
+      >
+        <MoreVertical className="h-4 w-4" />
+      </button>
+
+      {open && (
+        <div
+          ref={menuRef}
+          className="fixed z-50 w-44 rounded-xl border border-gray-200 bg-white py-1 shadow-lg"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <Link
+            href={`/super-admin/tenants/${tenantId}`}
+            className="flex items-center gap-2.5 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
+            onClick={() => setOpen(false)}
+          >
+            <Eye className="h-3.5 w-3.5 text-gray-400" />
+            Ver detalle
+          </Link>
+          <button
+            type="button"
+            onClick={() => {
+              setOpen(false)
+              onEdit()
+            }}
+            className="flex w-full items-center gap-2.5 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
+          >
+            <Pencil className="h-3.5 w-3.5 text-gray-400" />
+            Editar
+          </button>
+
+          {canImpersonate && (
+            <button
+              type="button"
+              disabled={impersonating || impersonateMutation.isPending}
+              onClick={() => impersonateMutation.mutate({ tenantId })}
+              className="flex w-full items-center gap-2.5 px-3 py-2 text-sm text-blue-600 hover:bg-blue-50 disabled:opacity-50"
+            >
+              {impersonating || impersonateMutation.isPending ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <LogIn className="h-3.5 w-3.5" />
+              )}
+              Entrar como tenant
+            </button>
+          )}
+
+          {(canSuspend || canReactivate) && <div className="mx-1 my-1 border-t border-gray-100" />}
+
+          {canSuspend && confirm !== 'suspend' && (
+            <button
+              type="button"
+              onClick={() => setConfirm('suspend')}
+              className="flex w-full items-center gap-2.5 px-3 py-2 text-sm text-yellow-700 hover:bg-yellow-50"
+            >
+              <PauseCircle className="h-3.5 w-3.5" />
+              Suspender
+            </button>
+          )}
+          {canSuspend && confirm === 'suspend' && (
+            <div className="px-3 py-2">
+              <p className="mb-1.5 text-xs text-gray-500">¿Suspender esta empresa?</p>
+              <div className="flex gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => setConfirm(null)}
+                  className="flex-1 rounded border border-gray-200 py-1 text-xs text-gray-600 hover:bg-gray-50"
+                >
+                  No
+                </button>
+                <button
+                  type="button"
+                  disabled={updateMutation.isPending}
+                  onClick={() => updateMutation.mutate({ id: tenantId, status: 'suspended' })}
+                  className="flex-1 rounded border border-yellow-300 bg-yellow-50 py-1 text-xs font-semibold text-yellow-700 hover:bg-yellow-100 disabled:opacity-50"
+                >
+                  {updateMutation.isPending ? '...' : 'Sí'}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {canReactivate && confirm !== 'reactivate' && (
+            <button
+              type="button"
+              onClick={() => setConfirm('reactivate')}
+              className="flex w-full items-center gap-2.5 px-3 py-2 text-sm text-green-700 hover:bg-green-50"
+            >
+              <PlayCircle className="h-3.5 w-3.5" />
+              Reactivar
+            </button>
+          )}
+          {canReactivate && confirm === 'reactivate' && (
+            <div className="px-3 py-2">
+              <p className="mb-1.5 text-xs text-gray-500">¿Reactivar esta empresa?</p>
+              <div className="flex gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => setConfirm(null)}
+                  className="flex-1 rounded border border-gray-200 py-1 text-xs text-gray-600 hover:bg-gray-50"
+                >
+                  No
+                </button>
+                <button
+                  type="button"
+                  disabled={updateMutation.isPending}
+                  onClick={() => updateMutation.mutate({ id: tenantId, status: 'active' })}
+                  className="flex-1 rounded border border-green-300 bg-green-50 py-1 text-xs font-semibold text-green-700 hover:bg-green-100 disabled:opacity-50"
+                >
+                  {updateMutation.isPending ? '...' : 'Sí'}
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </>
+  )
+}
+
 export function TenantTable() {
   const [search, setSearch] = useState('')
   const [status, setStatus] = useState<'all' | 'trial' | 'active' | 'suspended' | 'cancelled'>(
@@ -645,6 +857,76 @@ export function TenantTable() {
   const [page, setPage] = useState(1)
   const [showNew, setShowNew] = useState(false)
   const [editId, setEditId] = useState<string | null>(null)
+  const [exporting, setExporting] = useState(false)
+  const utils = trpc.useUtils()
+
+  async function handleExportCsv() {
+    setExporting(true)
+    try {
+      const result = await utils.platform.listTenants.fetch({
+        status: 'all',
+        page: 1,
+        pageSize: 1000,
+      })
+
+      type LicRow = {
+        status: string
+        seats_total: number
+        ends_at: string | null
+        trial_ends_at: string | null
+        plans: { code: string; name: string; monthly_price_per_seat_cop: number } | null
+      }
+
+      const rows = result.data.map((t) => {
+        const lic = (t.licenses as unknown as LicRow[])?.[0]
+        const mrr =
+          lic?.status === 'active'
+            ? (lic.plans?.monthly_price_per_seat_cop ?? 0) * lic.seats_total
+            : 0
+        const endDate = lic?.trial_ends_at ?? lic?.ends_at ?? ''
+        return [
+          t.trade_name ?? t.legal_name,
+          t.legal_name,
+          t.nit,
+          t.contact_email,
+          lic?.plans?.code ?? '',
+          lic?.seats_total ?? 0,
+          mrr,
+          t.status,
+          lic?.status ?? '',
+          endDate ? formatDate(endDate) : '',
+          formatDate(t.created_at ?? ''),
+        ]
+      })
+
+      const header = [
+        'Empresa',
+        'Razón Social',
+        'NIT',
+        'Email',
+        'Plan',
+        'Seats',
+        'MRR COP',
+        'Estado Tenant',
+        'Estado Licencia',
+        'Vence',
+        'Creado',
+      ]
+      const csv = [header, ...rows]
+        .map((row) => row.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(','))
+        .join('\n')
+
+      const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `tenants-${new Date().toISOString().slice(0, 10)}.csv`
+      a.click()
+      URL.revokeObjectURL(url)
+    } finally {
+      setExporting(false)
+    }
+  }
 
   const { data, isLoading } = trpc.platform.listTenants.useQuery(
     { search: search || undefined, status, page, pageSize: 20 },
@@ -683,6 +965,20 @@ export function TenantTable() {
           <option value="suspended">Suspendidos</option>
           <option value="cancelled">Cancelados</option>
         </select>
+        <button
+          type="button"
+          onClick={handleExportCsv}
+          disabled={exporting}
+          title="Exportar a CSV"
+          className="flex items-center gap-2 rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-600 hover:bg-gray-50 disabled:opacity-50"
+        >
+          {exporting ? (
+            <Loader2 className="h-4 w-4 animate-spin" />
+          ) : (
+            <Download className="h-4 w-4" />
+          )}
+          CSV
+        </button>
         <button
           type="button"
           onClick={() => setShowNew(true)}
@@ -779,14 +1075,12 @@ export function TenantTable() {
                     )}
                   </td>
                   <td className="px-4 py-3">
-                    <button
-                      type="button"
-                      onClick={() => setEditId(tenant.id)}
-                      title="Editar empresa"
-                      className="rounded-md p-1.5 text-gray-400 hover:bg-gray-100 hover:text-blue-600"
-                    >
-                      <Pencil className="h-3.5 w-3.5" />
-                    </button>
+                    <RowActionsMenu
+                      tenantId={tenant.id}
+                      tenantStatus={tenant.status as TenantStatus}
+                      onEdit={() => setEditId(tenant.id)}
+                      onStatusChanged={() => utils.platform.listTenants.invalidate()}
+                    />
                   </td>
                 </tr>
               )

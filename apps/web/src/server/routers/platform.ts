@@ -11,7 +11,7 @@ export const platformRouter = router({
     const db = ctx.db
 
     const [tenantsRes, licensesRes, usersRes] = await Promise.all([
-      db.from('tenants').select('id, status, created_at'),
+      db.from('tenants').select('id, status, created_at, updated_at'),
       db.from('licenses').select('id, tenant_id, status, seats_total, plan_id, starts_at'),
       db.from('users').select('id, tenant_id, status').neq('role', 'platform_admin'),
     ])
@@ -35,10 +35,10 @@ export const platformRouter = router({
       return sum + price * l.seats_total
     }, 0)
 
-    // Churn: tenants cancelados en los últimos 30 días
+    // Churn: tenants que fueron cancelados en los últimos 30 días (usa updated_at como proxy de fecha de cancelación)
     const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString()
     const churnedRecent = tenants.filter(
-      (t) => t.status === 'cancelled' && (t.created_at ?? '') > thirtyDaysAgo,
+      (t) => t.status === 'cancelled' && (t.updated_at ?? t.created_at ?? '') > thirtyDaysAgo,
     ).length
 
     const activeUsers = users.filter((u) => u.status === 'active' && u.tenant_id !== null).length
@@ -391,6 +391,77 @@ export const platformRouter = router({
       return { data: data ?? [], total: count ?? 0, page: input.page, pageSize: input.pageSize }
     }),
 
+  // ─── TENANTS EN RIESGO ───────────────────────────────────────────────────
+  getAtRiskTenants: platformAdminProcedure.query(async ({ ctx }) => {
+    const db = ctx.db
+    const now = new Date()
+    const in7Days = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000).toISOString()
+    const nowIso = now.toISOString()
+
+    const { data: licenses } = await db
+      .from('licenses')
+      .select(
+        `id, status, seats_total, trial_ends_at, ends_at, updated_at,
+         tenant_id,
+         tenants(id, legal_name, trade_name, status, updated_at),
+         plans(code, name)`,
+      )
+      .in('status', ['trial', 'active', 'suspended'])
+
+    if (!licenses)
+      return { trialExpiringSoon: [], trialExpired: [], suspended: [], licenseExpired: [] }
+
+    type LicRow = (typeof licenses)[number]
+    type TenantRef = {
+      id: string
+      legal_name: string
+      trade_name: string | null
+      status: string
+      updated_at: string | null
+    } | null
+    type PlanRef = { code: string; name: string } | null
+
+    const toEntry = (l: LicRow) => ({
+      tenantId: l.tenant_id,
+      tenantName:
+        (l.tenants as TenantRef)?.trade_name ?? (l.tenants as TenantRef)?.legal_name ?? '—',
+      planName: (l.plans as PlanRef)?.name ?? '—',
+      seats: l.seats_total,
+      trialEndsAt: l.trial_ends_at,
+      endsAt: l.ends_at,
+      daysLeft: l.trial_ends_at
+        ? Math.ceil((new Date(l.trial_ends_at).getTime() - now.getTime()) / (1000 * 60 * 60 * 24))
+        : null,
+    })
+
+    const trialExpiringSoon = licenses
+      .filter(
+        (l) =>
+          l.status === 'trial' &&
+          l.trial_ends_at !== null &&
+          l.trial_ends_at > nowIso &&
+          l.trial_ends_at <= in7Days,
+      )
+      .map(toEntry)
+
+    const trialExpired = licenses
+      .filter((l) => l.status === 'trial' && l.trial_ends_at !== null && l.trial_ends_at <= nowIso)
+      .map(toEntry)
+
+    const suspended = licenses
+      .filter((l) => (l.tenants as TenantRef)?.status === 'suspended')
+      .map((l) => ({
+        ...toEntry(l),
+        suspendedAt: (l.tenants as TenantRef)?.updated_at ?? null,
+      }))
+
+    const licenseExpired = licenses
+      .filter((l) => l.status === 'active' && l.ends_at !== null && l.ends_at <= nowIso)
+      .map(toEntry)
+
+    return { trialExpiringSoon, trialExpired, suspended, licenseExpired }
+  }),
+
   // ─── IMPERSONACIÓN ────────────────────────────────────────────────────────
   impersonateTenant: platformAdminProcedure
     .input(z.object({ tenantId: z.string().uuid() }))
@@ -424,7 +495,7 @@ export const platformRouter = router({
       // Auditoría
       await ctx.db.from('audit_logs').insert({
         actor_user_id: ctx.user.sub,
-        action: 'tenant.created', // reuse closest available action
+        action: 'tenant.impersonated',
         entity_type: 'tenant',
         entity_id: input.tenantId,
         after_state: {

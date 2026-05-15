@@ -40,9 +40,11 @@ type AuditAction =
   | 'device.revoked'
   | 'device.enrolled'
   | 'device.deleted'
+  | 'tenant.updated'
   | 'tenant.data_exported'
   | 'tenant.subscription_cancelled'
   | 'tenant.account_deleted'
+  | 'tenant.impersonated'
 
 interface AuditEntry {
   tenantId?: string
