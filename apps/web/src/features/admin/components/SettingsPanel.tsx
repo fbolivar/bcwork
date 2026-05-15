@@ -2,7 +2,8 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { trpc as api } from '@/lib/trpc-client'
-import { Check, Upload, X, Bell, Plug, AlertTriangle, Building2, ChevronRight } from 'lucide-react'
+import { Check, Upload, X, Bell, Plug, AlertTriangle, Building2 } from 'lucide-react'
+import { IntegrationsManager } from './IntegrationsManager'
 
 type Tab = 'general' | 'notifications' | 'integrations' | 'danger'
 
@@ -363,45 +364,8 @@ function NotificationsTab() {
 
 // ─── Integrations Tab ─────────────────────────────────────────────────────────
 
-const INTEGRATIONS = [
-  { name: 'Slack', desc: 'Notificaciones en canales de Slack', logo: '💬', soon: true },
-  { name: 'Google Calendar', desc: 'Sincronizar ausencias y eventos', logo: '📅', soon: true },
-  { name: 'Jira', desc: 'Vincula proyectos y tickets', logo: '📋', soon: true },
-  { name: 'BambooHR', desc: 'Sincronizar datos de empleados', logo: '🌿', soon: true },
-  { name: 'Webhooks', desc: 'Enviar eventos a tu propio endpoint', logo: '🔗', soon: false },
-]
-
 function IntegrationsTab() {
-  return (
-    <div className="max-w-2xl space-y-3">
-      {INTEGRATIONS.map((intg) => (
-        <div
-          key={intg.name}
-          className="flex items-center gap-4 rounded-xl border border-gray-200 bg-white p-4"
-        >
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-gray-50 text-xl">
-            {intg.logo}
-          </div>
-          <div className="min-w-0 flex-1">
-            <p className="text-sm font-semibold text-gray-800">{intg.name}</p>
-            <p className="text-xs text-gray-400">{intg.desc}</p>
-          </div>
-          {intg.soon ? (
-            <span className="rounded-full bg-gray-100 px-2.5 py-0.5 text-xs text-gray-500">
-              Próximamente
-            </span>
-          ) : (
-            <button
-              type="button"
-              className="flex items-center gap-1 rounded-lg border border-gray-200 px-3 py-1.5 text-xs text-gray-600 hover:bg-gray-50"
-            >
-              Configurar <ChevronRight className="h-3 w-3" />
-            </button>
-          )}
-        </div>
-      ))}
-    </div>
-  )
+  return <IntegrationsManager />
 }
 
 // ─── Danger Zone Tab ──────────────────────────────────────────────────────────
