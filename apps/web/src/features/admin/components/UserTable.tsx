@@ -15,6 +15,11 @@ import {
   Loader2,
   CalendarDays,
   ChevronDown,
+  Pencil,
+  KeyRound,
+  Eye,
+  EyeOff,
+  RefreshCw,
 } from 'lucide-react'
 
 type Role = 'tenant_admin' | 'manager' | 'employee' | 'all'
@@ -251,6 +256,276 @@ function AssignScheduleModal({
   )
 }
 
+// ─── Edit User Modal ───────────────────────────────────────────────────────────
+
+function EditUserModal({ user, onClose }: { user: UserRow; onClose: () => void }) {
+  const utils = trpc.useUtils()
+
+  // Info fields
+  const [fullName, setFullName] = useState(user.full_name ?? '')
+  const [role, setRole] = useState<'manager' | 'employee'>(
+    user.role === 'manager' ? 'manager' : 'employee',
+  )
+  const [department, setDepartment] = useState(user.department ?? '')
+  const [position, setPosition] = useState('')
+
+  // Password fields
+  const [newPassword, setNewPassword] = useState('')
+  const [showPassword, setShowPassword] = useState(false)
+  const [mustChange, setMustChange] = useState(true)
+  const [passwordError, setPasswordError] = useState('')
+
+  const updateUser = trpc.admin.updateUser.useMutation({
+    onSuccess: () => {
+      void utils.admin.listUsers.invalidate()
+    },
+  })
+
+  const resetPassword = trpc.admin.adminResetUserPassword.useMutation({
+    onSuccess: () => {
+      void utils.admin.listUsers.invalidate()
+      setNewPassword('')
+      setPasswordError('')
+    },
+    onError: (e) => setPasswordError(e.message),
+  })
+
+  const generateRandom = () => {
+    const upper = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
+    const lower = 'abcdefghijklmnopqrstuvwxyz'
+    const digits = '0123456789'
+    const symbols = '!@#$&*'
+    const all = upper + lower + digits + symbols
+    const arr = Array.from(
+      { length: 12 },
+      (_, i) =>
+        [upper, lower, digits, symbols, all, all, all, all, all, all, all, all][i]![
+          Math.floor(
+            Math.random() *
+              [upper, lower, digits, symbols, all, all, all, all, all, all, all, all][i]!.length,
+          )
+        ]!,
+    )
+    setNewPassword(arr.join(''))
+    setShowPassword(true)
+    setPasswordError('')
+  }
+
+  const handleSaveInfo = () => {
+    updateUser.mutate({
+      id: user.id,
+      full_name: fullName || undefined,
+      role: user.role !== 'tenant_admin' ? role : undefined,
+      department: department || undefined,
+      position: position || undefined,
+    })
+  }
+
+  const handleSavePassword = () => {
+    setPasswordError('')
+    if (!newPassword) return
+    resetPassword.mutate({ userId: user.id, newPassword, mustChangePassword: mustChange })
+  }
+
+  const infoSaved = updateUser.isSuccess && !updateUser.isPending
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-4 pt-16">
+      <div className="w-full max-w-md rounded-2xl bg-white shadow-xl">
+        {/* Header */}
+        <div className="flex items-center justify-between border-b border-gray-100 px-6 py-4">
+          <div>
+            <h2 className="text-base font-semibold text-gray-900">Editar usuario</h2>
+            <p className="text-xs text-gray-400">{user.email}</p>
+          </div>
+          <button
+            type="button"
+            title="Cerrar"
+            onClick={onClose}
+            className="rounded-lg p-1.5 text-gray-400 hover:bg-gray-100"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        <div className="space-y-6 px-6 py-5">
+          {/* ── Información básica ── */}
+          <div>
+            <h3 className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-widest text-gray-400">
+              <Pencil className="h-3.5 w-3.5" />
+              Información
+            </h3>
+            <div className="space-y-3">
+              <div>
+                <label htmlFor="edit-name" className="mb-1 block text-xs font-medium text-gray-600">
+                  Nombre completo
+                </label>
+                <input
+                  id="edit-name"
+                  type="text"
+                  value={fullName}
+                  onChange={(e) => setFullName(e.target.value)}
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+
+              {user.role !== 'tenant_admin' && (
+                <div>
+                  <label
+                    htmlFor="edit-role"
+                    className="mb-1 block text-xs font-medium text-gray-600"
+                  >
+                    Rol
+                  </label>
+                  <div className="relative">
+                    <select
+                      id="edit-role"
+                      value={role}
+                      onChange={(e) => setRole(e.target.value as 'manager' | 'employee')}
+                      className="w-full appearance-none rounded-lg border border-gray-300 px-3 py-2.5 pr-8 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    >
+                      <option value="employee">Empleado</option>
+                      <option value="manager">Manager</option>
+                    </select>
+                    <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+                  </div>
+                </div>
+              )}
+
+              <div>
+                <label htmlFor="edit-dept" className="mb-1 block text-xs font-medium text-gray-600">
+                  Departamento
+                </label>
+                <input
+                  id="edit-dept"
+                  type="text"
+                  value={department}
+                  onChange={(e) => setDepartment(e.target.value)}
+                  placeholder="Ej: Tecnología, Ventas, RRHH..."
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+
+              <div>
+                <label htmlFor="edit-pos" className="mb-1 block text-xs font-medium text-gray-600">
+                  Cargo / Posición
+                </label>
+                <input
+                  id="edit-pos"
+                  type="text"
+                  value={position}
+                  onChange={(e) => setPosition(e.target.value)}
+                  placeholder="Ej: Desarrollador Senior, Gerente..."
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+            </div>
+
+            {updateUser.isError && (
+              <p className="mt-2 text-xs text-red-500">{updateUser.error.message}</p>
+            )}
+
+            <button
+              type="button"
+              onClick={handleSaveInfo}
+              disabled={updateUser.isPending}
+              className="mt-4 flex w-full items-center justify-center gap-1.5 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+            >
+              {updateUser.isPending ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : infoSaved ? (
+                <Check className="h-3.5 w-3.5" />
+              ) : (
+                <Check className="h-3.5 w-3.5" />
+              )}
+              {infoSaved ? 'Guardado' : 'Guardar información'}
+            </button>
+          </div>
+
+          {/* ── Contraseña ── */}
+          <div className="border-t border-gray-100 pt-5">
+            <h3 className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-widest text-gray-400">
+              <KeyRound className="h-3.5 w-3.5" />
+              Cambiar contraseña
+            </h3>
+
+            <div className="space-y-3">
+              <div>
+                <label htmlFor="edit-pwd" className="mb-1 block text-xs font-medium text-gray-600">
+                  Nueva contraseña
+                </label>
+                <div className="flex gap-2">
+                  <div className="relative flex-1">
+                    <input
+                      id="edit-pwd"
+                      type={showPassword ? 'text' : 'password'}
+                      value={newPassword}
+                      onChange={(e) => {
+                        setNewPassword(e.target.value)
+                        setPasswordError('')
+                      }}
+                      placeholder="Mín. 12 caracteres, mayúsculas, números y símbolos"
+                      className="w-full rounded-lg border border-gray-300 px-3 py-2 pr-9 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                    <button
+                      type="button"
+                      title={showPassword ? 'Ocultar' : 'Mostrar'}
+                      onClick={() => setShowPassword((v) => !v)}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                    >
+                      {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </button>
+                  </div>
+                  <button
+                    type="button"
+                    title="Generar contraseña aleatoria"
+                    onClick={generateRandom}
+                    className="flex items-center gap-1 rounded-lg border border-gray-200 px-2.5 py-2 text-xs text-gray-500 hover:bg-gray-50"
+                  >
+                    <RefreshCw className="h-3.5 w-3.5" />
+                    Generar
+                  </button>
+                </div>
+              </div>
+
+              <label className="flex cursor-pointer items-center gap-2.5">
+                <input
+                  type="checkbox"
+                  checked={mustChange}
+                  onChange={(e) => setMustChange(e.target.checked)}
+                  className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                />
+                <span className="text-xs text-gray-600">
+                  El usuario debe cambiar la contraseña en su próximo acceso
+                </span>
+              </label>
+
+              {passwordError && <p className="text-xs text-red-500">{passwordError}</p>}
+              {resetPassword.isSuccess && (
+                <p className="text-xs text-green-600">Contraseña actualizada correctamente.</p>
+              )}
+            </div>
+
+            <button
+              type="button"
+              onClick={handleSavePassword}
+              disabled={resetPassword.isPending || !newPassword}
+              className="mt-4 flex w-full items-center justify-center gap-1.5 rounded-lg bg-amber-600 px-4 py-2 text-sm font-medium text-white hover:bg-amber-700 disabled:opacity-50"
+            >
+              {resetPassword.isPending ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <KeyRound className="h-3.5 w-3.5" />
+              )}
+              Establecer contraseña
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ─── UserTable ─────────────────────────────────────────────────────────────────
 
 export function UserTable() {
@@ -261,6 +536,7 @@ export function UserTable() {
   const [showInvite, setShowInvite] = useState(false)
   const [locationUser, setLocationUser] = useState<UserRow | null>(null)
   const [scheduleUser, setScheduleUser] = useState<UserRow | null>(null)
+  const [editUser, setEditUser] = useState<UserRow | null>(null)
 
   const utils = trpc.useUtils()
   const { data, isLoading } = trpc.admin.listUsers.useQuery(
@@ -415,6 +691,15 @@ export function UserTable() {
                     <div className="flex items-center gap-2">
                       <button
                         type="button"
+                        title="Editar usuario"
+                        onClick={() => setEditUser(user as UserRow)}
+                        className="flex items-center gap-1 rounded px-2 py-1 text-xs font-medium text-gray-600 hover:bg-gray-100"
+                      >
+                        <Pencil className="h-3.5 w-3.5" />
+                        Editar
+                      </button>
+                      <button
+                        type="button"
                         title="Asignar ubicación geográfica"
                         onClick={() => setLocationUser(user as UserRow)}
                         className="flex items-center gap-1 rounded px-2 py-1 text-xs font-medium text-blue-600 hover:bg-blue-50"
@@ -479,6 +764,7 @@ export function UserTable() {
       )}
 
       {showInvite && <InviteUserModal onClose={() => setShowInvite(false)} />}
+      {editUser && <EditUserModal user={editUser} onClose={() => setEditUser(null)} />}
       {locationUser && <LocationModal user={locationUser} onClose={() => setLocationUser(null)} />}
       {scheduleUser && (
         <AssignScheduleModal

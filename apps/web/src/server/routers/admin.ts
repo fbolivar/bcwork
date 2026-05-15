@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import { TRPCError } from '@trpc/server'
 import { router, adminProcedure, protectedProcedure } from '../trpc'
-import { hashPassword, generateRandomPassword } from '@/lib/auth/password'
+import { hashPassword, generateRandomPassword, validatePasswordPolicy } from '@/lib/auth/password'
 import { logAudit } from '@/lib/auth/audit'
 import { broadcastNotificationToMany } from '@/lib/realtime-broadcast'
 import {
@@ -217,6 +217,61 @@ export const adminRouter = router({
         ipInet: ctx.ip,
         userAgent: ctx.userAgent,
         after: updates,
+      })
+
+      return { ok: true }
+    }),
+
+  adminResetUserPassword: adminProcedure
+    .input(
+      z.object({
+        userId: z.string().uuid(),
+        newPassword: z.string().min(1),
+        mustChangePassword: z.boolean().default(true),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const tenantId = ctx.user!.tid
+
+      const violation = validatePasswordPolicy(input.newPassword)
+      if (violation) throw new TRPCError({ code: 'BAD_REQUEST', message: violation })
+
+      const { data: target } = await ctx.db
+        .from('users')
+        .select('id')
+        .eq('id', input.userId)
+        .eq('tenant_id', tenantId)
+        .neq('role', 'platform_admin')
+        .maybeSingle()
+
+      if (!target) throw new TRPCError({ code: 'NOT_FOUND', message: 'Usuario no encontrado' })
+
+      const newHash = await hashPassword(input.newPassword)
+
+      await ctx.db
+        .from('users')
+        .update({
+          password_hash: newHash,
+          password_changed_at: new Date().toISOString(),
+          must_change_password: input.mustChangePassword,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', input.userId)
+        .eq('tenant_id', tenantId)
+
+      await ctx.db
+        .from('password_history')
+        .insert({ user_id: input.userId, tenant_id: tenantId, password_hash: newHash })
+
+      await logAudit(ctx.db, {
+        tenantId,
+        actorUserId: ctx.user!.sub,
+        action: 'user.password_changed',
+        entityType: 'user',
+        entityId: input.userId,
+        ipInet: ctx.ip,
+        userAgent: ctx.userAgent,
+        after: { mustChangePassword: input.mustChangePassword },
       })
 
       return { ok: true }
