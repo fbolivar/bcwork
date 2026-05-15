@@ -4344,6 +4344,45 @@ export type Database = {
           },
         ]
       }
+      tenant_notes: {
+        Row: {
+          author_id: string | null
+          content: string
+          created_at: string
+          id: string
+          tenant_id: string
+        }
+        Insert: {
+          author_id?: string | null
+          content: string
+          created_at?: string
+          id?: string
+          tenant_id: string
+        }
+        Update: {
+          author_id?: string | null
+          content?: string
+          created_at?: string
+          id?: string
+          tenant_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "tenant_notes_author_id_fkey"
+            columns: ["author_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tenant_notes_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       tenants: {
         Row: {
           contact_email: string
@@ -4355,6 +4394,8 @@ export type Database = {
           id: string
           legal_name: string
           logo_url: string | null
+          maintenance_message: string | null
+          maintenance_mode: boolean
           nit: string
           notification_preferences: Json | null
           onboarding_complete: boolean
@@ -4373,6 +4414,8 @@ export type Database = {
           id?: string
           legal_name: string
           logo_url?: string | null
+          maintenance_message?: string | null
+          maintenance_mode?: boolean
           nit: string
           notification_preferences?: Json | null
           onboarding_complete?: boolean
@@ -4391,6 +4434,8 @@ export type Database = {
           id?: string
           legal_name?: string
           logo_url?: string | null
+          maintenance_message?: string | null
+          maintenance_mode?: boolean
           nit?: string
           notification_preferences?: Json | null
           onboarding_complete?: boolean
@@ -5080,6 +5125,7 @@ export type Database = {
         Args: { p_days?: number; p_tenant_id?: string }
         Returns: number
       }
+      delete_tenant_data: { Args: { p_tenant_id: string }; Returns: undefined }
       evaluate_alerts: {
         Args: { p_date: string; p_tenant_id?: string }
         Returns: number

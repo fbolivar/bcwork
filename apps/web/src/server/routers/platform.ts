@@ -221,14 +221,36 @@ export const platformRouter = router({
 
       if (error || !data) throw new TRPCError({ code: 'NOT_FOUND' })
 
-      // Contar usuarios activos
-      const { count: userCount } = await db
-        .from('users')
-        .select('id', { count: 'exact', head: true })
-        .eq('tenant_id', input.id)
-        .eq('status', 'active')
+      const [usersRes, lastActivityRes] = await Promise.all([
+        db
+          .from('users')
+          .select('id, status')
+          .eq('tenant_id', input.id)
+          .neq('role', 'platform_admin'),
+        db
+          .from('audit_logs')
+          .select('occurred_at')
+          .eq('tenant_id', input.id)
+          .order('occurred_at', { ascending: false })
+          .limit(1),
+      ])
 
-      return { ...data, activeUserCount: userCount ?? 0 }
+      const allUsers = usersRes.data ?? []
+      const activeUsers = allUsers.filter((u) => u.status === 'active').length
+      const totalSeats =
+        (data.licenses as Array<{ seats_total: number; status: string }>)?.find(
+          (l) => l.status === 'active' || l.status === 'trial',
+        )?.seats_total ?? 0
+      const lastActivity = lastActivityRes.data?.[0]?.occurred_at ?? null
+
+      return {
+        ...data,
+        activeUserCount: activeUsers,
+        totalUserCount: allUsers.length,
+        totalSeats,
+        seatUtilization: totalSeats > 0 ? Math.round((activeUsers / totalSeats) * 100) : 0,
+        lastActivity,
+      }
     }),
 
   updateTenant: platformAdminProcedure
@@ -492,6 +514,148 @@ export const platformRouter = router({
 
     return { trialExpiringSoon, trialExpired, suspended, licenseExpired }
   }),
+
+  // ─── EXTENDER TRIAL ──────────────────────────────────────────────────────
+  extendTrial: platformAdminProcedure
+    .input(z.object({ tenantId: z.string().uuid(), days: z.number().int().min(1).max(365) }))
+    .mutation(async ({ input, ctx }) => {
+      const db = ctx.db
+      const { data: license, error } = await db
+        .from('licenses')
+        .select('id, trial_ends_at, ends_at, status')
+        .eq('tenant_id', input.tenantId)
+        .in('status', ['trial', 'active'])
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .single()
+
+      if (error || !license)
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Licencia no encontrada' })
+
+      const baseDate = new Date(license.trial_ends_at ?? license.ends_at ?? new Date())
+      if (baseDate < new Date()) baseDate.setTime(Date.now())
+      baseDate.setDate(baseDate.getDate() + input.days)
+      const newDate = baseDate.toISOString()
+
+      await db
+        .from('licenses')
+        .update({
+          trial_ends_at: license.trial_ends_at ? newDate : null,
+          ends_at: newDate,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', license.id)
+
+      await db.from('audit_logs').insert({
+        actor_user_id: ctx.user.sub,
+        action: 'license.updated',
+        entity_type: 'license',
+        entity_id: license.id,
+        after_state: { extended_days: input.days, new_end_date: newDate } as unknown as AuditJson,
+      })
+
+      return { success: true, newEndDate: newDate }
+    }),
+
+  // ─── NOTAS INTERNAS ───────────────────────────────────────────────────────
+  getTenantNotes: platformAdminProcedure
+    .input(z.object({ tenantId: z.string().uuid() }))
+    .query(async ({ input, ctx }) => {
+      const { data, error } = await ctx.db
+        .from('tenant_notes')
+        .select('id, content, created_at, author_id, users(full_name, email)')
+        .eq('tenant_id', input.tenantId)
+        .order('created_at', { ascending: false })
+        .limit(50)
+
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      return data ?? []
+    }),
+
+  createTenantNote: platformAdminProcedure
+    .input(z.object({ tenantId: z.string().uuid(), content: z.string().min(1).max(2000) }))
+    .mutation(async ({ input, ctx }) => {
+      const { error } = await ctx.db.from('tenant_notes').insert({
+        tenant_id: input.tenantId,
+        content: input.content.trim(),
+        author_id: ctx.user.sub,
+      })
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      return { success: true }
+    }),
+
+  deleteTenantNote: platformAdminProcedure
+    .input(z.object({ noteId: z.string().uuid() }))
+    .mutation(async ({ input, ctx }) => {
+      const { error } = await ctx.db.from('tenant_notes').delete().eq('id', input.noteId)
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      return { success: true }
+    }),
+
+  // ─── BÚSQUEDA DE USUARIOS ────────────────────────────────────────────────
+  searchUsers: platformAdminProcedure
+    .input(
+      z.object({
+        query: z.string().min(1).max(200),
+        page: z.number().int().min(1).default(1),
+        pageSize: z.number().int().min(1).max(50).default(20),
+      }),
+    )
+    .query(async ({ input, ctx }) => {
+      const db = ctx.db
+      const offset = (input.page - 1) * input.pageSize
+      const q = `%${input.query}%`
+
+      const { data, count, error } = await db
+        .from('users')
+        .select(
+          `id, full_name, email, role, status, created_at,
+           tenant_id, tenants(legal_name, trade_name)`,
+          { count: 'exact' },
+        )
+        .neq('role', 'platform_admin')
+        .or(`full_name.ilike.${q},email.ilike.${q}`)
+        .order('created_at', { ascending: false })
+        .range(offset, offset + input.pageSize - 1)
+
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      return { data: data ?? [], total: count ?? 0, page: input.page, pageSize: input.pageSize }
+    }),
+
+  // ─── MODO MANTENIMIENTO ───────────────────────────────────────────────────
+  toggleMaintenanceMode: platformAdminProcedure
+    .input(
+      z.object({
+        tenantId: z.string().uuid(),
+        enabled: z.boolean(),
+        message: z.string().max(500).optional(),
+      }),
+    )
+    .mutation(async ({ input, ctx }) => {
+      const { error } = await ctx.db
+        .from('tenants')
+        .update({
+          maintenance_mode: input.enabled,
+          maintenance_message: input.enabled ? (input.message ?? null) : null,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', input.tenantId)
+
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+
+      await ctx.db.from('audit_logs').insert({
+        actor_user_id: ctx.user.sub,
+        action: 'tenant.updated',
+        entity_type: 'tenant',
+        entity_id: input.tenantId,
+        after_state: {
+          maintenance_mode: input.enabled,
+          maintenance_message: input.message,
+        } as unknown as AuditJson,
+      })
+
+      return { success: true }
+    }),
 
   // ─── IMPERSONACIÓN ────────────────────────────────────────────────────────
   impersonateTenant: platformAdminProcedure

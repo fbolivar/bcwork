@@ -16,6 +16,8 @@ import {
   PlayCircle,
   Loader2,
   Download,
+  CalendarPlus,
+  Check,
 } from 'lucide-react'
 import { trpc } from '@/lib/trpc-client'
 import { StatusBadge } from './StatusBadge'
@@ -669,7 +671,16 @@ function RowActionsMenu({
   const [open, setOpen] = useState(false)
   const [pos, setPos] = useState({ top: 0, left: 0 })
   const [confirm, setConfirm] = useState<'suspend' | 'reactivate' | null>(null)
+  const [extendDone, setExtendDone] = useState(false)
   const [impersonating, setImpersonating] = useState(false)
+
+  const extendMutation = trpc.platform.extendTrial.useMutation({
+    onSuccess: () => {
+      setExtendDone(true)
+      onStatusChanged()
+      setTimeout(() => setExtendDone(false), 2000)
+    },
+  })
 
   const updateMutation = trpc.platform.updateTenant.useMutation({
     onSuccess: () => {
@@ -759,6 +770,30 @@ function RowActionsMenu({
             <Pencil className="h-3.5 w-3.5 text-gray-400" />
             Editar
           </button>
+
+          {(tenantStatus === 'trial' || tenantStatus === 'active') && (
+            <>
+              <div className="mx-1 my-1 border-t border-gray-100" />
+              <p className="px-3 pt-1 text-xs font-medium text-gray-400">Extender trial</p>
+              {([7, 14, 30] as const).map((days) => (
+                <button
+                  key={days}
+                  type="button"
+                  disabled={extendMutation.isPending}
+                  onClick={() => extendMutation.mutate({ tenantId, days })}
+                  className="flex w-full items-center gap-2.5 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                >
+                  {extendDone && extendMutation.variables?.days === days ? (
+                    <Check className="h-3.5 w-3.5 text-green-500" />
+                  ) : (
+                    <CalendarPlus className="h-3.5 w-3.5 text-gray-400" />
+                  )}
+                  +{days} días
+                </button>
+              ))}
+              <div className="mx-1 my-1 border-t border-gray-100" />
+            </>
+          )}
 
           {canImpersonate && (
             <button
