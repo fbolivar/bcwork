@@ -5,9 +5,18 @@ import { getDb } from '@/lib/db'
 
 const AgentEventSchema = z.object({
   event_type: z.string().min(1).max(50),
-  app_identifier: z.string().max(255).nullish(),
-  domain: z.string().max(255).nullish(),
-  window_title: z.string().max(500).nullish(),
+  app_identifier: z
+    .string()
+    .nullish()
+    .transform((v) => v?.slice(0, 255) ?? null),
+  domain: z
+    .string()
+    .nullish()
+    .transform((v) => v?.slice(0, 255) ?? null),
+  window_title: z
+    .string()
+    .nullish()
+    .transform((v) => v?.slice(0, 500) ?? null),
   productivity: z.enum(['productive', 'unproductive', 'neutral', 'idle']).nullish(),
   started_at: z.string().datetime({ offset: true }),
   duration_seconds: z.number().int().min(0).max(86400),
