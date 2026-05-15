@@ -47,8 +47,10 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Wompi not configured' }, { status: 500 })
   }
 
-  // Verify signature in production
-  if (process.env.NODE_ENV === 'production' && !verifyWompiSignature(body, eventsSecret)) {
+  // Verify signature only in production (skip for Wompi sandbox events)
+  const isSandbox =
+    body.environment === 'test' || process.env.WOMPI_PUBLIC_KEY?.startsWith('pub_test_')
+  if (!isSandbox && !verifyWompiSignature(body, eventsSecret)) {
     return NextResponse.json({ error: 'Invalid signature' }, { status: 401 })
   }
 
