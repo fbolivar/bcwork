@@ -2,14 +2,21 @@ import { NextResponse, type NextRequest } from 'next/server'
 import crypto from 'crypto'
 import { getDb } from '@/lib/db'
 
-// Wompi sends a checksum to verify event authenticity:
-// SHA256( event.id + event.occurred_at + event.data.transaction.id + eventsSecret )
+// Wompi signature: SHA256(concat values of signature.properties from data.transaction + eventsSecret)
 function verifyWompiSignature(body: WompiEvent, eventsSecret: string): boolean {
-  const { id, occurred_at, signature, data } = body
-  const transactionId = data?.transaction?.id ?? ''
-  const raw = `${id}${occurred_at}${transactionId}${eventsSecret}`
+  const { signature, data } = body
+  if (!signature?.properties || !signature?.checksum) return false
+  const txn = data?.transaction as unknown as Record<string, unknown>
+  const raw =
+    signature.properties
+      .map((prop) => {
+        // prop format: "transaction.field" → pick field from txn
+        const key = prop.replace('transaction.', '')
+        return String(txn?.[key] ?? '')
+      })
+      .join('') + eventsSecret
   const computed = crypto.createHash('sha256').update(raw).digest('hex')
-  return computed === signature?.checksum
+  return computed === signature.checksum
 }
 
 interface WompiEvent {

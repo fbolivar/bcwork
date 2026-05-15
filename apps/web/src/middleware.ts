@@ -21,6 +21,7 @@ const PUBLIC_PREFIXES = [
   '/api/trpc/', // tRPC maneja su propia auth (enforceAuth middleware)
   '/api/v1/', // autenticadas por API token propio
   '/api/ingest/', // autenticadas por API key propio
+  '/api/payments/', // webhooks de pagos (Wompi) — autenticados por firma propia
   '/legal/',
 ]
 
