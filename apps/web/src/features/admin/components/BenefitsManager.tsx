@@ -45,6 +45,7 @@ export function BenefitsManager() {
   const utils = trpc.useUtils()
   const [showCreate, setShowCreate] = useState(false)
   const [filterEmployee, setFilterEmployee] = useState('')
+  const [filterCategory, setFilterCategory] = useState<BenefitCategory | ''>('')
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
   const [category, setCategory] = useState<BenefitCategory>('health')
@@ -74,7 +75,9 @@ export function BenefitsManager() {
     onSuccess: () => utils.admin.listBenefits.invalidate(),
   })
 
-  const allBenefits = (benefits ?? []) as any[]
+  const allBenefits = ((benefits ?? []) as any[]).filter(
+    (b) => !filterCategory || b.category === filterCategory,
+  )
 
   return (
     <div className="space-y-5">
@@ -95,7 +98,7 @@ export function BenefitsManager() {
         </button>
       </div>
 
-      <div className="flex gap-2">
+      <div className="flex flex-wrap gap-2">
         <select
           title="Filtrar por empleado"
           value={filterEmployee}
@@ -109,6 +112,25 @@ export function BenefitsManager() {
             </option>
           ))}
         </select>
+        <div className="flex flex-wrap rounded-lg border border-gray-200 bg-white p-0.5">
+          <button
+            type="button"
+            onClick={() => setFilterCategory('')}
+            className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${filterCategory === '' ? 'bg-blue-600 text-white' : 'text-gray-500 hover:bg-gray-100'}`}
+          >
+            Todos
+          </button>
+          {(Object.entries(CAT_LABELS) as [BenefitCategory, string][]).map(([k, v]) => (
+            <button
+              key={k}
+              type="button"
+              onClick={() => setFilterCategory(k)}
+              className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${filterCategory === k ? 'bg-blue-600 text-white' : 'text-gray-500 hover:bg-gray-100'}`}
+            >
+              {v}
+            </button>
+          ))}
+        </div>
       </div>
 
       {isLoading ? (

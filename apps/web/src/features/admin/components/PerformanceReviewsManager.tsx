@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { trpc } from '@/lib/trpc-client'
-import { Star, Plus, X, ClipboardCheck } from 'lucide-react'
+import { Star, Plus, X, ClipboardCheck, Eye } from 'lucide-react'
 
 type ReviewType = 'self' | 'manager' | 'peer'
 type QuestionType = 'rating' | 'text' | 'choice'
@@ -26,9 +26,141 @@ const DEFAULT_QUESTIONS: Question[] = [
   { text: '¿En qué áreas necesitas mejorar?', type: 'text' },
 ]
 
+type Response = {
+  question_index: number
+  rating?: number
+  text?: string
+  choice?: string
+}
+
+function SubmitReviewModal({ review, onClose }: { review: any; onClose: () => void }) {
+  const utils = trpc.useUtils()
+  const questions: Question[] = (review.questions as Question[]) ?? []
+  const [responses, setResponses] = useState<Response[]>(
+    questions.map((_, i) => ({ question_index: i })),
+  )
+
+  const submit = trpc.admin.submitPerformanceReview.useMutation({
+    onSuccess: () => {
+      utils.admin.listPerformanceReviews.invalidate()
+      onClose()
+    },
+  })
+
+  function setResponse(index: number, patch: Partial<Response>) {
+    setResponses((prev) => prev.map((r) => (r.question_index === index ? { ...r, ...patch } : r)))
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-4 pt-10">
+      <div className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-2xl">
+        <div className="flex items-center justify-between">
+          <h3 className="text-base font-semibold text-gray-900">Completar evaluación</h3>
+          <button
+            type="button"
+            title="Cerrar"
+            onClick={onClose}
+            className="rounded p-1 text-gray-400 hover:text-gray-600"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+        <p className="mt-1 text-xs text-gray-400">
+          {review.reviewee?.full_name} · {review.period_label}
+        </p>
+
+        <div className="mt-4 space-y-4">
+          {questions.map((q, i) => {
+            const resp = responses[i] ?? { question_index: i }
+            return (
+              <div key={i}>
+                <p className="text-xs font-medium text-gray-700">
+                  {i + 1}. {q.text}
+                </p>
+                {q.type === 'rating' && (
+                  <div className="mt-1.5 flex gap-1">
+                    {[1, 2, 3, 4, 5].map((n) => (
+                      <button
+                        key={n}
+                        type="button"
+                        title={`${n} estrellas`}
+                        onClick={() => setResponse(i, { rating: n })}
+                        className="focus:outline-none"
+                      >
+                        <Star
+                          className={`h-6 w-6 transition-colors ${
+                            n <= (resp.rating ?? 0)
+                              ? 'fill-yellow-400 text-yellow-400'
+                              : 'text-gray-200 hover:text-yellow-300'
+                          }`}
+                        />
+                      </button>
+                    ))}
+                    {resp.rating && (
+                      <span className="ml-2 self-center text-xs text-gray-400">
+                        {resp.rating}/5
+                      </span>
+                    )}
+                  </div>
+                )}
+                {q.type === 'text' && (
+                  <textarea
+                    rows={3}
+                    value={resp.text ?? ''}
+                    onChange={(e) => setResponse(i, { text: e.target.value })}
+                    className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    placeholder="Tu respuesta..."
+                  />
+                )}
+                {q.type === 'choice' && q.options && (
+                  <div className="mt-1.5 flex flex-wrap gap-2">
+                    {q.options.map((opt) => (
+                      <button
+                        key={opt}
+                        type="button"
+                        onClick={() => setResponse(i, { choice: opt })}
+                        className={`rounded-lg border px-3 py-1.5 text-xs transition-colors ${
+                          resp.choice === opt
+                            ? 'border-blue-400 bg-blue-50 text-blue-700'
+                            : 'border-gray-200 text-gray-600 hover:bg-gray-50'
+                        }`}
+                      >
+                        {opt}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )
+          })}
+        </div>
+
+        <div className="mt-5 flex gap-2">
+          <button
+            type="button"
+            onClick={onClose}
+            className="flex-1 rounded-lg border border-gray-200 py-2 text-sm text-gray-600 hover:bg-gray-50"
+          >
+            Cancelar
+          </button>
+          <button
+            type="button"
+            disabled={submit.isPending}
+            onClick={() => submit.mutate({ review_id: review.id, responses })}
+            className="flex-1 rounded-lg bg-blue-600 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+          >
+            Enviar evaluación
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export function PerformanceReviewsManager() {
   const utils = trpc.useUtils()
   const [showCreate, setShowCreate] = useState(false)
+  const [submitting, setSubmitting] = useState<any | null>(null)
   const [revieweeId, setRevieweeId] = useState('')
   const [reviewerId, setReviewerId] = useState('')
   const [reviewType, setReviewType] = useState<ReviewType>('self')
@@ -120,6 +252,7 @@ export function PerformanceReviewsManager() {
               status: string
               due_date: string | null
               overall_rating: number | null
+              questions: Question[]
               reviewee?: { full_name: string } | null
               reviewer?: { full_name: string } | null
             }
@@ -155,6 +288,17 @@ export function PerformanceReviewsManager() {
                     >
                       {st?.label ?? r.status}
                     </span>
+                    {r.status === 'pending' && (
+                      <button
+                        type="button"
+                        title="Completar evaluación"
+                        onClick={() => setSubmitting(r)}
+                        className="flex items-center gap-1.5 rounded-lg border border-blue-200 bg-blue-50 px-2.5 py-1.5 text-xs font-medium text-blue-700 hover:bg-blue-100"
+                      >
+                        <Eye className="h-3.5 w-3.5" />
+                        Completar
+                      </button>
+                    )}
                   </div>
                 </div>
               </div>
@@ -162,6 +306,8 @@ export function PerformanceReviewsManager() {
           })}
         </div>
       )}
+
+      {submitting && <SubmitReviewModal review={submitting} onClose={() => setSubmitting(null)} />}
 
       {showCreate && (
         <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-4 pt-10">

@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { trpc } from '@/lib/trpc-client'
-import { X, Save, Trash2, Plus, ExternalLink, CheckCircle, XCircle } from 'lucide-react'
+import { X, Save, Trash2, Plus, ExternalLink, CheckCircle, XCircle, Zap } from 'lucide-react'
 
 const INTEGRATION_DEFS = {
   slack: {
@@ -255,7 +255,22 @@ function IntegrationForm({
 
 export function IntegrationsManager() {
   const [configuring, setConfiguring] = useState<IntegrationType | null>(null)
+  const [testingId, setTestingId] = useState<string | null>(null)
+  const [testResult, setTestResult] = useState<{ id: string; ok: boolean } | null>(null)
   const { data: integrations, isLoading } = trpc.admin.getIntegrations.useQuery()
+
+  const testWebhook = trpc.integrations.testWebhook.useMutation({
+    onSuccess: (_data, variables) => {
+      setTestingId(null)
+      setTestResult({ id: variables.id, ok: true })
+      setTimeout(() => setTestResult(null), 3000)
+    },
+    onError: (_err, variables) => {
+      setTestingId(null)
+      setTestResult({ id: variables.id, ok: false })
+      setTimeout(() => setTestResult(null), 3000)
+    },
+  })
 
   type SavedInt = {
     id: string
@@ -322,21 +337,50 @@ export function IntegrationsManager() {
                     <p className="mt-0.5 line-clamp-2 text-xs text-gray-500">{def.description}</p>
                   </div>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => setConfiguring(type)}
-                  className={`mt-3 flex w-full items-center justify-center gap-1.5 rounded-lg border py-2 text-sm font-medium transition-colors ${isConfigured ? 'border-blue-200 text-blue-700 hover:bg-blue-50' : 'border-gray-200 text-gray-600 hover:bg-gray-50'}`}
-                >
-                  {isConfigured ? (
-                    <>
-                      <Save className="h-3.5 w-3.5" /> Configurar
-                    </>
-                  ) : (
-                    <>
-                      <Plus className="h-3.5 w-3.5" /> Conectar
-                    </>
+                <div className="mt-3 flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setConfiguring(type)}
+                    className={`flex flex-1 items-center justify-center gap-1.5 rounded-lg border py-2 text-sm font-medium transition-colors ${isConfigured ? 'border-blue-200 text-blue-700 hover:bg-blue-50' : 'border-gray-200 text-gray-600 hover:bg-gray-50'}`}
+                  >
+                    {isConfigured ? (
+                      <>
+                        <Save className="h-3.5 w-3.5" /> Configurar
+                      </>
+                    ) : (
+                      <>
+                        <Plus className="h-3.5 w-3.5" /> Conectar
+                      </>
+                    )}
+                  </button>
+                  {isConfigured && existing && (
+                    <button
+                      type="button"
+                      title="Probar webhook"
+                      disabled={testingId === existing.id}
+                      onClick={() => {
+                        setTestingId(existing.id)
+                        testWebhook.mutate({ id: existing.id })
+                      }}
+                      className={`flex items-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-medium transition-colors ${
+                        testResult?.id === existing.id
+                          ? testResult.ok
+                            ? 'border-green-200 bg-green-50 text-green-700'
+                            : 'border-red-200 bg-red-50 text-red-700'
+                          : 'border-gray-200 text-gray-500 hover:bg-gray-50'
+                      }`}
+                    >
+                      <Zap className="h-3.5 w-3.5" />
+                      {testingId === existing.id
+                        ? 'Probando…'
+                        : testResult?.id === existing.id
+                          ? testResult.ok
+                            ? 'OK'
+                            : 'Error'
+                          : 'Test'}
+                    </button>
                   )}
-                </button>
+                </div>
               </div>
             )
           })}

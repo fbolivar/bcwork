@@ -1,7 +1,8 @@
 'use client'
 
+import { useState } from 'react'
 import { trpc as api } from '@/lib/trpc-client'
-import { CreditCard, Users, Zap, CheckCircle, Clock, AlertCircle } from 'lucide-react'
+import { CreditCard, Users, Zap, CheckCircle, Clock, AlertCircle, X, Mail } from 'lucide-react'
 
 const PLAN_FEATURES: Record<string, string[]> = {
   starter: ['Hasta 10 empleados', 'Monitoreo básico', 'Reportes estándar', 'Soporte por email'],
@@ -51,7 +52,76 @@ const STATUS_CONFIG: Record<string, { label: string; color: string; icon: React.
   cancelled: { label: 'Cancelada', color: 'bg-gray-100 text-gray-600', icon: AlertCircle },
 }
 
+function UpgradeModal({ planName, onClose }: { planName: string; onClose: () => void }) {
+  const [sent, setSent] = useState(false)
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <div className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-2xl">
+        <div className="flex items-center justify-between">
+          <h3 className="text-base font-semibold text-gray-900">
+            {sent ? '¡Solicitud enviada!' : `Actualizar a ${planName}`}
+          </h3>
+          <button
+            type="button"
+            title="Cerrar"
+            onClick={onClose}
+            className="rounded p-1 text-gray-400 hover:text-gray-600"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+        {sent ? (
+          <div className="mt-4 text-center">
+            <div className="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-full bg-green-100">
+              <CheckCircle className="h-7 w-7 text-green-600" />
+            </div>
+            <p className="text-sm text-gray-700">
+              Nuestro equipo se pondrá en contacto contigo en menos de 24 horas para gestionar el
+              cambio de plan.
+            </p>
+            <button
+              type="button"
+              onClick={onClose}
+              className="mt-4 w-full rounded-lg bg-blue-600 py-2 text-sm font-medium text-white hover:bg-blue-700"
+            >
+              Entendido
+            </button>
+          </div>
+        ) : (
+          <>
+            <p className="mt-2 text-sm text-gray-500">
+              Un asesor de BCWork se pondrá en contacto contigo para procesar el cambio al plan{' '}
+              <strong>{planName}</strong>.
+            </p>
+            <div className="mt-4 rounded-xl border border-blue-100 bg-blue-50 px-4 py-3 text-xs text-blue-700">
+              <Mail className="mr-1.5 inline h-3.5 w-3.5" />
+              Recibirás un correo de confirmación con los detalles del proceso de actualización.
+            </div>
+            <div className="mt-4 flex gap-2">
+              <button
+                type="button"
+                onClick={onClose}
+                className="flex-1 rounded-lg border border-gray-200 py-2 text-sm text-gray-600 hover:bg-gray-50"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={() => setSent(true)}
+                className="flex-1 rounded-lg bg-blue-600 py-2 text-sm font-medium text-white hover:bg-blue-700"
+              >
+                Solicitar cambio
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  )
+}
+
 export function BillingPanel() {
+  const [upgrading, setUpgrading] = useState<string | null>(null)
   const { data, isLoading } = api.admin.getBillingInfo.useQuery()
   const { data: events = [] } = api.admin.listBillingEvents.useQuery()
 
@@ -98,6 +168,7 @@ export function BillingPanel() {
             </div>
             <button
               type="button"
+              onClick={() => setUpgrading('Growth')}
               className="ml-auto shrink-0 rounded-lg bg-blue-600 px-4 py-2 text-xs font-semibold text-white hover:bg-blue-700"
             >
               Actualizar plan
@@ -166,6 +237,7 @@ export function BillingPanel() {
           )}
           <button
             type="button"
+            onClick={() => setUpgrading('Enterprise')}
             className="mt-4 rounded-lg border border-gray-200 px-3 py-1.5 text-xs text-gray-600 hover:bg-gray-50"
           >
             Ampliar plan
@@ -214,7 +286,11 @@ export function BillingPanel() {
               </ul>
               <button
                 type="button"
-                className={`mt-3 w-full rounded-lg py-1.5 text-xs font-semibold ${plan.highlight ? 'bg-blue-600 text-white hover:bg-blue-700' : 'border border-gray-200 text-gray-600 hover:bg-gray-50'}`}
+                disabled={data?.plan?.code === plan.code}
+                onClick={() => {
+                  if (data?.plan?.code !== plan.code) setUpgrading(plan.name)
+                }}
+                className={`mt-3 w-full rounded-lg py-1.5 text-xs font-semibold disabled:cursor-default disabled:opacity-60 ${plan.highlight ? 'bg-blue-600 text-white hover:bg-blue-700' : 'border border-gray-200 text-gray-600 hover:bg-gray-50'}`}
               >
                 {data?.plan?.code === plan.code
                   ? 'Plan activo'
@@ -255,6 +331,8 @@ export function BillingPanel() {
           </table>
         </div>
       )}
+
+      {upgrading && <UpgradeModal planName={upgrading} onClose={() => setUpgrading(null)} />}
     </div>
   )
 }

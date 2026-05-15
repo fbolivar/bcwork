@@ -54,6 +54,7 @@ export function HRDocumentsManager() {
   const [employeeId, setEmployeeId] = useState('')
   const [requireSignature, setRequireSignature] = useState(false)
   const [filterEmployee, setFilterEmployee] = useState('')
+  const [filterType, setFilterType] = useState<DocType | ''>('')
 
   const { data: docs, isLoading } = trpc.admin.getHRDocuments.useQuery({
     employee_id: filterEmployee || undefined,
@@ -81,7 +82,7 @@ export function HRDocumentsManager() {
     onSuccess: () => utils.admin.getHRDocuments.invalidate(),
   })
 
-  const allDocs = (docs ?? []) as DocRow[]
+  const allDocs = ((docs ?? []) as DocRow[]).filter((d) => !filterType || d.doc_type === filterType)
 
   return (
     <div className="space-y-5">
@@ -102,7 +103,7 @@ export function HRDocumentsManager() {
         </button>
       </div>
 
-      <div className="flex gap-2">
+      <div className="flex flex-wrap gap-2">
         <select
           title="Filtrar por empleado"
           value={filterEmployee}
@@ -116,6 +117,27 @@ export function HRDocumentsManager() {
             </option>
           ))}
         </select>
+        <div className="flex rounded-lg border border-gray-200 bg-white p-0.5">
+          <button
+            type="button"
+            onClick={() => setFilterType('')}
+            className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${filterType === '' ? 'bg-blue-600 text-white' : 'text-gray-500 hover:bg-gray-100'}`}
+          >
+            Todos
+          </button>
+          {(
+            Object.entries(DOC_TYPE_MAP) as [DocType, { label: string; icon: React.ReactNode }][]
+          ).map(([k, v]) => (
+            <button
+              key={k}
+              type="button"
+              onClick={() => setFilterType(k)}
+              className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${filterType === k ? 'bg-blue-600 text-white' : 'text-gray-500 hover:bg-gray-100'}`}
+            >
+              {v.label}
+            </button>
+          ))}
+        </div>
       </div>
 
       {isLoading ? (

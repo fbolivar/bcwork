@@ -2,9 +2,37 @@
 
 import { useState } from 'react'
 import { trpc } from '@/lib/trpc-client'
-import { Plus, X, Trash2, ClipboardList, Rocket, LogOut, CheckCircle2, Circle } from 'lucide-react'
+import {
+  Plus,
+  X,
+  Trash2,
+  ClipboardList,
+  Rocket,
+  LogOut,
+  CheckCircle2,
+  Circle,
+  Wand2,
+} from 'lucide-react'
 
 const CATEGORIES = ['general', 'legal', 'it', 'hr', 'training', 'equipment']
+
+const PRESETS: Record<'onboarding' | 'offboarding', { title: string; category: string }[]> = {
+  onboarding: [
+    { title: 'Firmar contrato laboral', category: 'legal' },
+    { title: 'Configurar correo corporativo', category: 'it' },
+    { title: 'Entregar equipos de trabajo', category: 'equipment' },
+    { title: 'Completar inducción corporativa', category: 'training' },
+    { title: 'Registrar en nómina', category: 'hr' },
+    { title: 'Conocer políticas internas', category: 'general' },
+  ],
+  offboarding: [
+    { title: 'Devolver equipos de trabajo', category: 'equipment' },
+    { title: 'Revocar accesos y credenciales', category: 'it' },
+    { title: 'Firmar acuerdo de confidencialidad', category: 'legal' },
+    { title: 'Entrevista de salida', category: 'hr' },
+    { title: 'Liquidar prestaciones', category: 'hr' },
+  ],
+}
 
 export function OnboardingManager() {
   const utils = trpc.useUtils()
@@ -150,6 +178,25 @@ export function OnboardingManager() {
               >
                 <X className="h-4 w-4" />
               </button>
+            </div>
+            <div className="mt-3 flex flex-wrap gap-1.5">
+              <p className="w-full text-[10px] font-medium uppercase tracking-widest text-gray-400">
+                <Wand2 className="mr-1 inline h-3 w-3" />
+                Presets rápidos
+              </p>
+              {PRESETS[tab].map((p) => (
+                <button
+                  key={p.title}
+                  type="button"
+                  onClick={() => {
+                    setTitle(p.title)
+                    setCategory(p.category)
+                  }}
+                  className="rounded-full border border-gray-200 bg-gray-50 px-2.5 py-1 text-xs text-gray-600 hover:border-blue-200 hover:bg-blue-50 hover:text-blue-700"
+                >
+                  {p.title}
+                </button>
+              ))}
             </div>
             <div className="mt-4 space-y-3">
               <div>

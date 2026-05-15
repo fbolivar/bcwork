@@ -2,12 +2,60 @@
 
 import { useState } from 'react'
 import { trpc } from '@/lib/trpc-client'
-import { GraduationCap, Plus, X, Trash2, UserPlus, Clock } from 'lucide-react'
+import {
+  GraduationCap,
+  Plus,
+  X,
+  Trash2,
+  UserPlus,
+  Clock,
+  Users,
+  ChevronDown,
+  ChevronUp,
+} from 'lucide-react'
+
+const ENROLLMENT_STATUS_LABELS: Record<string, { label: string; color: string }> = {
+  enrolled: { label: 'Inscrito', color: 'bg-blue-100 text-blue-700' },
+  in_progress: { label: 'En progreso', color: 'bg-orange-100 text-orange-700' },
+  completed: { label: 'Completado', color: 'bg-green-100 text-green-700' },
+  dropped: { label: 'Abandonó', color: 'bg-gray-100 text-gray-500' },
+}
+
+function EnrollmentsPanel({ courseId }: { courseId: string }) {
+  const { data: enrollments, isLoading } = trpc.admin.getTrainingEnrollments.useQuery({
+    course_id: courseId,
+  })
+  const all = (enrollments ?? []) as any[]
+
+  if (isLoading) return <div className="mt-2 h-10 animate-pulse rounded bg-gray-100" />
+  if (all.length === 0)
+    return <p className="mt-2 text-xs text-gray-400">Sin inscripciones todavía.</p>
+
+  return (
+    <div className="mt-2 space-y-1.5">
+      {all.map((e: any) => {
+        const st = ENROLLMENT_STATUS_LABELS[e.status] ?? ENROLLMENT_STATUS_LABELS.enrolled
+        return (
+          <div key={e.id} className="flex items-center gap-2 text-xs">
+            <span className="flex-1 text-gray-700">{e.users?.full_name ?? e.employee_id}</span>
+            <span
+              className={`rounded-full px-2 py-0.5 font-medium ${st?.color ?? 'bg-gray-100 text-gray-500'}`}
+            >
+              {st?.label ?? e.status}
+            </span>
+            {e.progress != null && <span className="text-gray-400">{e.progress}%</span>}
+          </div>
+        )
+      })}
+    </div>
+  )
+}
 
 export function TrainingManager() {
   const utils = trpc.useUtils()
   const [showCreate, setShowCreate] = useState(false)
   const [showEnroll, setShowEnroll] = useState<string | null>(null)
+  const [expandedCourse, setExpandedCourse] = useState<string | null>(null)
   const [enrollUserId, setEnrollUserId] = useState('')
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
@@ -38,6 +86,7 @@ export function TrainingManager() {
   const enroll = trpc.admin.enrollEmployeeInCourse.useMutation({
     onSuccess: () => {
       utils.admin.listTrainingCourses.invalidate()
+      utils.admin.getTrainingEnrollments.invalidate()
       setShowEnroll(null)
       setEnrollUserId('')
     },
@@ -103,6 +152,18 @@ export function TrainingManager() {
                 <div className="flex items-center gap-1">
                   <button
                     type="button"
+                    title="Ver inscripciones"
+                    onClick={() => setExpandedCourse(expandedCourse === c.id ? null : c.id)}
+                    className="rounded-lg border border-gray-200 p-1.5 text-gray-500 hover:bg-gray-50 hover:text-gray-700"
+                  >
+                    {expandedCourse === c.id ? (
+                      <ChevronUp className="h-4 w-4" />
+                    ) : (
+                      <Users className="h-4 w-4" />
+                    )}
+                  </button>
+                  <button
+                    type="button"
                     title="Inscribir empleado"
                     onClick={() => {
                       setShowEnroll(c.id)
@@ -124,8 +185,15 @@ export function TrainingManager() {
                 </div>
               </div>
 
+              {expandedCourse === c.id && (
+                <div className="mt-3 border-t border-gray-100 pt-3">
+                  <p className="text-xs font-medium text-gray-600">Inscripciones</p>
+                  <EnrollmentsPanel courseId={c.id} />
+                </div>
+              )}
+
               {showEnroll === c.id && (
-                <div className="mt-3 flex gap-2">
+                <div className="mt-3 flex gap-2 border-t border-gray-100 pt-3">
                   <select
                     title="Seleccionar empleado"
                     value={enrollUserId}
