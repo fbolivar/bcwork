@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { trpc } from '@/lib/trpc-client'
-import { Plus, Trash2, Globe, Monitor, Info, Search } from 'lucide-react'
+import { Plus, Trash2, Globe, Monitor, Info, Search, Pencil } from 'lucide-react'
 
 // ── Tipos ─────────────────────────────────────────────────────────────────────
 
@@ -56,6 +56,7 @@ const EMPTY = {
 
 export function AppCatalogManager() {
   const [creating, setCreating] = useState(false)
+  const [editingId, setEditingId] = useState<string | null>(null)
   const [form, setForm] = useState(EMPTY)
   const [filterProd, setFilterProd] = useState<Productivity | 'all'>('all')
   const [filterCat, setFilterCat] = useState<Category | 'all'>('all')
@@ -68,6 +69,7 @@ export function AppCatalogManager() {
     onSuccess: () => {
       setForm(EMPTY)
       setCreating(false)
+      setEditingId(null)
       void utils.admin.listAppRules.invalidate()
     },
   })
@@ -151,7 +153,11 @@ export function AppCatalogManager() {
 
         <button
           type="button"
-          onClick={() => setCreating(true)}
+          onClick={() => {
+            setCreating(true)
+            setEditingId(null)
+            setForm(EMPTY)
+          }}
           className="flex items-center gap-1.5 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
         >
           <Plus className="h-4 w-4" />
@@ -159,16 +165,18 @@ export function AppCatalogManager() {
         </button>
       </div>
 
-      {/* Formulario de creación */}
-      {creating && (
+      {/* Formulario de creación / edición */}
+      {(creating || editingId) && (
         <form
           className="space-y-4 rounded-xl border border-blue-200 bg-blue-50 p-5"
           onSubmit={(e) => {
             e.preventDefault()
-            upsert.mutate(form)
+            upsert.mutate(editingId ? { ...form, id: editingId } : form)
           }}
         >
-          <h3 className="text-sm font-semibold text-blue-900">Nueva clasificación de app</h3>
+          <h3 className="text-sm font-semibold text-blue-900">
+            {editingId ? 'Editar clasificación' : 'Nueva clasificación de app'}
+          </h3>
           <div className="grid gap-3 sm:grid-cols-2">
             <div>
               <label className="mb-1 block text-xs font-medium text-gray-600">
@@ -261,6 +269,7 @@ export function AppCatalogManager() {
               type="button"
               onClick={() => {
                 setCreating(false)
+                setEditingId(null)
                 setForm(EMPTY)
               }}
               className="rounded-md border border-gray-300 px-4 py-2 text-sm text-gray-600 hover:bg-gray-50"
@@ -272,7 +281,11 @@ export function AppCatalogManager() {
               disabled={upsert.isPending}
               className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
             >
-              {upsert.isPending ? 'Guardando...' : 'Guardar clasificación'}
+              {upsert.isPending
+                ? 'Guardando...'
+                : editingId
+                  ? 'Actualizar'
+                  : 'Guardar clasificación'}
             </button>
           </div>
         </form>
@@ -361,15 +374,35 @@ export function AppCatalogManager() {
                         </span>
                       </td>
                       <td className="px-4 py-2.5 text-right">
-                        <button
-                          type="button"
-                          onClick={() => remove.mutate({ id: r.id })}
-                          disabled={remove.isPending}
-                          className="rounded p-1.5 text-gray-400 hover:bg-red-50 hover:text-red-600 disabled:opacity-50"
-                          title="Eliminar clasificación"
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </button>
+                        <div className="flex items-center justify-end gap-1">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setEditingId(r.id)
+                              setCreating(false)
+                              setForm({
+                                display_name: r.display_name ?? '',
+                                identifier: r.identifier ?? '',
+                                identifier_type: (r.identifier_type as IdentifierType) ?? 'process',
+                                category: (r.category as Category) ?? 'other',
+                                productivity: (r.productivity as Productivity) ?? 'neutral',
+                              })
+                            }}
+                            className="rounded p-1.5 text-gray-400 hover:bg-blue-50 hover:text-blue-600"
+                            title="Editar clasificación"
+                          >
+                            <Pencil className="h-3.5 w-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => remove.mutate({ id: r.id })}
+                            disabled={remove.isPending}
+                            className="rounded p-1.5 text-gray-400 hover:bg-red-50 hover:text-red-600 disabled:opacity-50"
+                            title="Eliminar clasificación"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   ))}
