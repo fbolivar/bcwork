@@ -13,7 +13,13 @@ import {
   MapPin,
   Zap,
   Lock,
+  Building2,
+  Briefcase,
+  HeadphonesIcon,
+  Code2,
 } from 'lucide-react'
+import { PricingSection } from '@/features/landing/PricingSection'
+import { ROICalculator } from '@/features/landing/ROICalculator'
 
 // ─── Datos ────────────────────────────────────────────────────────────────────
 
@@ -51,71 +57,70 @@ const FEATURES = [
 ]
 
 const STATS = [
-  { value: '500+', label: 'Empresas activas' },
-  { value: '12.000+', label: 'Empleados monitoreados' },
-  { value: '2.4M+', label: 'Horas registradas' },
+  { value: '340+', label: 'Empresas en Colombia' },
+  { value: '8.700+', label: 'Empleados monitoreados' },
+  { value: '4.1M+', label: 'Horas registradas' },
   { value: '99.9%', label: 'Uptime garantizado' },
 ]
 
-const PLANS = [
+const TESTIMONIALS = [
   {
-    name: 'Starter',
-    price: '$49.000',
-    period: '/mes',
-    desc: 'Ideal para equipos pequeños que empiezan con el teletrabajo.',
-    seats: 'Hasta 10 usuarios',
-    features: ['Monitoreo básico', 'Reportes mensuales', 'Control de jornada', 'Soporte por email'],
-    cta: 'Empieza gratis',
-    highlight: false,
+    quote:
+      'BCWork nos permitió cumplir con todas las obligaciones del teletrabajo sin contratar un abogado adicional. El ROI fue inmediato.',
+    name: 'Carlos Martínez',
+    role: 'Director de RRHH',
+    company: 'Empresa de tecnología · 120 empleados',
+    initials: 'CM',
   },
   {
-    name: 'Growth',
-    price: '$149.000',
-    period: '/mes',
-    desc: 'Para equipos en crecimiento que necesitan control total.',
-    seats: 'Hasta 50 usuarios',
-    features: [
-      'Todo en Starter',
-      'Analytics avanzados',
-      'Gestión de ausencias',
-      'Módulo manager',
-      'Alertas automáticas',
-      'Soporte prioritario',
-    ],
-    cta: 'Prueba 14 días gratis',
-    highlight: true,
+    quote:
+      'Pasamos de hojas de cálculo a control total en una semana. Ahora sé exactamente qué hace cada equipo y puedo tomar decisiones con datos.',
+    name: 'Laura Gómez',
+    role: 'Gerente General',
+    company: 'BPO de servicio al cliente · 65 empleados',
+    initials: 'LG',
+  },
+]
+
+const SEGMENTS = [
+  {
+    icon: HeadphonesIcon,
+    label: 'BPOs / Call Centers',
+    desc: 'Control de agentes remotos, cumplimiento laboral y productividad por turno.',
   },
   {
-    name: 'Enterprise',
-    price: 'A medida',
-    period: '',
-    desc: 'Para grandes organizaciones con necesidades específicas.',
-    seats: 'Usuarios ilimitados',
-    features: [
-      'Todo en Growth',
-      'SSO / SAML',
-      'API propia',
-      'SLA garantizado',
-      'Gestor de cuenta dedicado',
-      'Capacitación presencial',
-    ],
-    cta: 'Hablar con ventas',
-    highlight: false,
+    icon: Code2,
+    label: 'Empresas de Software',
+    desc: 'Visibilidad de equipos distribuidos sin microgestión.',
+  },
+  {
+    icon: Briefcase,
+    label: 'Consultoras y Contabilidad',
+    desc: 'Facturación por horas y control de proyectos para cada cliente.',
+  },
+  {
+    icon: Building2,
+    label: 'Grandes Empresas',
+    desc: 'SSO, API propia, SLA garantizado y gestor de cuenta dedicado.',
   },
 ]
 
 const FAQS = [
   {
+    q: '¿Cómo funciona el precio por usuario?',
+    a: 'Pagas únicamente por los usuarios activos que tienes en la plataforma cada mes. Si tienes 15 empleados en Growth, pagas 15 × $14.900 = $223.500/mes. Sin tarifas fijas por "rango de usuarios", sin sorpresas. El precio se ajusta automáticamente si agregas o retiras empleados.',
+  },
+  {
     q: '¿BCWork es legal en Colombia?',
-    a: 'Sí. BCWork fue diseñado específicamente para cumplir con la Ley 1221/2008 (Teletrabajo), Ley 1581/2012 (HABEAS DATA) y la Ley 2191/2022 (Desconexión Digital). Cada tenant configura su política de consentimiento informado.',
+    a: 'Sí. BCWork fue diseñado específicamente para cumplir con la Ley 1221/2008 (Teletrabajo), Ley 1581/2012 (HABEAS DATA) y la Ley 2191/2022 (Desconexión Digital). Cada empresa configura su política de consentimiento informado.',
   },
   {
     q: '¿Los empleados saben que los monitorean?',
-    a: 'Absolutamente. BCWork requiere consentimiento explícito del empleado al instalar el agente. Los datos recopilados son transparentes y el empleado puede ver su propia actividad en el portal /me.',
+    a: 'Absolutamente. BCWork requiere consentimiento explícito del empleado al instalar el agente. Los datos recopilados son transparentes y cada empleado puede ver su propia actividad en el portal /me.',
   },
   {
-    q: '¿Qué datos recopila el agente?',
-    a: 'Tiempo activo/inactivo por sesión, aplicaciones y dominios visitados (categorías, no URLs exactas), ubicación por IP y capturas de pantalla opcionales con consentimiento.',
+    q: '¿Vale la pena el plan anual?',
+    a: 'Si tu equipo es estable, el plan anual equivale a pagar 10 meses y obtener 2 gratis — un ahorro del 16.7%. Además incluye soporte prioritario y onboarding personalizado sin costo adicional.',
   },
   {
     q: '¿Funciona con equipos fuera de Colombia?',
@@ -123,7 +128,7 @@ const FAQS = [
   },
   {
     q: '¿Puedo migrar mis datos si cancelo?',
-    a: 'Siempre. Exporta todo en CSV o JSON en cualquier momento. Tus datos son tuyos.',
+    a: 'Siempre. Exporta todo en CSV o JSON en cualquier momento. Tus datos son tuyos y puedes llevarlos donde quieras.',
   },
 ]
 
@@ -140,6 +145,9 @@ function Navbar() {
         <div className="hidden items-center gap-8 text-sm text-gray-400 sm:flex">
           <a href="#features" className="transition-colors hover:text-white">
             Características
+          </a>
+          <a href="#roi" className="transition-colors hover:text-white">
+            ROI
           </a>
           <a href="#pricing" className="transition-colors hover:text-white">
             Precios
@@ -176,7 +184,7 @@ function Hero() {
       <div className="relative z-10 mx-auto max-w-4xl text-center">
         <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-cyan-500/30 bg-cyan-500/10 px-4 py-1.5 text-xs font-medium text-cyan-400">
           <Zap className="h-3 w-3" />
-          Cumple con la Ley 2191/2022 — Desconexión Digital
+          Cumple con la Ley 2191/2022 · Hecho en Colombia
         </div>
 
         <h1 className="mb-6 text-4xl font-extrabold leading-tight tracking-tight text-white sm:text-6xl">
@@ -199,32 +207,30 @@ function Hero() {
             Empieza gratis — 14 días
             <ChevronRight className="h-4 w-4" />
           </Link>
-          <Link
-            href="/login"
+          <a
+            href="#roi"
             className="rounded-xl border border-white/20 px-8 py-3.5 text-base font-medium text-gray-300 transition-all hover:border-white/40 hover:text-white"
           >
-            Ver demo
-          </Link>
+            Calcular mi ROI
+          </a>
         </div>
 
         <p className="mt-5 text-xs text-gray-500">
-          Sin tarjeta de crédito · Cancela cuando quieras · Datos en Colombia
+          Sin tarjeta de crédito · desde $9.900/usuario/mes · Datos almacenados en Colombia
         </p>
 
         {/* Mockup preview */}
         <div className="relative mx-auto mt-16 max-w-3xl">
           <div className="rounded-2xl border border-white/10 bg-gradient-to-b from-white/5 to-white/0 p-1 shadow-2xl">
             <div className="overflow-hidden rounded-xl bg-[#0d1b3e]">
-              {/* Browser chrome */}
               <div className="flex items-center gap-1.5 border-b border-white/10 bg-white/5 px-4 py-2.5">
                 <span className="h-2.5 w-2.5 rounded-full bg-red-500/60" />
                 <span className="h-2.5 w-2.5 rounded-full bg-amber-500/60" />
                 <span className="h-2.5 w-2.5 rounded-full bg-green-500/60" />
                 <div className="ml-3 flex-1 rounded bg-white/10 px-3 py-0.5 text-[10px] text-gray-500">
-                  bcwork.app/admin/dashboard
+                  app.bcwork.co/dashboard
                 </div>
               </div>
-              {/* Dashboard preview */}
               <div className="grid grid-cols-3 gap-3 p-4">
                 {[
                   { label: 'Empleados activos', val: '24', color: 'text-cyan-400' },
@@ -313,93 +319,69 @@ function Features() {
   )
 }
 
-function SocialProof() {
+function Segments() {
   return (
-    <section className="bg-gradient-to-br from-[#0f172a] via-blue-950/50 to-[#0f172a] px-6 py-20">
-      <div className="mx-auto max-w-4xl text-center">
-        <div className="mb-3 flex justify-center gap-1">
-          {[1, 2, 3, 4, 5].map((i) => (
-            <Star key={i} className="h-5 w-5 fill-amber-400 text-amber-400" />
-          ))}
+    <section className="bg-[#0a1020] px-6 py-20">
+      <div className="mx-auto max-w-5xl">
+        <div className="mb-10 text-center">
+          <p className="mb-3 text-xs font-semibold uppercase tracking-widest text-cyan-400">
+            ¿Para quién es BCWork?
+          </p>
+          <h2 className="text-2xl font-bold text-white sm:text-3xl">
+            Construido para empresas colombianas
+          </h2>
         </div>
-        <blockquote className="mx-auto max-w-2xl text-xl font-medium leading-relaxed text-white">
-          "BCWork nos permitió cumplir con todas las obligaciones del teletrabajo en Colombia sin
-          necesidad de contratar un equipo legal adicional. El retorno fue inmediato."
-        </blockquote>
-        <div className="mt-6 flex items-center justify-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-full bg-cyan-500/20 text-sm font-bold text-cyan-400">
-            CM
-          </div>
-          <div className="text-left">
-            <p className="text-sm font-medium text-white">Carlos Martínez</p>
-            <p className="text-xs text-gray-400">Director de RRHH · Empresa de 120 empleados</p>
-          </div>
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          {SEGMENTS.map(({ icon: Icon, label, desc }) => (
+            <div
+              key={label}
+              className="rounded-2xl border border-white/10 bg-white/5 p-5 text-center"
+            >
+              <div className="mx-auto mb-3 inline-flex rounded-xl bg-cyan-500/10 p-3">
+                <Icon className="h-5 w-5 text-cyan-400" />
+              </div>
+              <p className="mb-1 text-sm font-semibold text-white">{label}</p>
+              <p className="text-xs leading-relaxed text-gray-400">{desc}</p>
+            </div>
+          ))}
         </div>
       </div>
     </section>
   )
 }
 
-function Pricing() {
+function SocialProof() {
   return (
-    <section id="pricing" className="bg-[#0f172a] px-6 py-24">
-      <div className="mx-auto max-w-5xl">
-        <div className="mb-14 text-center">
-          <p className="mb-3 text-xs font-semibold uppercase tracking-widest text-cyan-400">
-            Precios
+    <section className="bg-gradient-to-br from-[#0f172a] via-blue-950/50 to-[#0f172a] px-6 py-20">
+      <div className="mx-auto max-w-4xl">
+        <div className="mb-10 text-center">
+          <p className="mb-2 text-xs font-semibold uppercase tracking-widest text-cyan-400">
+            Testimonios
           </p>
-          <h2 className="text-3xl font-bold text-white sm:text-4xl">
-            Elige el plan para tu equipo
-          </h2>
-          <p className="mt-4 text-gray-400">Precios en pesos colombianos · Sin costos ocultos</p>
+          <div className="flex justify-center gap-1">
+            {[1, 2, 3, 4, 5].map((i) => (
+              <Star key={i} className="h-4 w-4 fill-amber-400 text-amber-400" />
+            ))}
+          </div>
         </div>
 
-        <div className="grid gap-6 sm:grid-cols-3">
-          {PLANS.map((plan) => (
-            <div
-              key={plan.name}
-              className={`relative flex flex-col rounded-2xl border p-6 ${
-                plan.highlight
-                  ? 'border-cyan-500 bg-gradient-to-b from-cyan-500/10 to-transparent shadow-xl shadow-cyan-500/10'
-                  : 'border-white/10 bg-white/5'
-              }`}
-            >
-              {plan.highlight && (
-                <div className="absolute -top-3.5 left-1/2 -translate-x-1/2 rounded-full bg-cyan-500 px-3 py-0.5 text-[10px] font-bold uppercase tracking-wider text-white">
-                  Más popular
+        <div className="grid gap-6 sm:grid-cols-2">
+          {TESTIMONIALS.map((t) => (
+            <div key={t.name} className="rounded-2xl border border-white/10 bg-white/5 p-6">
+              <blockquote className="mb-5 text-sm leading-relaxed text-gray-300">
+                &ldquo;{t.quote}&rdquo;
+              </blockquote>
+              <div className="flex items-center gap-3">
+                <div className="flex h-9 w-9 items-center justify-center rounded-full bg-cyan-500/20 text-xs font-bold text-cyan-400">
+                  {t.initials}
                 </div>
-              )}
-              <div className="mb-5">
-                <p className="text-xs font-semibold uppercase tracking-widest text-gray-400">
-                  {plan.name}
-                </p>
-                <div className="mt-2 flex items-end gap-1">
-                  <span className="text-3xl font-extrabold text-white">{plan.price}</span>
-                  {plan.period && <span className="mb-1 text-sm text-gray-400">{plan.period}</span>}
+                <div>
+                  <p className="text-sm font-medium text-white">{t.name}</p>
+                  <p className="text-xs text-gray-400">
+                    {t.role} · {t.company}
+                  </p>
                 </div>
-                <p className="mt-1 text-xs text-gray-400">{plan.seats}</p>
-                <p className="mt-2 text-sm text-gray-400">{plan.desc}</p>
               </div>
-
-              <ul className="mb-6 flex-1 space-y-2.5">
-                {plan.features.map((f) => (
-                  <li key={f} className="flex items-start gap-2 text-sm text-gray-300">
-                    <CheckCircle className="mt-0.5 h-4 w-4 shrink-0 text-cyan-400" />
-                    {f}
-                  </li>
-                ))}
-              </ul>
-
-              <Link
-                href="/register"
-                className={`block rounded-xl py-2.5 text-center text-sm font-semibold transition-all ${
-                  plan.highlight
-                    ? 'bg-cyan-500 text-white shadow-md shadow-cyan-500/30 hover:bg-cyan-400'
-                    : 'border border-white/20 text-gray-300 hover:border-white/40 hover:text-white'
-                }`}
-              >
-                {plan.cta}
-              </Link>
             </div>
           ))}
         </div>
@@ -440,19 +422,33 @@ function CTA() {
   return (
     <section className="bg-gradient-to-r from-blue-900 to-cyan-900 px-6 py-20 text-center">
       <div className="mx-auto max-w-2xl">
+        <p className="mb-3 text-sm font-semibold uppercase tracking-widest text-cyan-300">
+          Empieza hoy
+        </p>
         <h2 className="mb-4 text-3xl font-extrabold text-white sm:text-4xl">
-          ¿Listo para llevar tu teletrabajo al siguiente nivel?
+          Tu competencia ya tiene visibilidad sobre sus equipos remotos
         </h2>
         <p className="mb-8 text-gray-300">
-          14 días gratis. Sin tarjeta de crédito. Configuración en menos de 10 minutos.
+          14 días gratis · Sin tarjeta de crédito · Configuración en menos de 10 minutos
         </p>
-        <Link
-          href="/register"
-          className="inline-flex items-center gap-2 rounded-xl bg-white px-8 py-3.5 text-base font-bold text-blue-900 shadow-xl transition-all hover:bg-cyan-50"
-        >
-          Crear cuenta gratis
-          <ChevronRight className="h-4 w-4" />
-        </Link>
+        <div className="flex flex-col items-center gap-3 sm:flex-row sm:justify-center">
+          <Link
+            href="/register"
+            className="inline-flex items-center gap-2 rounded-xl bg-white px-8 py-3.5 text-base font-bold text-blue-900 shadow-xl transition-all hover:bg-cyan-50"
+          >
+            Crear cuenta gratis
+            <ChevronRight className="h-4 w-4" />
+          </Link>
+          <a
+            href="mailto:ventas@bcwork.co"
+            className="inline-flex items-center gap-2 rounded-xl border border-white/30 px-8 py-3.5 text-base font-medium text-white transition-all hover:border-white/60"
+          >
+            Hablar con ventas
+          </a>
+        </div>
+        <p className="mt-5 text-xs text-cyan-300/60">
+          Precio fijo en COP · Sin variación por TRM · Factura electrónica
+        </p>
       </div>
     </section>
   )
@@ -483,6 +479,11 @@ function Footer() {
               <li>
                 <a href="#features" className="transition-colors hover:text-white">
                   Características
+                </a>
+              </li>
+              <li>
+                <a href="#roi" className="transition-colors hover:text-white">
+                  Calculadora ROI
                 </a>
               </li>
               <li>
@@ -520,6 +521,11 @@ function Footer() {
                   <Lock className="h-3 w-3" /> Ley 1581/2012
                 </span>
               </li>
+              <li>
+                <a href="mailto:ventas@bcwork.co" className="transition-colors hover:text-white">
+                  ventas@bcwork.co
+                </a>
+              </li>
             </ul>
           </div>
         </div>
@@ -541,8 +547,12 @@ export default function LandingPage() {
       <Hero />
       <Stats />
       <Features />
+      <Segments />
       <SocialProof />
-      <Pricing />
+      <div id="roi">
+        <ROICalculator />
+      </div>
+      <PricingSection />
       <FAQ />
       <CTA />
       <Footer />
