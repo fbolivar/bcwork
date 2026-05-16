@@ -20,11 +20,10 @@ function verifyWompiSignature(body: WompiEvent, eventsSecret: string): boolean {
 }
 
 interface WompiEvent {
-  id: string
-  occurred_at: string
+  event: string // Wompi uses "event" (not "type")
   sent_at: string
+  timestamp: number
   environment: string
-  type: string
   signature?: { properties: string[]; checksum: string }
   data: {
     transaction?: {
@@ -61,7 +60,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Invalid signature' }, { status: 401 })
   }
 
-  if (body.type !== 'transaction.updated') {
+  if (body.event !== 'transaction.updated') {
     return NextResponse.json({ ok: true, skipped: true })
   }
 
