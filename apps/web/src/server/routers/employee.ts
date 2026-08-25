@@ -1329,7 +1329,9 @@ export const employeeRouter = router({
     .query(async ({ ctx, input }) => {
       const { startDate, endDate } = input
 
-      const [profileRes, metricsRes, sessionsRes, projectsRes] = await Promise.all([
+      // Resiliente: si una consulta falla (p.ej. una tabla/columna ausente por
+      // drift de esquema), el informe sigue mostrando el resto en vez de romperse.
+      const [profileRes, metricsRes, sessionsRes, projectsRes] = await Promise.allSettled([
         ctx.db
           .from('users')
           .select('full_name, email, department, position')
@@ -1347,7 +1349,7 @@ export const employeeRouter = router({
           .order('metric_date', { ascending: true }),
         ctx.db
           .from('work_sessions')
-          .select('id, started_at, ended_at, active_seconds, location_type')
+          .select('id, started_at, ended_at, active_seconds, productive_seconds, location_type')
           .eq('user_id', ctx.user!.sub)
           .eq('tenant_id', ctx.user!.tid)
           .gte('started_at', `${startDate}T00:00:00`)
@@ -1356,29 +1358,74 @@ export const employeeRouter = router({
           .limit(100),
         ctx.db
           .from('project_time_entries')
-          .select('duration_seconds, projects(name, color)')
+          .select('duration_seconds, projects(name)')
           .eq('user_id', ctx.user!.sub)
           .eq('tenant_id', ctx.user!.tid)
           .gte('started_at', `${startDate}T00:00:00`)
           .lte('started_at', `${endDate}T23:59:59`),
       ])
 
-      const metrics = metricsRes.data ?? []
-      const sessions = sessionsRes.data ?? []
-      const projectEntries = projectsRes.data ?? []
+      const settled = <T>(r: PromiseSettledResult<{ data: T | null }>): T | null =>
+        r.status === 'fulfilled' ? (r.value.data ?? null) : null
 
-      const totalActiveSecs = metrics.reduce((s, r) => s + (r.active_seconds ?? 0), 0)
+      const profileData = settled(profileRes)
+      const metrics = settled(metricsRes) ?? []
+      const sessions = settled(sessionsRes) ?? []
+      const projectEntries = settled(projectsRes) ?? []
+
+      type SessionRow = {
+        started_at: string
+        ended_at: string | null
+        active_seconds: number | null
+        productive_seconds: number | null
+        location_type: string | null
+      }
+      const sessionRows = sessions as SessionRow[]
+
+      // Fuente principal: métricas agregadas (cron diario). Si aún no existen,
+      // derivamos el resumen de las sesiones (que se crean en vivo).
+      const useSessions = metrics.length === 0 && sessionRows.length > 0
+
+      const sessActive = sessionRows.reduce((s, r) => s + (r.active_seconds ?? 0), 0)
+      const sessProductive = sessionRows.reduce((s, r) => s + (r.productive_seconds ?? 0), 0)
+      const sessDays = new Set(
+        sessionRows
+          .filter((r) => (r.active_seconds ?? 0) > 0)
+          .map((r) => r.started_at.slice(0, 10)),
+      ).size
+
+      const totalActiveSecs = useSessions
+        ? sessActive
+        : metrics.reduce((s, r) => s + (r.active_seconds ?? 0), 0)
       const totalOvertimeSecs = metrics.reduce((s, r) => s + (r.overtime_seconds ?? 0), 0)
-      const totalProductiveSecs = metrics.reduce((s, r) => s + (r.productive_seconds ?? 0), 0)
-      const workDays = metrics.filter((r) => (r.active_seconds ?? 0) > 0).length
-      const avgProductivity =
-        workDays > 0
+      const totalProductiveSecs = useSessions
+        ? sessProductive
+        : metrics.reduce((s, r) => s + (r.productive_seconds ?? 0), 0)
+      const workDays = useSessions
+        ? sessDays
+        : metrics.filter((r) => (r.active_seconds ?? 0) > 0).length
+      const avgProductivity = useSessions
+        ? sessActive > 0
+          ? sessProductive / sessActive
+          : 0
+        : workDays > 0
           ? metrics.reduce((s, r) => s + Number(r.productivity_ratio ?? 0), 0) / workDays
           : 0
 
+      // Serie diaria: de métricas o, si no hay, agrupando sesiones por día.
+      const dailyFromSessions = Array.from(
+        sessionRows.reduce((map, r) => {
+          const d = r.started_at.slice(0, 10)
+          map.set(d, (map.get(d) ?? 0) + (r.active_seconds ?? 0))
+          return map
+        }, new Map<string, number>()),
+      )
+        .map(([date, activeSecs]) => ({ date, activeSecs, overtimeSecs: 0, productivityRatio: 0 }))
+        .sort((a, b) => a.date.localeCompare(b.date))
+
       const byProject = new Map<string, number>()
       for (const e of projectEntries) {
-        const proj = e.projects as { name: string; color: string } | null
+        const proj = e.projects as { name: string } | null
         if (!proj) continue
         byProject.set(proj.name, (byProject.get(proj.name) ?? 0) + (e.duration_seconds ?? 0))
       }
@@ -1387,7 +1434,7 @@ export const employeeRouter = router({
         .sort((a, b) => b.secs - a.secs)
 
       return {
-        profile: profileRes.data ?? null,
+        profile: profileData,
         startDate,
         endDate,
         summary: {
@@ -1398,12 +1445,14 @@ export const employeeRouter = router({
           totalSessions: sessions.length,
           avgProductivity: Math.round(avgProductivity * 100),
         },
-        dailyMetrics: metrics.map((m) => ({
-          date: m.metric_date ?? '',
-          activeSecs: m.active_seconds ?? 0,
-          overtimeSecs: m.overtime_seconds ?? 0,
-          productivityRatio: Number(m.productivity_ratio ?? 0),
-        })),
+        dailyMetrics: useSessions
+          ? dailyFromSessions
+          : metrics.map((m) => ({
+              date: m.metric_date ?? '',
+              activeSecs: m.active_seconds ?? 0,
+              overtimeSecs: m.overtime_seconds ?? 0,
+              productivityRatio: Number(m.productivity_ratio ?? 0),
+            })),
         recentSessions: sessions.slice(0, 20).map((s) => ({
           startedAt: s.started_at,
           endedAt: s.ended_at,
