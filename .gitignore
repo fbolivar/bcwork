@@ -76,3 +76,6 @@ apps/agent/src-tauri/target
 # Test artifacts
 playwright-report
 test-results
+
+# Certificados de firma de codigo (privados)
+/certs/
