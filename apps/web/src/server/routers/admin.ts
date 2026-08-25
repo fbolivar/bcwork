@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import { TRPCError } from '@trpc/server'
-import { router, adminProcedure, protectedProcedure } from '../trpc'
+import { router, adminProcedure, protectedProcedure, tenantAdminProcedure } from '../trpc'
 import { hashPassword, generateRandomPassword, validatePasswordPolicy } from '@/lib/auth/password'
 import { logAudit } from '@/lib/auth/audit'
 import { broadcastNotificationToMany } from '@/lib/realtime-broadcast'
@@ -918,6 +918,83 @@ export const adminRouter = router({
       if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
 
       return { code: data.code as string, expiresAt: data.expires_at as string }
+    }),
+
+  // ─── Tokens de aprovisionamiento (instalador por-tenant) ────────────────────
+
+  // Crea un token de tenant reutilizable. El claro se devuelve UNA sola vez.
+  // Es el token que se embebe en el instalador por-tenant.
+  createProvisioningToken: tenantAdminProcedure
+    .input(z.object({ label: z.string().max(80).optional() }))
+    .mutation(async ({ ctx, input }) => {
+      const tenantId = ctx.user!.tid
+      const { randomBytes, createHash } = await import('crypto')
+      // 32 bytes → 64 chars hex (ancho fijo, compatible con el placeholder del MSI)
+      const token = randomBytes(32).toString('hex')
+      const tokenHash = createHash('sha256').update(token).digest('hex')
+
+      const { data, error } = await ctx.db
+        .from('agent_provisioning_tokens')
+        .insert({
+          tenant_id: tenantId,
+          token_hash: tokenHash,
+          token_prefix: token.slice(0, 8),
+          label: input.label ?? null,
+          created_by: ctx.user!.sub,
+        })
+        .select('id, token_prefix, created_at')
+        .single()
+
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+
+      await logAudit(ctx.db, {
+        tenantId,
+        actorUserId: ctx.user!.sub,
+        action: 'provisioning_token.created',
+        entityType: 'provisioning_token',
+        entityId: data.id,
+        ipInet: ctx.ip,
+        userAgent: ctx.userAgent,
+      })
+
+      return { id: data.id, token, prefix: data.token_prefix as string }
+    }),
+
+  listProvisioningTokens: adminProcedure.query(async ({ ctx }) => {
+    const tenantId = ctx.user!.tid
+    const { data, error } = await ctx.db
+      .from('agent_provisioning_tokens')
+      .select('id, token_prefix, label, created_at, last_used_at, provisioned_count, revoked_at')
+      .eq('tenant_id', tenantId)
+      .order('created_at', { ascending: false })
+
+    if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+    return data ?? []
+  }),
+
+  revokeProvisioningToken: tenantAdminProcedure
+    .input(z.object({ id: z.string().uuid() }))
+    .mutation(async ({ ctx, input }) => {
+      const tenantId = ctx.user!.tid
+      const { error } = await ctx.db
+        .from('agent_provisioning_tokens')
+        .update({ revoked_at: new Date().toISOString() })
+        .eq('id', input.id)
+        .eq('tenant_id', tenantId)
+        .is('revoked_at', null)
+
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+
+      await logAudit(ctx.db, {
+        tenantId,
+        actorUserId: ctx.user!.sub,
+        action: 'provisioning_token.revoked',
+        entityType: 'provisioning_token',
+        entityId: input.id,
+        ipInet: ctx.ip,
+        userAgent: ctx.userAgent,
+      })
+      return { ok: true }
     }),
 
   listDevices: adminProcedure

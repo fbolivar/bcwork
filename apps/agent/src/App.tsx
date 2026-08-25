@@ -1,58 +1,20 @@
 import { useEffect, useState } from 'react'
 import { listen } from '@tauri-apps/api/event'
-import { EnrollScreen } from './screens/EnrollScreen'
-import { DashboardScreen } from './screens/DashboardScreen'
-import { getStore } from './lib/store'
+import { AssignScreen } from './screens/AssignScreen'
+import { ActiveScreen } from './screens/ActiveScreen'
 
+// El helper solo tiene dos estados de UI: elegir usuario (una vez) o "activo".
+// No hay pausa, ni salir, ni PIN: el monitoreo no lo controla el empleado.
 export function App() {
-  const [enrolled, setEnrolled] = useState<boolean | null>(null)
+  const [assigned, setAssigned] = useState(false)
 
   useEffect(() => {
-    getStore().then((store) => {
-      store.get<string>('api_key').then((key) => {
-        setEnrolled(!!key)
-      })
-    })
-  }, [])
-
-  // Volver al EnrollScreen cuando el servidor rechaza las credenciales
-  useEffect(() => {
-    const unlisten = listen('agent-unenrolled', () => {
-      setEnrolled(false)
-    })
+    const unlisten = listen('assigned', () => setAssigned(true))
     return () => {
       void unlisten.then((u) => u())
     }
   }, [])
 
-  if (enrolled === null) {
-    return (
-      <div
-        style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh' }}
-      >
-        <Spinner />
-      </div>
-    )
-  }
-
-  if (!enrolled) {
-    return <EnrollScreen onEnrolled={() => setEnrolled(true)} />
-  }
-
-  return <DashboardScreen onUnenroll={() => setEnrolled(false)} />
-}
-
-function Spinner() {
-  return (
-    <div
-      style={{
-        width: 32,
-        height: 32,
-        borderRadius: '50%',
-        border: '3px solid #334155',
-        borderTopColor: '#3b82f6',
-        animation: 'spin 0.8s linear infinite',
-      }}
-    />
-  )
+  if (assigned) return <ActiveScreen />
+  return <AssignScreen onAssigned={() => setAssigned(true)} />
 }

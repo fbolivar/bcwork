@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Fragmento WiX del agente blindado BCWork (Fase 3).
+
+  Qué hace:
+  - Declara la propiedad pública TENANT_TOKEN con un placeholder de 64 chars que
+    el panel (/api/admin/installer) byte-patchea con el token real del tenant.
+  - Declara SERVER_URL (por defecto producción).
+  - Al instalar: corre (elevado) el servicio en modo install (pasando token y
+    server), que escribe provisioning.json, endurece ACLs y registra el servicio.
+  - Al desinstalar: corre el servicio en modo uninstall.
+
+  Enlace: se referencia como componentGroupRefs = ["BcworkServiceGroup"] en
+  tauri.conf.json → así WiX enlaza TODO este fragmento (propiedades + CAs + secuencia).
+
+  NOTA: requiere pasar por WiX v3 (lo hace `tauri build`) para validarse; los ids
+  de directorio (INSTALLDIR) siguen la plantilla por defecto de Tauri v2.
+-->
+<Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
+  <Fragment>
+    <!-- Placeholder de 64 chars. DEBE coincidir con PLACEHOLDER del endpoint web
+         y con TOKEN_PLACEHOLDER del servicio (service.rs). -->
+    <Property Id="TENANT_TOKEN" Value="BCWORK_TENANT_TOKEN_PLACEHOLDER_00000000000000000000000000000000" Secure="yes" />
+    <Property Id="SERVER_URL" Value="https://bcwork.bc-security.com" Secure="yes" />
+
+    <!-- Componente ancla: marca de instalación en HKLM. Referenciarlo fuerza el
+         enlace de todo el fragmento. -->
+    <ComponentGroup Id="BcworkServiceGroup" Directory="INSTALLDIR">
+      <Component Id="BcworkServiceMarker" Guid="6E3B2C10-8F4A-4B2E-9C1D-2A7F1E9B4C31">
+        <RegistryKey Root="HKLM" Key="Software\BCWork\Agent">
+          <RegistryValue Type="string" Name="Installed" Value="1" KeyPath="yes" />
+        </RegistryKey>
+      </Component>
+    </ComponentGroup>
+
+    <!-- ── Instalación ──────────────────────────────────────────────────────
+         Patrón WixQuietExec diferido: un CA inmediato (SetProperty) fija la
+         propiedad cuyo NOMBRE es igual al CA diferido → así se llena su
+         CustomActionData, que WixQuietExec64 ejecuta elevado (Impersonate=no). -->
+    <CustomAction Id="SetBcworkInstallCmd"
+                  Property="BcworkInstallExec"
+                  Value="&quot;[INSTALLDIR]bcwork-agent-svc.exe&quot; install --token &quot;[TENANT_TOKEN]&quot; --server &quot;[SERVER_URL]&quot;"
+                  Execute="immediate" />
+    <CustomAction Id="BcworkInstallExec"
+                  BinaryKey="WixCA"
+                  DllEntry="WixQuietExec64"
+                  Execute="deferred"
+                  Impersonate="no"
+                  Return="ignore" />
+
+    <!-- ── Desinstalación ─────────────────────────────────────────────────── -->
+    <CustomAction Id="SetBcworkUninstallCmd"
+                  Property="BcworkUninstallExec"
+                  Value="&quot;[INSTALLDIR]bcwork-agent-svc.exe&quot; uninstall"
+                  Execute="immediate" />
+    <CustomAction Id="BcworkUninstallExec"
+                  BinaryKey="WixCA"
+                  DllEntry="WixQuietExec64"
+                  Execute="deferred"
+                  Impersonate="no"
+                  Return="ignore" />
+
+    <InstallExecuteSequence>
+      <!-- Registrar servicio tras copiar los archivos, solo en instalación real. -->
+      <Custom Action="SetBcworkInstallCmd" After="InstallFiles">NOT Installed</Custom>
+      <Custom Action="BcworkInstallExec" After="SetBcworkInstallCmd">NOT Installed</Custom>
+      <!-- Quitar servicio antes de borrar archivos, solo en desinstalación. -->
+      <Custom Action="SetBcworkUninstallCmd" Before="RemoveFiles">Installed AND REMOVE~="ALL"</Custom>
+      <Custom Action="BcworkUninstallExec" After="SetBcworkUninstallCmd">Installed AND REMOVE~="ALL"</Custom>
+    </InstallExecuteSequence>
+  </Fragment>
+</Wix>

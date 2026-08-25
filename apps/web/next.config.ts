@@ -9,6 +9,12 @@ const nextConfig: NextConfig = {
 
   transpilePackages: ['@bcwork/shared', '@bcwork/db', '@bcwork/ui'],
 
+  // Empaqueta el instalador del agente junto a la función que lo sirve, para que
+  // el botón de descarga funcione en producción sin hosting externo.
+  outputFileTracingIncludes: {
+    '/api/admin/installer': ['./installers/**'],
+  },
+
   async headers() {
     const csp = [
       "default-src 'self'",

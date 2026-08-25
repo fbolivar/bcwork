@@ -31,7 +31,7 @@
   },
   "bundle": {
     "active": true,
-    "targets": "all",
+    "targets": ["msi"],
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
@@ -40,7 +40,10 @@
       "icons/icon.ico"
     ],
     "windows": {
-      "signCommand": "signtool sign /f $env:WINDOWS_CERTIFICATE_FILE /p $env:WINDOWS_CERTIFICATE_PASSWORD /tr http://timestamp.sectigo.com /td sha256 /fd sha256 %1"
+      "wix": {
+        "fragmentPaths": ["installer/service.wxs"],
+        "componentGroupRefs": ["BcworkServiceGroup"]
+      }
     }
   },
   "plugins": {}

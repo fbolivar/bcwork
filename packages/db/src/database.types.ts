@@ -551,6 +551,7 @@ export type Database = {
       agent_devices: {
         Row: {
           agent_version: string
+          assigned_at: string | null
           capabilities: Json | null
           device_token_hash: string
           enrolled_at: string | null
@@ -563,14 +564,19 @@ export type Database = {
           os_version: string | null
           pin_hash: string | null
           platform: string | null
+          provisioning_token: string | null
           revoked_at: string | null
+          service_version: string | null
           status: string | null
+          tamper_status: string | null
           tenant_id: string
           updated_at: string | null
-          user_id: string
+          user_id: string | null
+          windows_username: string | null
         }
         Insert: {
           agent_version: string
+          assigned_at?: string | null
           capabilities?: Json | null
           device_token_hash: string
           enrolled_at?: string | null
@@ -583,14 +589,19 @@ export type Database = {
           os_version?: string | null
           pin_hash?: string | null
           platform?: string | null
+          provisioning_token?: string | null
           revoked_at?: string | null
+          service_version?: string | null
           status?: string | null
+          tamper_status?: string | null
           tenant_id: string
           updated_at?: string | null
-          user_id: string
+          user_id?: string | null
+          windows_username?: string | null
         }
         Update: {
           agent_version?: string
+          assigned_at?: string | null
           capabilities?: Json | null
           device_token_hash?: string
           enrolled_at?: string | null
@@ -603,11 +614,15 @@ export type Database = {
           os_version?: string | null
           pin_hash?: string | null
           platform?: string | null
+          provisioning_token?: string | null
           revoked_at?: string | null
+          service_version?: string | null
           status?: string | null
+          tamper_status?: string | null
           tenant_id?: string
           updated_at?: string | null
-          user_id?: string
+          user_id?: string | null
+          windows_username?: string | null
         }
         Relationships: [
           {
@@ -620,6 +635,67 @@ export type Database = {
           {
             foreignKeyName: "agent_devices_user_id_fkey"
             columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "agent_devices_provisioning_token_fkey"
+            columns: ["provisioning_token"]
+            isOneToOne: false
+            referencedRelation: "agent_provisioning_tokens"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      agent_provisioning_tokens: {
+        Row: {
+          created_at: string | null
+          created_by: string
+          id: string
+          label: string | null
+          last_used_at: string | null
+          provisioned_count: number | null
+          revoked_at: string | null
+          tenant_id: string
+          token_hash: string
+          token_prefix: string
+        }
+        Insert: {
+          created_at?: string | null
+          created_by: string
+          id?: string
+          label?: string | null
+          last_used_at?: string | null
+          provisioned_count?: number | null
+          revoked_at?: string | null
+          tenant_id: string
+          token_hash: string
+          token_prefix: string
+        }
+        Update: {
+          created_at?: string | null
+          created_by?: string
+          id?: string
+          label?: string | null
+          last_used_at?: string | null
+          provisioned_count?: number | null
+          revoked_at?: string | null
+          tenant_id?: string
+          token_hash?: string
+          token_prefix?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "agent_provisioning_tokens_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "agent_provisioning_tokens_created_by_fkey"
+            columns: ["created_by"]
             isOneToOne: false
             referencedRelation: "users"
             referencedColumns: ["id"]

@@ -300,7 +300,15 @@ export function DeviceManager() {
                     <p className="font-mono text-xs text-gray-400">{device.hostname}</p>
                   </td>
                   <td className="px-4 py-3 text-gray-600">
-                    {user?.full_name ?? user?.email ?? device.user_id.slice(0, 8) + '...'}
+                    {user?.full_name ??
+                      user?.email ??
+                      (device.user_id ? (
+                        device.user_id.slice(0, 8) + '...'
+                      ) : (
+                        <span className="rounded bg-amber-100 px-1.5 py-0.5 text-xs font-medium text-amber-700">
+                          Sin asignar
+                        </span>
+                      ))}
                   </td>
                   <td className="px-4 py-3">
                     <span className="rounded bg-gray-100 px-1.5 py-0.5 text-xs font-medium">

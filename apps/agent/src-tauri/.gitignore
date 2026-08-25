@@ -1,0 +1,4 @@
+
+# Sidecar del servicio, generado por scripts/build-installer.ps1
+/binaries/
+/target/

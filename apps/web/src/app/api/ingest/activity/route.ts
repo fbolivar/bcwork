@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createHash } from 'crypto'
 import { z } from 'zod'
 import { getDb } from '@/lib/db'
+import { resolveAgentKey, getBearer } from '@/lib/agent-auth'
 
 const AgentEventSchema = z.object({
   event_type: z.string().min(1).max(50),
@@ -38,42 +38,16 @@ const BatchSchema = z.object({
   session_state: SessionStateSchema,
 })
 
-async function resolveApiKey(
-  db: ReturnType<typeof import('@/lib/db').getDb>,
-  rawKey: string,
-): Promise<{ tenantId: string; userId: string; deviceId: string } | null> {
-  const keyHash = createHash('sha256').update(rawKey).digest('hex')
-
-  const { data } = await db
-    .from('api_keys')
-    .select('id, tenant_id, created_by, name, scopes, expires_at, revoked_at')
-    .eq('key_hash', keyHash)
-    .is('revoked_at', null)
-    .single()
-
-  if (!data) return null
-  if (data.expires_at && new Date(data.expires_at) < new Date()) return null
-
-  const scopes = data.scopes as string[]
-  if (!scopes.includes('ingest:activity')) return null
-
-  const deviceId = (data.name as string).replace('agent:', '')
-
-  if (!data.created_by) return null
-  await db.from('api_keys').update({ last_used_at: new Date().toISOString() }).eq('id', data.id)
-
-  return { tenantId: data.tenant_id, userId: data.created_by, deviceId }
-}
-
 export async function POST(req: NextRequest) {
-  const authHeader = req.headers.get('authorization')
-  if (!authHeader?.startsWith('Bearer ')) {
+  const rawKey = getBearer(req)
+  if (!rawKey) {
     return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
   }
-  const rawKey = authHeader.slice(7)
 
   const db = getDb()
-  const identity = await resolveApiKey(db, rawKey)
+  // La atribución del usuario proviene del device asignado (asignación 1-sola-vez).
+  // Un device aún sin asignar (userId null) es rechazado más abajo.
+  const identity = await resolveAgentKey(db, rawKey, 'ingest:activity')
   if (!identity) {
     return NextResponse.json({ error: 'invalid_api_key' }, { status: 401 })
   }

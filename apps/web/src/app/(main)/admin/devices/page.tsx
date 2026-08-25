@@ -1,4 +1,5 @@
 import { DeviceManager } from '@/features/admin/components/DeviceManager'
+import { TenantInstallerCard } from '@/features/admin/components/TenantInstallerCard'
 
 export default function DevicesPage() {
   return (
@@ -9,6 +10,7 @@ export default function DevicesPage() {
           Gestiona los agentes instalados en dispositivos de tus colaboradores.
         </p>
       </div>
+      <TenantInstallerCard />
       <DeviceManager />
     </div>
   )
