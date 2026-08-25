@@ -64,22 +64,22 @@ function toISO(date: string) {
   return date ? new Date(date).toISOString() : ''
 }
 
-function downloadCSV(rows: unknown[], filename: string) {
+function csvCell(v: unknown) {
+  const s = v == null ? '' : String(v)
+  return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
+}
+
+function downloadCSV(rows: unknown[], filename: string, preface: string[] = []) {
   if (!rows.length) return
   const keys = Object.keys(rows[0] as object).filter(
     (k) => typeof (rows[0] as Record<string, unknown>)[k] !== 'object',
   )
   const header = keys.join(',')
   const lines = rows.map((r) =>
-    keys
-      .map((k) => {
-        const v = (r as Record<string, unknown>)[k]
-        const s = v == null ? '' : String(v)
-        return s.includes(',') ? `"${s}"` : s
-      })
-      .join(','),
+    keys.map((k) => csvCell((r as Record<string, unknown>)[k])).join(','),
   )
-  const csv = [header, ...lines].join('\n')
+  const body = [header, ...lines]
+  const csv = (preface.length ? [...preface, '', ...body] : body).join('\n')
   const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
@@ -96,6 +96,8 @@ export function ReportBuilderPanel() {
   const [dateFrom, setDateFrom] = useState(firstDay.toISOString().slice(0, 10))
   const [dateTo, setDateTo] = useState(today.toISOString().slice(0, 10))
   const [enabled, setEnabled] = useState(false)
+
+  const { data: company } = api.admin.getSettings.useQuery()
 
   const { data, isFetching, refetch } = api.admin.runCustomReport.useQuery(
     { report_type: reportType, date_from: toISO(dateFrom), date_to: toISO(dateTo) },
@@ -136,6 +138,17 @@ export function ReportBuilderPanel() {
   }
 
   const selected = REPORT_TYPES.find((r) => r.value === reportType)!
+  const companyName = company?.legal_name ?? company?.trade_name ?? '—'
+
+  const csvPreface = company
+    ? [
+        `Empresa,${csvCell(companyName)}`,
+        `NIT,${csvCell(company.nit ?? '')}`,
+        `Informe,${csvCell(selected.label)}`,
+        `Periodo,${csvCell(`${dateFrom} a ${dateTo}`)}`,
+        `Generado,${csvCell(new Date().toLocaleString('es-CO'))}`,
+      ]
+    : []
 
   return (
     <div className="space-y-5">
@@ -237,7 +250,9 @@ export function ReportBuilderPanel() {
             {rows.length > 0 && (
               <button
                 type="button"
-                onClick={() => downloadCSV(rows, `bcwork-${reportType}-${dateFrom}-${dateTo}.csv`)}
+                onClick={() =>
+                  downloadCSV(rows, `bcwork-${reportType}-${dateFrom}-${dateTo}.csv`, csvPreface)
+                }
                 className="flex items-center gap-1.5 rounded-lg border border-gray-200 px-4 py-2 text-sm text-gray-600 hover:bg-gray-50"
               >
                 <Download className="h-3.5 w-3.5" />
@@ -247,6 +262,43 @@ export function ReportBuilderPanel() {
           </div>
         </div>
       </div>
+
+      {/* Membrete de la empresa (empresa propietaria del tenant) */}
+      {rows.length > 0 && company && (
+        <div className="rounded-xl border border-gray-200 bg-white p-5">
+          <div className="flex flex-wrap items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              {company.logo_url ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={company.logo_url}
+                  alt={companyName}
+                  className="h-11 w-auto max-w-[140px] object-contain"
+                />
+              ) : (
+                <div className="flex h-11 w-11 items-center justify-center rounded-lg bg-gray-100 text-sm font-bold text-gray-500">
+                  {companyName.slice(0, 2).toUpperCase()}
+                </div>
+              )}
+              <div>
+                <p className="text-sm font-bold text-gray-900">{companyName}</p>
+                <p className="text-xs text-gray-500">
+                  {company.nit ? `NIT ${company.nit}` : null}
+                  {company.nit && company.contact_email ? ' · ' : null}
+                  {company.contact_email}
+                </p>
+              </div>
+            </div>
+            <div className="text-right text-xs text-gray-500">
+              <p className="text-sm font-semibold text-gray-700">{selected.label}</p>
+              <p>
+                {dateFrom} — {dateTo}
+              </p>
+              <p>Generado: {new Date().toLocaleDateString('es-CO')}</p>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Tabla de resultados */}
       {rows.length > 0 && (
