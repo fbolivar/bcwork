@@ -11,6 +11,7 @@ import {
   AppWindow,
   Network,
   Monitor,
+  Package,
   BarChart2,
   Bell,
   Plug,
@@ -131,7 +132,8 @@ const GROUPS: NavGroup[] = [
     label: 'TI & Seguridad',
     icon: Shield,
     items: [
-      { href: '/admin/apps', label: 'Aplicaciones', icon: AppWindow },
+      { href: '/admin/apps', label: 'Catálogo de aplicaciones', icon: AppWindow },
+      { href: '/admin/app-inventory', label: 'Inventario de aplicaciones', icon: Package },
       { href: '/admin/devices', label: 'Dispositivos', icon: Monitor },
       { href: '/admin/ips', label: 'IPs Corporativas', icon: Network },
       { href: '/admin/metrics', label: 'Métricas', icon: BarChart2 },

@@ -167,6 +167,27 @@ pub async fn assign(creds: &Credentials, user_id: &str, device_name: Option<&str
     Ok(())
 }
 
+/// Envía el snapshot de aplicaciones instaladas del equipo.
+pub async fn send_inventory(
+    creds: &Credentials,
+    apps: &[crate::inventory::InstalledApp],
+) -> Result<()> {
+    let client = reqwest::Client::new();
+    let resp = client
+        .post(format!(
+            "{}/api/ingest/inventory",
+            creds.server_url.trim_end_matches('/')
+        ))
+        .bearer_auth(&creds.api_key)
+        .json(&serde_json::json!({ "apps": apps }))
+        .send()
+        .await?;
+    if !resp.status().is_success() {
+        return Err(anyhow!("inventory falló: {}", resp.status()));
+    }
+    Ok(())
+}
+
 /// Reporta un intento de manipulación (parar servicio, desinstalar, etc.).
 pub async fn report_tamper(creds: &Credentials, status: &str, detail: Option<&str>) -> Result<()> {
     let client = reqwest::Client::new();

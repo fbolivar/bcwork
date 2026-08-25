@@ -702,6 +702,60 @@ export type Database = {
           },
         ]
       }
+      installed_apps: {
+        Row: {
+          device_id: string
+          first_seen: string | null
+          id: string
+          install_date: string | null
+          last_seen: string | null
+          name: string
+          publisher: string | null
+          source: string | null
+          tenant_id: string
+          version: string | null
+        }
+        Insert: {
+          device_id: string
+          first_seen?: string | null
+          id?: string
+          install_date?: string | null
+          last_seen?: string | null
+          name: string
+          publisher?: string | null
+          source?: string | null
+          tenant_id: string
+          version?: string | null
+        }
+        Update: {
+          device_id?: string
+          first_seen?: string | null
+          id?: string
+          install_date?: string | null
+          last_seen?: string | null
+          name?: string
+          publisher?: string | null
+          source?: string | null
+          tenant_id?: string
+          version?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "installed_apps_device_id_fkey"
+            columns: ["device_id"]
+            isOneToOne: false
+            referencedRelation: "agent_devices"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "installed_apps_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       alert_notifications: {
         Row: {
           alert_rule_id: string | null

@@ -997,6 +997,53 @@ export const adminRouter = router({
       return { ok: true }
     }),
 
+  // ─── Inventario de aplicaciones instaladas ──────────────────────────────────
+  listInstalledApps: adminProcedure
+    .input(
+      z.object({
+        deviceId: z.string().uuid().optional(),
+        search: z.string().max(200).optional(),
+        page: z.number().int().min(1).default(1),
+        pageSize: z.number().int().min(1).max(100).default(50),
+      }),
+    )
+    .query(async ({ ctx, input }) => {
+      const tenantId = ctx.user!.tid
+      const offset = (input.page - 1) * input.pageSize
+
+      let query = ctx.db
+        .from('installed_apps')
+        .select(
+          'id, name, version, publisher, install_date, last_seen, source, device_id, device:agent_devices(hostname, name)',
+          { count: 'exact' },
+        )
+        .eq('tenant_id', tenantId)
+        .order('name', { ascending: true })
+        .range(offset, offset + input.pageSize - 1)
+
+      if (input.deviceId) query = query.eq('device_id', input.deviceId)
+      if (input.search) query = query.ilike('name', `%${input.search}%`)
+
+      const { data, error, count } = await query
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+
+      return { data: data ?? [], total: count ?? 0, page: input.page, pageSize: input.pageSize }
+    }),
+
+  // Resumen del inventario: total de apps y equipos con inventario.
+  getInventorySummary: adminProcedure.query(async ({ ctx }) => {
+    const tenantId = ctx.user!.tid
+    const [{ count: totalApps }, { data: devices }] = await Promise.all([
+      ctx.db
+        .from('installed_apps')
+        .select('id', { count: 'exact', head: true })
+        .eq('tenant_id', tenantId),
+      ctx.db.from('installed_apps').select('device_id').eq('tenant_id', tenantId),
+    ])
+    const deviceSet = new Set((devices ?? []).map((d) => d.device_id))
+    return { totalApps: totalApps ?? 0, devicesWithInventory: deviceSet.size }
+  }),
+
   listDevices: adminProcedure
     .input(
       z.object({

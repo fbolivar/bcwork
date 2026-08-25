@@ -17,6 +17,7 @@ const SERVICE_DISPLAY: &str = "BCWork Agent";
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 const SENDER_INTERVAL_SECS: u64 = 60;
 const WATCHDOG_INTERVAL_SECS: u64 = 15;
+const INVENTORY_INTERVAL_SECS: u64 = 12 * 3600;
 const BATCH_SIZE: usize = 500;
 
 fn main() {
@@ -106,6 +107,7 @@ async fn worker_main(shutdown_rx: std::sync::mpsc::Receiver<()>) {
 
     let mut last_sender = std::time::Instant::now();
     let mut last_watchdog = std::time::Instant::now();
+    let mut last_inventory: Option<std::time::Instant> = None;
 
     loop {
         if shutdown_rx.try_recv().is_ok() {
@@ -135,6 +137,23 @@ async fn worker_main(shutdown_rx: std::sync::mpsc::Receiver<()>) {
             }
             if let Err(e) = send_batch(&creds, &db_path).await {
                 log::error!("envío falló: {e}");
+            }
+        }
+
+        // Inventario de apps instaladas: al iniciar y cada 12 horas.
+        let due_inventory = match last_inventory {
+            None => true,
+            Some(t) => t.elapsed().as_secs() >= INVENTORY_INTERVAL_SECS,
+        };
+        if due_inventory {
+            last_inventory = Some(std::time::Instant::now());
+            let apps = bcwork_agent::inventory::collect_installed_apps();
+            match bcwork_agent::ingest::send_inventory(&creds, &apps).await {
+                Ok(_) => log::info!("inventario enviado: {} apps", apps.len()),
+                Err(e) => {
+                    log::error!("inventario falló: {e}");
+                    last_inventory = None; // reintentar en el próximo ciclo
+                }
             }
         }
 

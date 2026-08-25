@@ -1,6 +1,6 @@
 [package]
 name = "bcwork-agent"
-version = "0.1.0"
+version = "0.1.1"
 description = "BCWork Activity Monitor Agent"
 authors = ["BC Fabric SAS"]
 edition = "2021"
@@ -44,6 +44,7 @@ dirs = "5"
 
 [target.'cfg(target_os = "windows")'.dependencies]
 windows-service = "0.7"
+winreg = "0.52"
 windows = { version = "0.58", features = [
   "Win32_Foundation",
   "Win32_UI_WindowsAndMessaging",
