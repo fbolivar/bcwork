@@ -29,6 +29,22 @@ function fmtTime(iso: string) {
   return new Date(iso).toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' })
 }
 
+async function urlToDataUrl(url: string): Promise<string | null> {
+  try {
+    const res = await fetch(url)
+    if (!res.ok) return null
+    const blob = await res.blob()
+    return await new Promise((resolve) => {
+      const fr = new FileReader()
+      fr.onload = () => resolve(fr.result as string)
+      fr.onerror = () => resolve(null)
+      fr.readAsDataURL(blob)
+    })
+  } catch {
+    return null
+  }
+}
+
 type Mode = 'week' | 'month'
 
 function getWeekRange() {
@@ -85,6 +101,31 @@ export function MyReportsPanel() {
       const periodLabel =
         mode === 'week' ? `Semana: ${startDate} — ${endDate}` : `${MONTH_NAMES[month - 1]} ${year}`
       doc.text(periodLabel, margin, 32)
+
+      // Empresa empleadora (datos del tenant) — a la derecha del encabezado
+      const company = data.company
+      const companyName = company?.legal_name ?? company?.trade_name ?? ''
+      if (company) {
+        if (company.logo_url) {
+          const durl = await urlToDataUrl(company.logo_url)
+          if (durl) {
+            try {
+              doc.addImage(durl, 'PNG', W - margin - 13, 5, 13, 13)
+            } catch {
+              /* logo no compatible: se omite */
+            }
+          }
+        }
+        doc.setTextColor(255, 255, 255)
+        doc.setFont('helvetica', 'bold')
+        doc.setFontSize(11)
+        doc.text(companyName, W - margin, 25, { align: 'right' })
+        doc.setFont('helvetica', 'normal')
+        doc.setFontSize(8)
+        doc.setTextColor(210, 220, 240)
+        if (company.nit) doc.text(`NIT ${company.nit}`, W - margin, 30, { align: 'right' })
+      }
+
       doc.setTextColor(0, 0, 0)
       y = 50
 
@@ -100,6 +141,14 @@ export function MyReportsPanel() {
         if (data.profile.department) doc.text(`Departamento: ${data.profile.department}`, margin, y)
         if (data.profile.position) doc.text(`Cargo: ${data.profile.position}`, margin + 60, y)
         doc.text(data.profile.email ?? '', margin + 120, y)
+        if (companyName) {
+          y += 5
+          doc.text(
+            `Empresa: ${companyName}${company?.nit ? ` · NIT ${company.nit}` : ''}`,
+            margin,
+            y,
+          )
+        }
         doc.setTextColor(0, 0, 0)
         y += 10
       }
@@ -345,6 +394,26 @@ export function MyReportsPanel() {
               <FileText className="h-4 w-4 text-blue-600" />
               Vista previa del informe
             </div>
+            {data.company && (
+              <div className="mb-4 flex items-center gap-3 border-b border-gray-100 pb-4">
+                {data.company.logo_url ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={data.company.logo_url}
+                    alt=""
+                    className="h-9 w-auto max-w-[120px] object-contain"
+                  />
+                ) : null}
+                <div>
+                  <p className="text-sm font-bold text-gray-900">
+                    {data.company.legal_name ?? data.company.trade_name}
+                  </p>
+                  {data.company.nit && (
+                    <p className="text-xs text-gray-500">NIT {data.company.nit}</p>
+                  )}
+                </div>
+              </div>
+            )}
             {data.profile && (
               <div className="mb-4 border-b border-gray-100 pb-4">
                 <p className="font-semibold text-gray-900">{data.profile.full_name}</p>

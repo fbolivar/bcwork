@@ -1331,39 +1331,45 @@ export const employeeRouter = router({
 
       // Resiliente: si una consulta falla (p.ej. una tabla/columna ausente por
       // drift de esquema), el informe sigue mostrando el resto en vez de romperse.
-      const [profileRes, metricsRes, sessionsRes, projectsRes] = await Promise.allSettled([
-        ctx.db
-          .from('users')
-          .select('full_name, email, department, position')
-          .eq('id', ctx.user!.sub)
-          .single(),
-        ctx.db
-          .from('daily_user_metrics')
-          .select(
-            'metric_date, active_seconds, productive_seconds, overtime_seconds, productivity_ratio, expected_seconds',
-          )
-          .eq('user_id', ctx.user!.sub)
-          .eq('tenant_id', ctx.user!.tid)
-          .gte('metric_date', startDate)
-          .lte('metric_date', endDate)
-          .order('metric_date', { ascending: true }),
-        ctx.db
-          .from('work_sessions')
-          .select('id, started_at, ended_at, active_seconds, productive_seconds, location_type')
-          .eq('user_id', ctx.user!.sub)
-          .eq('tenant_id', ctx.user!.tid)
-          .gte('started_at', `${startDate}T00:00:00`)
-          .lte('started_at', `${endDate}T23:59:59`)
-          .order('started_at', { ascending: false })
-          .limit(100),
-        ctx.db
-          .from('project_time_entries')
-          .select('duration_seconds, projects(name)')
-          .eq('user_id', ctx.user!.sub)
-          .eq('tenant_id', ctx.user!.tid)
-          .gte('started_at', `${startDate}T00:00:00`)
-          .lte('started_at', `${endDate}T23:59:59`),
-      ])
+      const [profileRes, metricsRes, sessionsRes, projectsRes, companyRes] =
+        await Promise.allSettled([
+          ctx.db
+            .from('users')
+            .select('full_name, email, department, position')
+            .eq('id', ctx.user!.sub)
+            .single(),
+          ctx.db
+            .from('daily_user_metrics')
+            .select(
+              'metric_date, active_seconds, productive_seconds, overtime_seconds, productivity_ratio, expected_seconds',
+            )
+            .eq('user_id', ctx.user!.sub)
+            .eq('tenant_id', ctx.user!.tid)
+            .gte('metric_date', startDate)
+            .lte('metric_date', endDate)
+            .order('metric_date', { ascending: true }),
+          ctx.db
+            .from('work_sessions')
+            .select('id, started_at, ended_at, active_seconds, productive_seconds, location_type')
+            .eq('user_id', ctx.user!.sub)
+            .eq('tenant_id', ctx.user!.tid)
+            .gte('started_at', `${startDate}T00:00:00`)
+            .lte('started_at', `${endDate}T23:59:59`)
+            .order('started_at', { ascending: false })
+            .limit(100),
+          ctx.db
+            .from('project_time_entries')
+            .select('duration_seconds, projects(name)')
+            .eq('user_id', ctx.user!.sub)
+            .eq('tenant_id', ctx.user!.tid)
+            .gte('started_at', `${startDate}T00:00:00`)
+            .lte('started_at', `${endDate}T23:59:59`),
+          ctx.db
+            .from('tenants')
+            .select('trade_name, legal_name, nit, logo_url, contact_email')
+            .eq('id', ctx.user!.tid)
+            .single(),
+        ])
 
       const settled = <T>(r: PromiseSettledResult<{ data: T | null }>): T | null =>
         r.status === 'fulfilled' ? (r.value.data ?? null) : null
@@ -1372,6 +1378,7 @@ export const employeeRouter = router({
       const metrics = settled(metricsRes) ?? []
       const sessions = settled(sessionsRes) ?? []
       const projectEntries = settled(projectsRes) ?? []
+      const companyData = settled(companyRes)
 
       type SessionRow = {
         started_at: string
@@ -1435,6 +1442,7 @@ export const employeeRouter = router({
 
       return {
         profile: profileData,
+        company: companyData,
         startDate,
         endDate,
         summary: {
