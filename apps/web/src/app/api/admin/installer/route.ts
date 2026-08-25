@@ -6,10 +6,10 @@ import { verifyAccessToken } from '@/lib/auth/jwt'
 
 export const runtime = 'nodejs'
 
-// Descarga del instalador por-tenant, YA FIRMADO. Cada tenant tiene su MSI
-// pre-compilado con su token horneado y firmado (installers/<tenantId>.msi).
-// No se parchea en tiempo de descarga porque cualquier cambio a un MSI firmado
-// invalidaría la firma. Solo tenant_admin puede descargarlo.
+// Descarga del instalador por-tenant como ZIP (installers/<tenantId>.zip):
+// contiene el MSI firmado (token horneado), el certificado y un Instalar.bat que
+// se auto-eleva, confía el certificado e instala — pensado para instalación
+// manual equipo por equipo, sin GPO ni avisos. Solo tenant_admin.
 export async function GET(req: NextRequest) {
   const jwt = getAccessTokenFromHeaders(req.headers)
   if (!jwt) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
@@ -26,9 +26,9 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'no_tenant' }, { status: 400 })
   }
 
-  let msi: Buffer
+  let zip: Buffer
   try {
-    msi = await readFile(path.join(process.cwd(), 'installers', `${user.tid}.msi`))
+    zip = await readFile(path.join(process.cwd(), 'installers', `${user.tid}.zip`))
   } catch {
     return NextResponse.json(
       {
@@ -40,11 +40,11 @@ export async function GET(req: NextRequest) {
     )
   }
 
-  return new NextResponse(new Uint8Array(msi), {
+  return new NextResponse(new Uint8Array(zip), {
     status: 200,
     headers: {
-      'Content-Type': 'application/x-msi',
-      'Content-Disposition': `attachment; filename="BCWork-Agent.msi"`,
+      'Content-Type': 'application/zip',
+      'Content-Disposition': `attachment; filename="BCWork-Agent-Instalador.zip"`,
       'Cache-Control': 'no-store',
     },
   })

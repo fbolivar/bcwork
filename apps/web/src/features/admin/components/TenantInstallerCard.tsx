@@ -23,7 +23,7 @@ export function TenantInstallerCard() {
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url
-      a.download = 'BCWork-Agent.msi'
+      a.download = 'BCWork-Agent-Instalador.zip'
       document.body.appendChild(a)
       a.click()
       a.remove()
@@ -60,7 +60,7 @@ export function TenantInstallerCard() {
           ) : (
             <Download className="h-4 w-4" />
           )}
-          {downloading ? 'Descargando…' : 'Descargar instalador (.msi)'}
+          {downloading ? 'Descargando…' : 'Descargar instalador (.zip)'}
         </button>
       </div>
 
@@ -71,9 +71,21 @@ export function TenantInstallerCard() {
       )}
 
       <div className="mt-4 rounded-lg border border-blue-100 bg-blue-50 p-3 text-xs text-blue-700">
-        Firmado por <strong>BC Security SAS</strong>. Para que Windows lo reconozca sin avisos,
-        confía el certificado en los PC (una sola vez por GPO). Recomendado: desplegar por
-        GPO/Intune, donde se instala en silencio.
+        <p className="mb-1 font-semibold">Cómo instalar en un equipo (sin avisos)</p>
+        <ol className="ml-4 list-decimal space-y-0.5">
+          <li>Descarga el ZIP y descomprímelo en el PC del colaborador.</li>
+          <li>
+            Clic derecho en <strong>Instalar.bat</strong> →{' '}
+            <strong>Ejecutar como administrador</strong>.
+          </li>
+          <li>
+            Confía el certificado e instala solo. El agente se auto-enrola y la persona elige su
+            nombre una vez.
+          </li>
+        </ol>
+        <p className="mt-1 text-blue-500">
+          Firmado por BC Security SAS. No requiere GPO ni escribir códigos.
+        </p>
       </div>
     </div>
   )
