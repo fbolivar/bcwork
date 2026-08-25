@@ -19,6 +19,7 @@ type AuditAction =
   | 'license.created'
   | 'license.updated'
   | 'data.exported'
+  | 'tenant.data_imported'
   | 'data.delete_requested'
   | 'consent.granted'
   | 'consent.revoked'

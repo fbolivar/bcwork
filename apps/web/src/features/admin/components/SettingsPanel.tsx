@@ -374,20 +374,52 @@ function DangerTab() {
   const [confirm, setConfirm] = useState('')
   const [cancelConfirm, setCancelConfirm] = useState(false)
   const [exportDone, setExportDone] = useState(false)
+  const [importSummary, setImportSummary] = useState<string | null>(null)
+  const [importError, setImportError] = useState<string | null>(null)
 
   const exportData = api.admin.exportData.useMutation({
-    onSuccess: (data) => {
-      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
+    onSuccess: ({ filename, bcw }) => {
+      const blob = new Blob([bcw], { type: 'application/octet-stream' })
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url
-      a.download = `bcwork-export-${new Date().toISOString().slice(0, 10)}.json`
+      a.download = filename
       a.click()
       URL.revokeObjectURL(url)
       setExportDone(true)
       setTimeout(() => setExportDone(false), 4000)
     },
   })
+
+  const importData = api.admin.importData.useMutation({
+    onSuccess: (res) => {
+      const parts = Object.entries(res.result).map(([table, r]) =>
+        'restored' in r ? `${table}: ${r.restored}` : `${table}: error`,
+      )
+      setImportSummary(
+        `Restaurado desde ${new Date(res.imported_from).toLocaleString()} — ${parts.join(', ')}`,
+      )
+      setImportError(null)
+    },
+    onError: (e) => {
+      setImportError(e.message)
+      setImportSummary(null)
+    },
+  })
+
+  const onPickFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    e.target.value = ''
+    if (!file) return
+    setImportError(null)
+    setImportSummary(null)
+    if (!file.name.toLowerCase().endsWith('.bcw')) {
+      setImportError('Selecciona un archivo .bcw')
+      return
+    }
+    const text = await file.text()
+    importData.mutate({ bcw: text })
+  }
 
   const cancelSub = api.admin.cancelSubscription.useMutation({
     onSuccess: () => {
@@ -408,8 +440,9 @@ function DangerTab() {
       <div className="rounded-xl border border-gray-200 bg-white p-5">
         <h2 className="mb-1 text-sm font-semibold text-gray-800">Exportar todos los datos</h2>
         <p className="mb-3 text-xs text-gray-500">
-          Descarga un archivo JSON con toda la información de tu empresa: empleados, sesiones,
-          ausencias, nómina, proyectos y más.
+          Descarga un archivo <strong>.bcw</strong> (backup BCWork) con toda la información de tu
+          empresa: empleados, sesiones, ausencias, nómina, proyectos y más. Formato propio,
+          comprimido y con verificación de integridad.
         </p>
         {exportData.error && (
           <p className="mb-2 text-xs text-red-600">{exportData.error.message}</p>
@@ -421,11 +454,37 @@ function DangerTab() {
           className="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50"
         >
           {exportData.isPending
-            ? 'Generando exportación…'
+            ? 'Generando backup…'
             : exportDone
               ? '✓ Descarga iniciada'
-              : 'Descargar exportación'}
+              : 'Descargar backup (.bcw)'}
         </button>
+      </div>
+
+      {/* Importar / restaurar */}
+      <div className="rounded-xl border border-gray-200 bg-white p-5">
+        <h2 className="mb-1 text-sm font-semibold text-gray-800">Restaurar desde un backup</h2>
+        <p className="mb-3 text-xs text-gray-500">
+          Sube un archivo <strong>.bcw</strong> para restaurar la información. Se combina con los
+          datos actuales (los registros existentes con el mismo identificador se actualizan). El
+          backup debe ser de esta misma empresa.
+        </p>
+        {importError && <p className="mb-2 text-xs text-red-600">{importError}</p>}
+        {importSummary && (
+          <p className="mb-2 rounded-lg border border-green-200 bg-green-50 p-2 text-xs text-green-700">
+            {importSummary}
+          </p>
+        )}
+        <label className="inline-block cursor-pointer rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50">
+          {importData.isPending ? 'Restaurando…' : 'Seleccionar archivo .bcw'}
+          <input
+            type="file"
+            accept=".bcw"
+            className="hidden"
+            disabled={importData.isPending}
+            onChange={onPickFile}
+          />
+        </label>
       </div>
 
       {/* Cancelar suscripción */}

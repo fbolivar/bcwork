@@ -3,6 +3,7 @@ import { TRPCError } from '@trpc/server'
 import { router, adminProcedure, protectedProcedure, tenantAdminProcedure } from '../trpc'
 import { hashPassword, generateRandomPassword, validatePasswordPolicy } from '@/lib/auth/password'
 import { logAudit } from '@/lib/auth/audit'
+import { encodeBcw, decodeBcw, BCW_VERSION } from '@/lib/bcw'
 import { broadcastNotificationToMany } from '@/lib/realtime-broadcast'
 import {
   sendAbsenceApprovedEmail,
@@ -4070,7 +4071,7 @@ export const adminRouter = router({
         .from('audit_logs')
         .select('*')
         .eq('tenant_id', tid)
-        .order('created_at', { ascending: false })
+        .order('occurred_at', { ascending: false })
         .limit(1000),
     ])
 
@@ -4084,25 +4085,114 @@ export const adminRouter = router({
       userAgent: ctx.userAgent,
     })
 
-    return {
-      exported_at: new Date().toISOString(),
-      tenant,
+    const data: Record<string, unknown[]> = {
+      tenants: tenant ? [tenant] : [],
       users: users ?? [],
       teams: teams ?? [],
       team_members: teamMembers ?? [],
-      work_sessions: workSessions ?? [],
-      absence_requests: absenceRequests ?? [],
-      payroll_periods: payrollPeriods ?? [],
-      payslips: payslips ?? [],
+      agent_devices: devices ?? [],
       projects: projects ?? [],
       project_tasks: projectTasks ?? [],
       training_courses: trainingCourses ?? [],
       training_enrollments: trainingEnrollments ?? [],
-      agent_devices: devices ?? [],
+      payroll_periods: payrollPeriods ?? [],
+      payslips: payslips ?? [],
+      absence_requests: absenceRequests ?? [],
       alert_rules: alertRules ?? [],
+      work_sessions: workSessions ?? [],
       audit_logs: auditLogs ?? [],
     }
+
+    const bcw = encodeBcw({
+      format: 'BCW',
+      version: BCW_VERSION,
+      exported_at: new Date().toISOString(),
+      tenant_id: tid,
+      data,
+      meta: { counts: Object.fromEntries(Object.entries(data).map(([k, v]) => [k, v.length])) },
+    })
+
+    return { filename: `bcwork-backup-${new Date().toISOString().slice(0, 10)}.bcw`, bcw }
   }),
+
+  // Restaura un backup .bcw en el MISMO tenant (upsert por id, orden FK-seguro).
+  importData: tenantAdminProcedure
+    .input(z.object({ bcw: z.string().min(10).max(50_000_000) }))
+    .mutation(async ({ ctx, input }) => {
+      const tid = ctx.user!.tid
+      const db = ctx.db
+
+      let payload
+      try {
+        payload = decodeBcw(input.bcw)
+      } catch (e) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: e instanceof Error ? e.message : 'Archivo .bcw inválido',
+        })
+      }
+      if (payload.tenant_id !== tid) {
+        throw new TRPCError({
+          code: 'FORBIDDEN',
+          message: 'Este backup pertenece a otra empresa y no puede restaurarse aquí.',
+        })
+      }
+
+      // Columnas generadas que NO se pueden insertar.
+      const GENERATED: Record<string, string[]> = { agent_devices: ['platform'] }
+      // Orden FK-seguro: padres antes que hijos.
+      const ORDER = [
+        'tenants',
+        'users',
+        'teams',
+        'agent_devices',
+        'projects',
+        'training_courses',
+        'payroll_periods',
+        'alert_rules',
+        'team_members',
+        'project_tasks',
+        'training_enrollments',
+        'payslips',
+        'absence_requests',
+        'work_sessions',
+        'audit_logs',
+      ]
+
+      const result: Record<string, { restored: number } | { error: string }> = {}
+      for (const table of ORDER) {
+        const rows = (payload.data[table] as Record<string, unknown>[] | undefined) ?? []
+        if (rows.length === 0) continue
+        // Seguridad: solo filas de este tenant + limpiar columnas generadas.
+        const strip = GENERATED[table] ?? []
+        const clean = rows
+          .filter((r) => !('tenant_id' in r) || r.tenant_id === tid || table === 'tenants')
+          .map((r) => {
+            const copy = { ...r }
+            for (const c of strip) delete copy[c]
+            return copy
+          })
+        if (clean.length === 0) continue
+        // Tabla dinámica: escapamos el tipado literal de supabase-js.
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const q = (db as any).from(table)
+        const { error } = await q.upsert(clean, { onConflict: 'id' })
+        result[table] = error ? { error: error.message } : { restored: clean.length }
+      }
+
+      await logAudit(db, {
+        tenantId: tid,
+        actorUserId: ctx.user!.sub,
+        action: 'tenant.data_imported',
+        entityType: 'tenant',
+        entityId: tid,
+        ipInet: ctx.ip,
+        userAgent: ctx.userAgent,
+        after: result as Record<string, unknown>,
+      })
+
+      return { imported_from: payload.exported_at, result }
+    }),
 
   cancelSubscription: adminProcedure.mutation(async ({ ctx }) => {
     const tid = ctx.user!.tid
