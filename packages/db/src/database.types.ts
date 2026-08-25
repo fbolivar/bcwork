@@ -702,6 +702,33 @@ export type Database = {
           },
         ]
       }
+      agent_release: {
+        Row: {
+          id: string
+          version: string
+          sha256: string
+          notes: string | null
+          published_at: string | null
+          published_by: string | null
+        }
+        Insert: {
+          id?: string
+          version: string
+          sha256: string
+          notes?: string | null
+          published_at?: string | null
+          published_by?: string | null
+        }
+        Update: {
+          id?: string
+          version?: string
+          sha256?: string
+          notes?: string | null
+          published_at?: string | null
+          published_by?: string | null
+        }
+        Relationships: []
+      }
       installed_apps: {
         Row: {
           device_id: string

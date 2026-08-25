@@ -13,6 +13,7 @@ const nextConfig: NextConfig = {
   // el botón de descarga funcione en producción sin hosting externo.
   outputFileTracingIncludes: {
     '/api/admin/installer': ['./installers/**'],
+    '/api/agent/download': ['./installers/**'],
   },
 
   async headers() {

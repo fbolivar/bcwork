@@ -18,6 +18,7 @@ const VERSION: &str = env!("CARGO_PKG_VERSION");
 const SENDER_INTERVAL_SECS: u64 = 60;
 const WATCHDOG_INTERVAL_SECS: u64 = 15;
 const INVENTORY_INTERVAL_SECS: u64 = 12 * 3600;
+const UPDATE_INTERVAL_SECS: u64 = 6 * 3600;
 const BATCH_SIZE: usize = 500;
 
 fn main() {
@@ -108,6 +109,7 @@ async fn worker_main(shutdown_rx: std::sync::mpsc::Receiver<()>) {
     let mut last_sender = std::time::Instant::now();
     let mut last_watchdog = std::time::Instant::now();
     let mut last_inventory: Option<std::time::Instant> = None;
+    let mut last_update: Option<std::time::Instant> = None;
 
     loop {
         if shutdown_rx.try_recv().is_ok() {
@@ -154,6 +156,24 @@ async fn worker_main(shutdown_rx: std::sync::mpsc::Receiver<()>) {
                     log::error!("inventario falló: {e}");
                     last_inventory = None; // reintentar en el próximo ciclo
                 }
+            }
+        }
+
+        // Auto-actualización: al iniciar y cada 6 horas.
+        let due_update = match last_update {
+            None => true,
+            Some(t) => t.elapsed().as_secs() >= UPDATE_INTERVAL_SECS,
+        };
+        if due_update {
+            last_update = Some(std::time::Instant::now());
+            match bcwork_agent::updater::check_and_update(&creds, VERSION).await {
+                Ok(true) => {
+                    log::info!("actualización lanzada; el servicio se reiniciará");
+                    // El MSI detendrá este servicio; salir del bucle limpiamente.
+                    break;
+                }
+                Ok(false) => {}
+                Err(e) => log::error!("auto-update falló: {e}"),
             }
         }
 

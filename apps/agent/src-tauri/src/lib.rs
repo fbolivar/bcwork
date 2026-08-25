@@ -10,3 +10,4 @@ pub mod capture_core;
 pub mod ingest;
 pub mod inventory;
 pub mod paths;
+pub mod updater;

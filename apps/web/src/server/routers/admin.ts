@@ -997,6 +997,17 @@ export const adminRouter = router({
       return { ok: true }
     }),
 
+  // ─── Actualizaciones del agente ──────────────────────────────────────────────
+  getLatestAgentVersion: adminProcedure.query(async ({ ctx }) => {
+    const { data } = await ctx.db
+      .from('agent_release')
+      .select('version, notes, published_at')
+      .order('published_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+    return data ?? null
+  }),
+
   // ─── Inventario de aplicaciones instaladas ──────────────────────────────────
   listInstalledApps: adminProcedure
     .input(
@@ -1058,9 +1069,12 @@ export const adminRouter = router({
 
       let query = ctx.db
         .from('agent_devices')
-        .select('id, user_id, name, platform, hostname, enrolled_at, last_seen_at, revoked_at', {
-          count: 'exact',
-        })
+        .select(
+          'id, user_id, name, platform, hostname, enrolled_at, last_seen_at, revoked_at, service_version, tamper_status',
+          {
+            count: 'exact',
+          },
+        )
         .eq('tenant_id', tenantId)
         .order('enrolled_at', { ascending: false })
         .range(offset, offset + input.pageSize - 1)

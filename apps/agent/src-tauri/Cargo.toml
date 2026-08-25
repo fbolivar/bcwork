@@ -1,6 +1,6 @@
 [package]
 name = "bcwork-agent"
-version = "0.1.1"
+version = "0.1.2"
 description = "BCWork Activity Monitor Agent"
 authors = ["BC Fabric SAS"]
 edition = "2021"
@@ -41,6 +41,8 @@ log = "0.4"
 env_logger = "0.11"
 gethostname = "0.4"
 dirs = "5"
+sha2 = "0.10"
+hex = "0.4"
 
 [target.'cfg(target_os = "windows")'.dependencies]
 windows-service = "0.7"
