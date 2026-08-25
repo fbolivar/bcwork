@@ -5,6 +5,7 @@ import { trpc as api } from '@/lib/trpc-client'
 import {
   BarChart2,
   Download,
+  FileText,
   Play,
   Calendar,
   LayoutDashboard,
@@ -69,6 +70,23 @@ function csvCell(v: unknown) {
   return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
 }
 
+// Convierte una URL de imagen (logo) a dataURL para incrustarla en el PDF.
+async function urlToDataUrl(url: string): Promise<string | null> {
+  try {
+    const res = await fetch(url)
+    if (!res.ok) return null
+    const blob = await res.blob()
+    return await new Promise((resolve) => {
+      const fr = new FileReader()
+      fr.onload = () => resolve(fr.result as string)
+      fr.onerror = () => resolve(null)
+      fr.readAsDataURL(blob)
+    })
+  } catch {
+    return null
+  }
+}
+
 function downloadCSV(rows: unknown[], filename: string, preface: string[] = []) {
   if (!rows.length) return
   const keys = Object.keys(rows[0] as object).filter(
@@ -103,6 +121,8 @@ export function ReportBuilderPanel() {
     { report_type: reportType, date_from: toISO(dateFrom), date_to: toISO(dateTo) },
     { enabled },
   )
+
+  const [pdfBusy, setPdfBusy] = useState(false)
 
   function run() {
     setEnabled(true)
@@ -149,6 +169,119 @@ export function ReportBuilderPanel() {
         `Generado,${csvCell(new Date().toLocaleString('es-CO'))}`,
       ]
     : []
+
+  async function downloadPDF() {
+    if (!rows.length) return
+    setPdfBusy(true)
+    try {
+      const { default: jsPDF } = await import('jspdf')
+      const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' })
+      const W = 297
+      const H = 210
+      const margin = 12
+      const contentW = W - margin * 2
+
+      // ── Membrete de empresa ──
+      doc.setFillColor(15, 23, 42)
+      doc.rect(0, 0, W, 26, 'F')
+      let textX = margin
+      if (company?.logo_url) {
+        const dataUrl = await urlToDataUrl(company.logo_url)
+        if (dataUrl) {
+          try {
+            doc.addImage(dataUrl, 'PNG', margin, 5, 16, 16)
+            textX = margin + 20
+          } catch {
+            /* logo no compatible (p.ej. SVG): se omite */
+          }
+        }
+      }
+      doc.setTextColor(255, 255, 255)
+      doc.setFont('helvetica', 'bold')
+      doc.setFontSize(14)
+      doc.text(companyName, textX, 12)
+      doc.setFont('helvetica', 'normal')
+      doc.setFontSize(8)
+      doc.setTextColor(148, 163, 184)
+      const sub = [company?.nit ? `NIT ${company.nit}` : '', company?.contact_email ?? '']
+        .filter(Boolean)
+        .join('   ·   ')
+      if (sub) doc.text(sub, textX, 18)
+
+      doc.setTextColor(34, 211, 238)
+      doc.setFont('helvetica', 'bold')
+      doc.setFontSize(12)
+      doc.text('BCWork', W - margin, 11, { align: 'right' })
+      doc.setTextColor(255, 255, 255)
+      doc.setFont('helvetica', 'normal')
+      doc.setFontSize(9)
+      doc.text(selected.label, W - margin, 17, { align: 'right' })
+
+      // ── Metadatos ──
+      let y = 33
+      doc.setTextColor(90, 90, 90)
+      doc.setFontSize(9)
+      doc.text(
+        `Período: ${dateFrom} — ${dateTo}      Generado: ${new Date().toLocaleString('es-CO')}      Registros: ${rows.length}`,
+        margin,
+        y,
+      )
+      y += 6
+
+      // ── Tabla ──
+      const cols = columns
+      const colW = contentW / Math.max(cols.length, 1)
+      const drawHead = () => {
+        doc.setFillColor(241, 245, 249)
+        doc.rect(margin, y, contentW, 8, 'F')
+        doc.setFont('helvetica', 'bold')
+        doc.setFontSize(8)
+        doc.setTextColor(30, 41, 59)
+        cols.forEach((c, i) => {
+          const label = String(COLUMN_LABELS[c] ?? c)
+          doc.text(label, margin + i * colW + 2, y + 5.5)
+        })
+        y += 8
+      }
+      drawHead()
+      doc.setFont('helvetica', 'normal')
+      doc.setTextColor(30, 30, 30)
+      rows.forEach((r, idx) => {
+        if (y > H - 14) {
+          doc.addPage()
+          y = 14
+          drawHead()
+          doc.setFont('helvetica', 'normal')
+          doc.setTextColor(30, 30, 30)
+        }
+        if (idx % 2 === 1) {
+          doc.setFillColor(249, 250, 251)
+          doc.rect(margin, y, contentW, 7, 'F')
+        }
+        cols.forEach((c, i) => {
+          const v = r[c]
+          const s = v == null ? '' : String(v)
+          const t = (doc.splitTextToSize(s, colW - 3)[0] as string) ?? ''
+          doc.text(t, margin + i * colW + 2, y + 5)
+        })
+        y += 7
+      })
+
+      // ── Pie de página ──
+      const pages = doc.getNumberOfPages()
+      for (let p = 1; p <= pages; p++) {
+        doc.setPage(p)
+        doc.setFontSize(7)
+        doc.setTextColor(150, 150, 150)
+        doc.text(companyName, margin, H - 6)
+        doc.text(`Página ${p} de ${pages}`, W - margin, H - 6, { align: 'right' })
+      }
+
+      doc.save(`bcwork-${reportType}-${dateFrom}-${dateTo}.pdf`)
+    } finally {
+      setPdfBusy(false)
+    }
+  }
 
   return (
     <div className="space-y-5">
@@ -257,6 +390,17 @@ export function ReportBuilderPanel() {
               >
                 <Download className="h-3.5 w-3.5" />
                 Exportar CSV
+              </button>
+            )}
+            {rows.length > 0 && (
+              <button
+                type="button"
+                onClick={() => void downloadPDF()}
+                disabled={pdfBusy}
+                className="flex items-center gap-1.5 rounded-lg border border-gray-200 px-4 py-2 text-sm text-gray-600 hover:bg-gray-50 disabled:opacity-50"
+              >
+                <FileText className="h-3.5 w-3.5" />
+                {pdfBusy ? 'Generando PDF…' : 'Exportar PDF'}
               </button>
             )}
           </div>
