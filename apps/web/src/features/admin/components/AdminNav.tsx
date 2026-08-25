@@ -19,7 +19,6 @@ import {
   Shield,
   Settings,
   LogOut,
-  Download,
   Briefcase,
   Clock4,
   Target,
@@ -146,10 +145,7 @@ const GROUPS: NavGroup[] = [
   {
     label: 'Sistema',
     icon: Settings,
-    items: [
-      { href: '/admin/settings', label: 'Configuración', icon: Settings },
-      { href: '/admin/downloads', label: 'Descargas', icon: Download },
-    ],
+    items: [{ href: '/admin/settings', label: 'Configuración', icon: Settings }],
   },
 ]
 
