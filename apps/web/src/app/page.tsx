@@ -20,6 +20,8 @@ import {
 import { LandingNav } from '@/features/landing/LandingNav'
 import { PricingSection } from '@/features/landing/PricingSection'
 import { ROICalculator } from '@/features/landing/ROICalculator'
+import { Reveal } from '@/features/landing/Reveal'
+import { TiltCard } from '@/features/landing/TiltCard'
 
 // ─── Datos ────────────────────────────────────────────────────────────────────
 
@@ -28,41 +30,40 @@ const FEATURES = [
     icon: Monitor,
     title: 'Monitoreo en tiempo real',
     desc: 'Visibilidad completa de la actividad de cada colaborador: sesiones, aplicaciones y productividad.',
-    tint: 'bg-cyan-500/10 text-cyan-400',
+    tint: 'bg-cyan-500/15 text-cyan-300 shadow-cyan-500/20',
   },
   {
     icon: BarChart2,
     title: 'Analytics de productividad',
     desc: 'Dashboards ejecutivos con tendencias, comparativas de equipos y alertas automáticas.',
-    tint: 'bg-blue-500/10 text-blue-400',
+    tint: 'bg-blue-500/15 text-blue-300 shadow-blue-500/20',
   },
   {
     icon: Clock,
     title: 'Control de jornada',
     desc: 'Gestión de horarios, horas extra, ausencias y balance de PTO conforme a la ley colombiana.',
-    tint: 'bg-emerald-500/10 text-emerald-400',
+    tint: 'bg-emerald-500/15 text-emerald-300 shadow-emerald-500/20',
   },
   {
     icon: Shield,
     title: 'Cumplimiento normativo',
     desc: 'SGSST, HABEAS DATA, Ley 2191/2022 de desconexión digital. Todo documentado y auditable.',
-    tint: 'bg-violet-500/10 text-violet-400',
+    tint: 'bg-violet-500/15 text-violet-300 shadow-violet-500/20',
   },
   {
     icon: Users,
     title: 'Gestión de equipos',
     desc: 'Organigramas, planes de carrera, objetivos, feedback 360° y reconocimientos.',
-    tint: 'bg-amber-500/10 text-amber-400',
+    tint: 'bg-fuchsia-500/15 text-fuchsia-300 shadow-fuchsia-500/20',
   },
   {
     icon: FileText,
     title: 'Nómina colombiana',
     desc: 'Colillas con prima, cesantías, ARL, EPS, pensión y parafiscales. Exportación CSV.',
-    tint: 'bg-rose-500/10 text-rose-400',
+    tint: 'bg-rose-500/15 text-rose-300 shadow-rose-500/20',
   },
 ]
 
-// Métricas defendibles (hechos del producto, no cifras de adopción inventadas).
 const STATS = [
   { value: '100%', label: 'Datos alojados en Colombia' },
   { value: '3 leyes', label: 'Cubiertas: 1581 · 2191 · 1221' },
@@ -138,6 +139,29 @@ const FAQS = [
   },
 ]
 
+// ─── Fondo Aurora (global, animado) ─────────────────────────────────────────────
+
+function AuroraBackground() {
+  return (
+    <div className="pointer-events-none fixed inset-0 -z-10 overflow-hidden bg-[#070b16]">
+      <div
+        className="aurora-blob aurora-a left-1/2 top-[-10%] h-[46rem] w-[46rem]"
+        style={{ background: 'radial-gradient(circle, rgba(34,211,238,0.28), transparent 60%)' }}
+      />
+      <div
+        className="aurora-blob aurora-b right-[-10%] top-[20%] h-[38rem] w-[38rem]"
+        style={{ background: 'radial-gradient(circle, rgba(139,92,246,0.26), transparent 60%)' }}
+      />
+      <div
+        className="aurora-blob aurora-c left-[-8%] top-[55%] h-[40rem] w-[40rem]"
+        style={{ background: 'radial-gradient(circle, rgba(232,121,249,0.20), transparent 60%)' }}
+      />
+      {/* Viñeta para legibilidad */}
+      <div className="absolute inset-0 bg-[#070b16]/40" />
+    </div>
+  )
+}
+
 // ─── Vista previa del producto (hero) ───────────────────────────────────────────
 
 function ProductPreview() {
@@ -157,8 +181,7 @@ function ProductPreview() {
     { name: 'YouTube', pct: 21, tone: 'bg-rose-400' },
   ]
   return (
-    <div className="overflow-hidden rounded-xl bg-[#0d1b3e] text-left">
-      {/* chrome */}
+    <div className="overflow-hidden rounded-xl bg-[#0a1330]/90 text-left backdrop-blur">
       <div className="flex items-center gap-1.5 border-b border-white/10 bg-white/5 px-4 py-2.5">
         <span className="h-2.5 w-2.5 rounded-full bg-red-500/60" />
         <span className="h-2.5 w-2.5 rounded-full bg-amber-500/60" />
@@ -171,10 +194,9 @@ function ProductPreview() {
         <div className="mb-3 flex items-center justify-between">
           <p className="text-xs font-semibold text-white">Panel de administración</p>
           <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/15 px-2 py-0.5 text-[10px] font-medium text-emerald-400">
-            <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" /> 24 en línea
+            <span className="pulse-dot h-1.5 w-1.5 rounded-full bg-emerald-400" /> 24 en línea
           </span>
         </div>
-        {/* stat row */}
         <div className="mb-3 grid grid-cols-3 gap-2.5">
           {[
             { label: 'Productividad', val: '78%', color: 'text-emerald-400' },
@@ -187,7 +209,6 @@ function ProductPreview() {
             </div>
           ))}
         </div>
-        {/* chart + list */}
         <div className="grid grid-cols-5 gap-2.5">
           <div className="col-span-3 rounded-lg border border-white/10 bg-white/5 p-3">
             <p className="mb-2 text-[10px] text-gray-400">Actividad del equipo</p>
@@ -230,37 +251,36 @@ function ProductPreview() {
 
 // ─── Secciones ──────────────────────────────────────────────────────────────────
 
+function Eyebrow({ children }: { children: React.ReactNode }) {
+  return (
+    <p className="mb-3 text-xs font-semibold uppercase tracking-[0.2em] text-cyan-300/90">
+      {children}
+    </p>
+  )
+}
+
 function Hero() {
   return (
-    <section className="relative flex min-h-screen items-center justify-center overflow-hidden bg-[#0b1220] px-6 pt-24">
-      {/* Grid + glows para profundidad */}
+    <section className="relative flex min-h-screen items-center justify-center overflow-hidden px-6 pt-24">
       <div className="pointer-events-none absolute inset-0">
         <div
-          className="absolute inset-0 opacity-[0.15]"
+          className="aurora-grid absolute inset-0 opacity-[0.13]"
           style={{
-            backgroundImage:
-              'linear-gradient(to right, rgba(148,163,184,0.15) 1px, transparent 1px), linear-gradient(to bottom, rgba(148,163,184,0.15) 1px, transparent 1px)',
-            backgroundSize: '56px 56px',
-            maskImage: 'radial-gradient(ellipse 80% 60% at 50% 0%, black 40%, transparent 100%)',
+            maskImage: 'radial-gradient(ellipse 80% 55% at 50% 0%, black 40%, transparent 100%)',
             WebkitMaskImage:
-              'radial-gradient(ellipse 80% 60% at 50% 0%, black 40%, transparent 100%)',
+              'radial-gradient(ellipse 80% 55% at 50% 0%, black 40%, transparent 100%)',
           }}
         />
-        <div className="absolute -top-40 left-1/2 h-[600px] w-[600px] -translate-x-1/2 rounded-full bg-cyan-500/15 blur-3xl" />
-        <div className="absolute bottom-10 right-0 h-[380px] w-[380px] rounded-full bg-blue-600/15 blur-3xl" />
       </div>
 
       <div className="relative z-10 mx-auto max-w-5xl text-center">
-        <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-cyan-500/30 bg-cyan-500/10 px-4 py-1.5 text-xs font-medium text-cyan-300">
+        <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-cyan-400/30 bg-cyan-400/10 px-4 py-1.5 text-xs font-medium text-cyan-200 shadow-[0_0_30px_-8px_rgba(34,211,238,0.6)]">
           <Zap className="h-3 w-3" />
           Cumple con la Ley 2191/2022 · Hecho en Colombia
         </div>
 
-        <h1 className="mb-6 text-4xl font-extrabold leading-[1.1] tracking-tight text-white sm:text-6xl">
-          Teletrabajo bajo control.{' '}
-          <span className="bg-gradient-to-r from-cyan-400 to-blue-500 bg-clip-text text-transparent">
-            Sin complicaciones.
-          </span>
+        <h1 className="mb-6 text-4xl font-extrabold leading-[1.05] tracking-tight text-white sm:text-6xl md:text-7xl">
+          Teletrabajo bajo control. <span className="aurora-text">Sin complicaciones.</span>
         </h1>
 
         <p className="mx-auto mb-10 max-w-2xl text-lg text-gray-300">
@@ -271,14 +291,14 @@ function Hero() {
         <div className="flex flex-col items-center gap-4 sm:flex-row sm:justify-center">
           <Link
             href="/register"
-            className="flex items-center gap-2 rounded-xl bg-cyan-500 px-8 py-3.5 text-base font-semibold text-white shadow-lg shadow-cyan-500/30 transition-all hover:bg-cyan-400"
+            className="group flex items-center gap-2 rounded-xl bg-gradient-to-r from-cyan-400 to-blue-500 px-8 py-3.5 text-base font-semibold text-white shadow-[0_0_40px_-6px_rgba(34,211,238,0.7)] transition-all hover:shadow-[0_0_55px_-4px_rgba(34,211,238,0.9)]"
           >
             Empieza gratis — 14 días
-            <ChevronRight className="h-4 w-4" />
+            <ChevronRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
           </Link>
           <a
             href="#roi"
-            className="rounded-xl border border-white/20 px-8 py-3.5 text-base font-medium text-gray-200 transition-all hover:border-white/40 hover:bg-white/5 hover:text-white"
+            className="rounded-xl border border-white/20 bg-white/5 px-8 py-3.5 text-base font-medium text-gray-200 backdrop-blur transition-all hover:border-cyan-400/40 hover:text-white"
           >
             Calcular mi ROI
           </a>
@@ -288,12 +308,11 @@ function Hero() {
           Sin tarjeta de crédito · desde $9.900/usuario/mes · Datos almacenados en Colombia
         </p>
 
-        {/* Preview */}
         <div className="relative mx-auto mt-16 max-w-3xl">
-          <div className="rounded-2xl border border-white/10 bg-gradient-to-b from-white/10 to-white/0 p-1.5 shadow-2xl">
+          <TiltCard className="neon-border float-slow rounded-2xl border border-white/10 bg-gradient-to-b from-white/10 to-white/0 p-1.5 shadow-2xl">
             <ProductPreview />
-          </div>
-          <div className="absolute -inset-6 -z-10 rounded-[2rem] bg-cyan-500/10 blur-3xl" />
+          </TiltCard>
+          <div className="absolute -inset-8 -z-10 rounded-[2.5rem] bg-cyan-500/15 blur-3xl" />
         </div>
       </div>
     </section>
@@ -302,14 +321,16 @@ function Hero() {
 
 function Stats() {
   return (
-    <section className="border-y border-white/10 bg-white/[0.03] py-12">
+    <section className="relative border-y border-white/10 bg-white/[0.03] py-12 backdrop-blur-sm">
       <div className="mx-auto max-w-5xl px-6">
         <div className="grid grid-cols-2 gap-8 sm:grid-cols-4">
-          {STATS.map((s) => (
-            <div key={s.label} className="text-center">
-              <p className="text-3xl font-extrabold text-white">{s.value}</p>
+          {STATS.map((s, i) => (
+            <Reveal key={s.label} delay={i * 80} className="text-center">
+              <p className="bg-gradient-to-r from-cyan-300 to-violet-300 bg-clip-text text-3xl font-extrabold text-transparent">
+                {s.value}
+              </p>
               <p className="mt-1 text-sm text-gray-400">{s.label}</p>
-            </div>
+            </Reveal>
           ))}
         </div>
       </div>
@@ -319,33 +340,29 @@ function Stats() {
 
 function Features() {
   return (
-    <section id="features" className="relative bg-[#0f172a] px-6 py-24">
-      <div className="pointer-events-none absolute inset-x-0 top-0 h-40 bg-gradient-to-b from-cyan-500/[0.04] to-transparent" />
-      <div className="relative mx-auto max-w-5xl">
-        <div className="mb-14 text-center">
-          <p className="mb-3 text-xs font-semibold uppercase tracking-widest text-cyan-400">
-            Características
-          </p>
+    <section id="features" className="relative px-6 py-24">
+      <div className="mx-auto max-w-5xl">
+        <Reveal className="mb-14 text-center">
+          <Eyebrow>Características</Eyebrow>
           <h2 className="text-3xl font-bold text-white sm:text-4xl">
             Todo lo que necesita tu equipo remoto
           </h2>
           <p className="mx-auto mt-4 max-w-xl text-gray-400">
             Una sola plataforma para cumplir la ley, gestionar el equipo y mejorar la productividad.
           </p>
-        </div>
+        </Reveal>
 
         <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
-          {FEATURES.map(({ icon: Icon, title, desc, tint }) => (
-            <div
-              key={title}
-              className="group rounded-2xl border border-white/10 bg-white/5 p-6 transition-all duration-200 hover:-translate-y-1 hover:border-cyan-500/40 hover:bg-white/[0.07] hover:shadow-lg hover:shadow-cyan-500/5"
-            >
-              <div className={`mb-4 inline-flex rounded-xl p-3 ${tint}`}>
-                <Icon className="h-6 w-6" />
+          {FEATURES.map(({ icon: Icon, title, desc, tint }, i) => (
+            <Reveal key={title} delay={(i % 3) * 90}>
+              <div className="neon-border group h-full rounded-2xl border border-white/10 bg-white/[0.04] p-6 backdrop-blur-sm transition-all duration-200 hover:-translate-y-1 hover:bg-white/[0.07]">
+                <div className={`mb-4 inline-flex rounded-xl p-3 shadow-lg ${tint}`}>
+                  <Icon className="h-6 w-6" />
+                </div>
+                <h3 className="mb-2 text-base font-semibold text-white">{title}</h3>
+                <p className="text-sm leading-relaxed text-gray-400">{desc}</p>
               </div>
-              <h3 className="mb-2 text-base font-semibold text-white">{title}</h3>
-              <p className="text-sm leading-relaxed text-gray-400">{desc}</p>
-            </div>
+            </Reveal>
           ))}
         </div>
       </div>
@@ -355,28 +372,25 @@ function Features() {
 
 function Segments() {
   return (
-    <section className="bg-[#0a1020] px-6 py-20">
+    <section className="relative px-6 py-20">
       <div className="mx-auto max-w-5xl">
-        <div className="mb-10 text-center">
-          <p className="mb-3 text-xs font-semibold uppercase tracking-widest text-cyan-400">
-            ¿Para quién es BCWork?
-          </p>
+        <Reveal className="mb-10 text-center">
+          <Eyebrow>¿Para quién es BCWork?</Eyebrow>
           <h2 className="text-2xl font-bold text-white sm:text-3xl">
             Construido para empresas colombianas
           </h2>
-        </div>
+        </Reveal>
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          {SEGMENTS.map(({ icon: Icon, label, desc }) => (
-            <div
-              key={label}
-              className="rounded-2xl border border-white/10 bg-white/5 p-5 text-center transition-colors hover:border-white/20"
-            >
-              <div className="mx-auto mb-3 inline-flex rounded-xl bg-cyan-500/10 p-3">
-                <Icon className="h-5 w-5 text-cyan-400" />
+          {SEGMENTS.map(({ icon: Icon, label, desc }, i) => (
+            <Reveal key={label} delay={(i % 4) * 80}>
+              <div className="neon-border h-full rounded-2xl border border-white/10 bg-white/[0.04] p-5 text-center backdrop-blur-sm">
+                <div className="mx-auto mb-3 inline-flex rounded-xl bg-cyan-500/15 p-3 shadow-lg shadow-cyan-500/20">
+                  <Icon className="h-5 w-5 text-cyan-300" />
+                </div>
+                <p className="mb-1 text-sm font-semibold text-white">{label}</p>
+                <p className="text-xs leading-relaxed text-gray-400">{desc}</p>
               </div>
-              <p className="mb-1 text-sm font-semibold text-white">{label}</p>
-              <p className="text-xs leading-relaxed text-gray-400">{desc}</p>
-            </div>
+            </Reveal>
           ))}
         </div>
       </div>
@@ -386,45 +400,41 @@ function Segments() {
 
 function Differentiators() {
   return (
-    <section className="relative overflow-hidden bg-gradient-to-br from-[#0f172a] via-blue-950/40 to-[#0f172a] px-6 py-24">
-      <div className="pointer-events-none absolute left-1/2 top-0 h-[400px] w-[700px] -translate-x-1/2 rounded-full bg-blue-600/10 blur-3xl" />
+    <section className="relative overflow-hidden px-6 py-24">
       <div className="relative mx-auto max-w-5xl">
-        <div className="mb-12 text-center">
-          <p className="mb-3 text-xs font-semibold uppercase tracking-widest text-cyan-400">
-            Por qué BCWork
-          </p>
+        <Reveal className="mb-12 text-center">
+          <Eyebrow>Por qué BCWork</Eyebrow>
           <h2 className="text-3xl font-bold text-white sm:text-4xl">
             Cumplimiento y control, sin la complejidad
           </h2>
-        </div>
+        </Reveal>
         <div className="grid gap-6 sm:grid-cols-3">
-          {DIFFERENTIATORS.map(({ icon: Icon, title, desc }) => (
-            <div
-              key={title}
-              className="rounded-2xl border border-white/10 bg-white/5 p-7 backdrop-blur-sm"
-            >
-              <div className="mb-4 inline-flex rounded-xl bg-cyan-500/15 p-3">
-                <Icon className="h-6 w-6 text-cyan-300" />
+          {DIFFERENTIATORS.map(({ icon: Icon, title, desc }, i) => (
+            <Reveal key={title} delay={i * 100}>
+              <div className="neon-border h-full rounded-2xl border border-white/10 bg-white/[0.05] p-7 backdrop-blur-md">
+                <div className="mb-4 inline-flex rounded-xl bg-gradient-to-br from-cyan-500/25 to-violet-500/25 p-3 shadow-lg shadow-cyan-500/20">
+                  <Icon className="h-6 w-6 text-cyan-200" />
+                </div>
+                <h3 className="mb-2 text-lg font-semibold text-white">{title}</h3>
+                <p className="text-sm leading-relaxed text-gray-300">{desc}</p>
               </div>
-              <h3 className="mb-2 text-lg font-semibold text-white">{title}</h3>
-              <p className="text-sm leading-relaxed text-gray-300">{desc}</p>
-            </div>
+            </Reveal>
           ))}
         </div>
-        <div className="mt-10 flex flex-wrap items-center justify-center gap-x-6 gap-y-2 text-xs text-gray-400">
-          <span className="inline-flex items-center gap-1.5">
-            <CheckCircle className="h-3.5 w-3.5 text-emerald-400" /> Consentimiento informado
-          </span>
-          <span className="inline-flex items-center gap-1.5">
-            <CheckCircle className="h-3.5 w-3.5 text-emerald-400" /> Aviso de privacidad
-          </span>
-          <span className="inline-flex items-center gap-1.5">
-            <CheckCircle className="h-3.5 w-3.5 text-emerald-400" /> Portal de transparencia /me
-          </span>
-          <span className="inline-flex items-center gap-1.5">
-            <CheckCircle className="h-3.5 w-3.5 text-emerald-400" /> Exportación de datos
-          </span>
-        </div>
+        <Reveal className="mt-10">
+          <div className="flex flex-wrap items-center justify-center gap-x-6 gap-y-2 text-xs text-gray-400">
+            {[
+              'Consentimiento informado',
+              'Aviso de privacidad',
+              'Portal de transparencia /me',
+              'Exportación de datos',
+            ].map((t) => (
+              <span key={t} className="inline-flex items-center gap-1.5">
+                <CheckCircle className="h-3.5 w-3.5 text-emerald-400" /> {t}
+              </span>
+            ))}
+          </div>
+        </Reveal>
       </div>
     </section>
   )
@@ -432,25 +442,24 @@ function Differentiators() {
 
 function FAQ() {
   return (
-    <section id="faq" className="bg-[#0a1020] px-6 py-24">
+    <section id="faq" className="relative px-6 py-24">
       <div className="mx-auto max-w-3xl">
-        <div className="mb-14 text-center">
-          <p className="mb-3 text-xs font-semibold uppercase tracking-widest text-cyan-400">FAQ</p>
+        <Reveal className="mb-14 text-center">
+          <Eyebrow>FAQ</Eyebrow>
           <h2 className="text-3xl font-bold text-white">Preguntas frecuentes</h2>
-        </div>
+        </Reveal>
 
         <div className="space-y-4">
-          {FAQS.map(({ q, a }) => (
-            <details
-              key={q}
-              className="group rounded-xl border border-white/10 bg-white/5 px-5 py-4 open:border-cyan-500/40 open:bg-white/[0.07]"
-            >
-              <summary className="flex cursor-pointer list-none items-center justify-between gap-4 text-sm font-medium text-white">
-                {q}
-                <ChevronRight className="h-4 w-4 shrink-0 text-gray-400 transition-transform group-open:rotate-90" />
-              </summary>
-              <p className="mt-3 text-sm leading-relaxed text-gray-300">{a}</p>
-            </details>
+          {FAQS.map(({ q, a }, i) => (
+            <Reveal key={q} delay={(i % 3) * 70}>
+              <details className="neon-border group rounded-xl border border-white/10 bg-white/[0.04] px-5 py-4 backdrop-blur-sm open:bg-white/[0.07]">
+                <summary className="flex cursor-pointer list-none items-center justify-between gap-4 text-sm font-medium text-white">
+                  {q}
+                  <ChevronRight className="h-4 w-4 shrink-0 text-gray-400 transition-transform group-open:rotate-90" />
+                </summary>
+                <p className="mt-3 text-sm leading-relaxed text-gray-300">{a}</p>
+              </details>
+            </Reveal>
           ))}
         </div>
       </div>
@@ -460,17 +469,12 @@ function FAQ() {
 
 function CTA() {
   return (
-    <section className="relative overflow-hidden bg-gradient-to-r from-blue-900 to-cyan-900 px-6 py-24 text-center">
-      <div className="pointer-events-none absolute inset-0 opacity-20">
-        <div className="absolute -left-20 top-0 h-72 w-72 rounded-full bg-cyan-400/30 blur-3xl" />
-        <div className="absolute -right-20 bottom-0 h-72 w-72 rounded-full bg-blue-400/30 blur-3xl" />
-      </div>
-      <div className="relative mx-auto max-w-2xl">
-        <p className="mb-3 text-sm font-semibold uppercase tracking-widest text-cyan-300">
-          Empieza hoy
-        </p>
-        <h2 className="mb-4 text-3xl font-extrabold text-white sm:text-4xl">
-          Ten visibilidad real sobre tu equipo remoto
+    <section className="relative overflow-hidden px-6 py-24 text-center">
+      <div className="pointer-events-none absolute inset-0 -z-10 bg-gradient-to-r from-blue-900/60 to-cyan-900/60" />
+      <Reveal className="relative mx-auto max-w-2xl">
+        <Eyebrow>Empieza hoy</Eyebrow>
+        <h2 className="mb-4 text-3xl font-extrabold text-white sm:text-5xl">
+          Ten <span className="aurora-text">visibilidad real</span> sobre tu equipo remoto
         </h2>
         <p className="mb-8 text-gray-200">
           14 días gratis · Sin tarjeta de crédito · Configuración en menos de 10 minutos
@@ -485,7 +489,7 @@ function CTA() {
           </Link>
           <a
             href="mailto:ventas@bcwork.co"
-            className="inline-flex items-center gap-2 rounded-xl border border-white/30 px-8 py-3.5 text-base font-medium text-white transition-all hover:border-white/60 hover:bg-white/10"
+            className="inline-flex items-center gap-2 rounded-xl border border-white/30 bg-white/5 px-8 py-3.5 text-base font-medium text-white backdrop-blur transition-all hover:border-white/60"
           >
             Hablar con ventas
           </a>
@@ -493,14 +497,14 @@ function CTA() {
         <p className="mt-5 text-xs text-cyan-200/70">
           Precio fijo en COP · Sin variación por TRM · Factura electrónica
         </p>
-      </div>
+      </Reveal>
     </section>
   )
 }
 
 function Footer() {
   return (
-    <footer className="bg-[#0a1020] px-6 py-12 text-sm text-gray-500">
+    <footer className="relative border-t border-white/10 bg-[#070b16]/80 px-6 py-12 text-sm text-gray-500 backdrop-blur">
       <div className="mx-auto max-w-5xl">
         <div className="grid gap-8 sm:grid-cols-4">
           <div className="sm:col-span-2">
@@ -575,7 +579,7 @@ function Footer() {
         </div>
         <div className="mt-10 border-t border-white/10 pt-6 text-center text-xs text-gray-600">
           © {new Date().getFullYear()} BCWork · Todos los derechos reservados ·{' '}
-          <span className="text-cyan-600">bc-security.com</span>
+          <span className="text-cyan-500">bc-security.com</span>
         </div>
       </div>
     </footer>
@@ -586,7 +590,8 @@ function Footer() {
 
 export default function LandingPage() {
   return (
-    <div className="min-h-screen bg-[#0b1220] text-white">
+    <div className="relative min-h-screen overflow-clip bg-[#070b16] text-white">
+      <AuroraBackground />
       <LandingNav />
       <Hero />
       <Stats />

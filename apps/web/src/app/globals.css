@@ -6,3 +6,170 @@
  * Personaliza tu tema aquí
  * Documentación: https://tailwindcss.com/docs/theme
  */
+
+/* ─── Landing: Aurora Neón ─────────────────────────────────────────────── */
+
+@keyframes aurora-a {
+  0%,
+  100% {
+    transform: translate(-50%, 0) scale(1);
+  }
+  33% {
+    transform: translate(-38%, 7%) scale(1.18);
+  }
+  66% {
+    transform: translate(-64%, -5%) scale(0.92);
+  }
+}
+@keyframes aurora-b {
+  0%,
+  100% {
+    transform: translate(0, 0) scale(1);
+    opacity: 0.55;
+  }
+  50% {
+    transform: translate(-12%, 9%) scale(1.22);
+    opacity: 0.85;
+  }
+}
+@keyframes aurora-c {
+  0%,
+  100% {
+    transform: translate(0, 0) scale(0.95);
+    opacity: 0.4;
+  }
+  50% {
+    transform: translate(10%, -8%) scale(1.15);
+    opacity: 0.7;
+  }
+}
+@keyframes shimmer {
+  0% {
+    background-position: 0% 50%;
+  }
+  100% {
+    background-position: 200% 50%;
+  }
+}
+@keyframes float-slow {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-10px);
+  }
+}
+@keyframes grid-pan {
+  0% {
+    background-position: 0 0;
+  }
+  100% {
+    background-position: 56px 56px;
+  }
+}
+@keyframes pulse-dot {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.4;
+    transform: scale(0.7);
+  }
+}
+
+.aurora-blob {
+  position: absolute;
+  border-radius: 9999px;
+  filter: blur(80px);
+  will-change: transform;
+}
+.aurora-a {
+  animation: aurora-a 22s ease-in-out infinite;
+}
+.aurora-b {
+  animation: aurora-b 18s ease-in-out infinite;
+}
+.aurora-c {
+  animation: aurora-c 26s ease-in-out infinite;
+}
+
+.aurora-grid {
+  background-image:
+    linear-gradient(to right, rgba(148, 163, 184, 0.12) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(148, 163, 184, 0.12) 1px, transparent 1px);
+  background-size: 56px 56px;
+  animation: grid-pan 8s linear infinite;
+}
+
+.aurora-text {
+  background: linear-gradient(90deg, #22d3ee, #818cf8, #e879f9, #22d3ee);
+  background-size: 200% auto;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+  animation: shimmer 6s linear infinite;
+}
+
+.neon-border {
+  position: relative;
+}
+.neon-border::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1px;
+  background: linear-gradient(135deg, rgba(34, 211, 238, 0.5), rgba(232, 121, 249, 0.35), transparent 60%);
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+  pointer-events: none;
+}
+.neon-border:hover::before {
+  opacity: 1;
+}
+
+.float-slow {
+  animation: float-slow 6s ease-in-out infinite;
+}
+.pulse-dot {
+  animation: pulse-dot 1.6s ease-in-out infinite;
+}
+
+/* Scroll reveal */
+.reveal {
+  opacity: 0;
+  transform: translateY(28px);
+  transition:
+    opacity 0.7s cubic-bezier(0.16, 1, 0.3, 1),
+    transform 0.7s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.reveal.is-visible {
+  opacity: 1;
+  transform: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .aurora-a,
+  .aurora-b,
+  .aurora-c,
+  .aurora-grid,
+  .aurora-text,
+  .float-slow,
+  .pulse-dot {
+    animation: none !important;
+  }
+  .reveal {
+    opacity: 1;
+    transform: none;
+    transition: none;
+  }
+}
