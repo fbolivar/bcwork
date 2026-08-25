@@ -9,7 +9,6 @@ import {
   FileText,
   CheckCircle,
   ChevronRight,
-  Star,
   MapPin,
   Zap,
   Lock,
@@ -18,6 +17,7 @@ import {
   HeadphonesIcon,
   Code2,
 } from 'lucide-react'
+import { LandingNav } from '@/features/landing/LandingNav'
 import { PricingSection } from '@/features/landing/PricingSection'
 import { ROICalculator } from '@/features/landing/ROICalculator'
 
@@ -28,57 +28,63 @@ const FEATURES = [
     icon: Monitor,
     title: 'Monitoreo en tiempo real',
     desc: 'Visibilidad completa de la actividad de cada colaborador: sesiones, aplicaciones y productividad.',
+    tint: 'bg-cyan-500/10 text-cyan-400',
   },
   {
     icon: BarChart2,
     title: 'Analytics de productividad',
     desc: 'Dashboards ejecutivos con tendencias, comparativas de equipos y alertas automáticas.',
+    tint: 'bg-blue-500/10 text-blue-400',
   },
   {
     icon: Clock,
     title: 'Control de jornada',
     desc: 'Gestión de horarios, horas extra, ausencias y balance de PTO conforme a la ley colombiana.',
+    tint: 'bg-emerald-500/10 text-emerald-400',
   },
   {
     icon: Shield,
     title: 'Cumplimiento normativo',
     desc: 'SGSST, HABEAS DATA, Ley 2191/2022 de desconexión digital. Todo documentado y auditable.',
+    tint: 'bg-violet-500/10 text-violet-400',
   },
   {
     icon: Users,
     title: 'Gestión de equipos',
     desc: 'Organigramas, planes de carrera, objetivos, feedback 360° y reconocimientos.',
+    tint: 'bg-amber-500/10 text-amber-400',
   },
   {
     icon: FileText,
     title: 'Nómina colombiana',
     desc: 'Colillas con prima, cesantías, ARL, EPS, pensión y parafiscales. Exportación CSV.',
+    tint: 'bg-rose-500/10 text-rose-400',
   },
 ]
 
+// Métricas defendibles (hechos del producto, no cifras de adopción inventadas).
 const STATS = [
-  { value: '340+', label: 'Empresas en Colombia' },
-  { value: '8.700+', label: 'Empleados monitoreados' },
-  { value: '4.1M+', label: 'Horas registradas' },
-  { value: '99.9%', label: 'Uptime garantizado' },
+  { value: '100%', label: 'Datos alojados en Colombia' },
+  { value: '3 leyes', label: 'Cubiertas: 1581 · 2191 · 1221' },
+  { value: '< 10 min', label: 'Puesta en marcha' },
+  { value: '99.9%', label: 'Uptime objetivo (SLA)' },
 ]
 
-const TESTIMONIALS = [
+const DIFFERENTIATORS = [
   {
-    quote:
-      'BCWork nos permitió cumplir con todas las obligaciones del teletrabajo sin contratar un abogado adicional. El ROI fue inmediato.',
-    name: 'Carlos Martínez',
-    role: 'Director de RRHH',
-    company: 'Empresa de tecnología · 120 empleados',
-    initials: 'CM',
+    icon: Shield,
+    title: 'Cumplimiento de fábrica',
+    desc: 'Ley 1581 (Habeas Data), 2191 (desconexión) y 1221 (teletrabajo) cubiertas, con consentimiento y aviso de privacidad integrados. Sin abogados extra.',
   },
   {
-    quote:
-      'Pasamos de hojas de cálculo a control total en una semana. Ahora sé exactamente qué hace cada equipo y puedo tomar decisiones con datos.',
-    name: 'Laura Gómez',
-    role: 'Gerente General',
-    company: 'BPO de servicio al cliente · 65 empleados',
-    initials: 'LG',
+    icon: BarChart2,
+    title: 'De planillas a control real',
+    desc: 'Reemplaza hojas de cálculo dispersas por un tablero único de actividad, jornada y productividad — con datos, no suposiciones.',
+  },
+  {
+    icon: Lock,
+    title: 'Tus datos, en tu país',
+    desc: 'Información procesada y almacenada en la región, bajo tu propia política de retención. Exportable en cualquier momento.',
   },
 ]
 
@@ -128,75 +134,138 @@ const FAQS = [
   },
   {
     q: '¿Puedo migrar mis datos si cancelo?',
-    a: 'Siempre. Exporta todo en CSV o JSON en cualquier momento. Tus datos son tuyos y puedes llevarlos donde quieras.',
+    a: 'Siempre. Exporta todo en un archivo .bcw (backup completo) o CSV en cualquier momento. Tus datos son tuyos y puedes llevarlos donde quieras.',
   },
 ]
 
-// ─── Componentes ──────────────────────────────────────────────────────────────
+// ─── Vista previa del producto (hero) ───────────────────────────────────────────
 
-function Navbar() {
+function ProductPreview() {
+  const bars = [
+    { d: 'L', h: 52 },
+    { d: 'M', h: 74 },
+    { d: 'M', h: 63 },
+    { d: 'J', h: 88 },
+    { d: 'V', h: 79 },
+    { d: 'S', h: 34 },
+    { d: 'D', h: 18 },
+  ]
+  const apps = [
+    { name: 'VS Code', pct: 92, tone: 'bg-emerald-400' },
+    { name: 'Google Meet', pct: 71, tone: 'bg-cyan-400' },
+    { name: 'Slack', pct: 58, tone: 'bg-blue-400' },
+    { name: 'YouTube', pct: 21, tone: 'bg-rose-400' },
+  ]
   return (
-    <nav className="fixed inset-x-0 top-0 z-50 border-b border-white/10 bg-[#0f172a]/90 backdrop-blur-md">
-      <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-3">
-        <div className="flex items-center gap-2.5">
-          <Image src="/brand/icon.svg" alt="BCWork" width={32} height={32} className="shrink-0" />
-          <span className="text-lg font-bold tracking-tight text-white">BCWork</span>
-        </div>
-        <div className="hidden items-center gap-8 text-sm text-gray-400 sm:flex">
-          <a href="#features" className="transition-colors hover:text-white">
-            Características
-          </a>
-          <a href="#roi" className="transition-colors hover:text-white">
-            ROI
-          </a>
-          <a href="#pricing" className="transition-colors hover:text-white">
-            Precios
-          </a>
-          <a href="#faq" className="transition-colors hover:text-white">
-            FAQ
-          </a>
-        </div>
-        <div className="flex items-center gap-3">
-          <Link href="/login" className="text-sm text-gray-300 transition-colors hover:text-white">
-            Ingresar
-          </Link>
-          <Link
-            href="/register"
-            className="rounded-lg bg-cyan-500 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-cyan-400"
-          >
-            Empieza gratis
-          </Link>
+    <div className="overflow-hidden rounded-xl bg-[#0d1b3e] text-left">
+      {/* chrome */}
+      <div className="flex items-center gap-1.5 border-b border-white/10 bg-white/5 px-4 py-2.5">
+        <span className="h-2.5 w-2.5 rounded-full bg-red-500/60" />
+        <span className="h-2.5 w-2.5 rounded-full bg-amber-500/60" />
+        <span className="h-2.5 w-2.5 rounded-full bg-green-500/60" />
+        <div className="ml-3 flex-1 rounded bg-white/10 px-3 py-0.5 text-[10px] text-gray-400">
+          app.bcwork.co/admin/dashboard
         </div>
       </div>
-    </nav>
+      <div className="p-4">
+        <div className="mb-3 flex items-center justify-between">
+          <p className="text-xs font-semibold text-white">Panel de administración</p>
+          <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/15 px-2 py-0.5 text-[10px] font-medium text-emerald-400">
+            <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" /> 24 en línea
+          </span>
+        </div>
+        {/* stat row */}
+        <div className="mb-3 grid grid-cols-3 gap-2.5">
+          {[
+            { label: 'Productividad', val: '78%', color: 'text-emerald-400' },
+            { label: 'Horas hoy', val: '192h', color: 'text-cyan-400' },
+            { label: 'Ausencias', val: '2', color: 'text-amber-400' },
+          ].map((s) => (
+            <div key={s.label} className="rounded-lg border border-white/10 bg-white/5 p-2.5">
+              <p className="text-[10px] text-gray-400">{s.label}</p>
+              <p className={`mt-0.5 text-lg font-bold ${s.color}`}>{s.val}</p>
+            </div>
+          ))}
+        </div>
+        {/* chart + list */}
+        <div className="grid grid-cols-5 gap-2.5">
+          <div className="col-span-3 rounded-lg border border-white/10 bg-white/5 p-3">
+            <p className="mb-2 text-[10px] text-gray-400">Actividad del equipo</p>
+            <div className="flex h-20 items-end gap-1.5">
+              {bars.map((b, i) => (
+                <div key={i} className="flex flex-1 flex-col items-center gap-1">
+                  <div
+                    className="w-full rounded-t bg-gradient-to-t from-cyan-500/40 to-cyan-400"
+                    style={{ height: `${b.h}%` }}
+                  />
+                  <span className="text-[8px] text-gray-500">{b.d}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+          <div className="col-span-2 rounded-lg border border-white/10 bg-white/5 p-3">
+            <p className="mb-2 text-[10px] text-gray-400">Top aplicaciones</p>
+            <div className="space-y-2">
+              {apps.map((a) => (
+                <div key={a.name}>
+                  <div className="mb-0.5 flex justify-between text-[9px] text-gray-300">
+                    <span>{a.name}</span>
+                    <span className="text-gray-500">{a.pct}%</span>
+                  </div>
+                  <div className="h-1 overflow-hidden rounded-full bg-white/10">
+                    <div
+                      className={`h-full rounded-full ${a.tone}`}
+                      style={{ width: `${a.pct}%` }}
+                    />
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
   )
 }
 
+// ─── Secciones ──────────────────────────────────────────────────────────────────
+
 function Hero() {
   return (
-    <section className="relative flex min-h-screen items-center justify-center overflow-hidden bg-[#0f172a] px-6 pt-20">
-      {/* Gradient blobs */}
-      <div className="pointer-events-none absolute inset-0 overflow-hidden">
-        <div className="absolute -top-40 left-1/2 h-[600px] w-[600px] -translate-x-1/2 rounded-full bg-cyan-500/10 blur-3xl" />
-        <div className="absolute bottom-0 right-0 h-[400px] w-[400px] rounded-full bg-blue-600/10 blur-3xl" />
+    <section className="relative flex min-h-screen items-center justify-center overflow-hidden bg-[#0b1220] px-6 pt-24">
+      {/* Grid + glows para profundidad */}
+      <div className="pointer-events-none absolute inset-0">
+        <div
+          className="absolute inset-0 opacity-[0.15]"
+          style={{
+            backgroundImage:
+              'linear-gradient(to right, rgba(148,163,184,0.15) 1px, transparent 1px), linear-gradient(to bottom, rgba(148,163,184,0.15) 1px, transparent 1px)',
+            backgroundSize: '56px 56px',
+            maskImage: 'radial-gradient(ellipse 80% 60% at 50% 0%, black 40%, transparent 100%)',
+            WebkitMaskImage:
+              'radial-gradient(ellipse 80% 60% at 50% 0%, black 40%, transparent 100%)',
+          }}
+        />
+        <div className="absolute -top-40 left-1/2 h-[600px] w-[600px] -translate-x-1/2 rounded-full bg-cyan-500/15 blur-3xl" />
+        <div className="absolute bottom-10 right-0 h-[380px] w-[380px] rounded-full bg-blue-600/15 blur-3xl" />
       </div>
 
-      <div className="relative z-10 mx-auto max-w-4xl text-center">
-        <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-cyan-500/30 bg-cyan-500/10 px-4 py-1.5 text-xs font-medium text-cyan-400">
+      <div className="relative z-10 mx-auto max-w-5xl text-center">
+        <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-cyan-500/30 bg-cyan-500/10 px-4 py-1.5 text-xs font-medium text-cyan-300">
           <Zap className="h-3 w-3" />
           Cumple con la Ley 2191/2022 · Hecho en Colombia
         </div>
 
-        <h1 className="mb-6 text-4xl font-extrabold leading-tight tracking-tight text-white sm:text-6xl">
+        <h1 className="mb-6 text-4xl font-extrabold leading-[1.1] tracking-tight text-white sm:text-6xl">
           Teletrabajo bajo control.{' '}
           <span className="bg-gradient-to-r from-cyan-400 to-blue-500 bg-clip-text text-transparent">
             Sin complicaciones.
           </span>
         </h1>
 
-        <p className="mx-auto mb-10 max-w-2xl text-lg text-gray-400">
-          BCWork es la plataforma SaaS colombiana que centraliza el monitoreo de teletrabajo,
-          cumplimiento normativo, nómina y gestión de equipos — en un solo lugar.
+        <p className="mx-auto mb-10 max-w-2xl text-lg text-gray-300">
+          Centraliza el monitoreo de teletrabajo, el cumplimiento normativo, la nómina y la gestión
+          de equipos — en una sola plataforma colombiana.
         </p>
 
         <div className="flex flex-col items-center gap-4 sm:flex-row sm:justify-center">
@@ -209,58 +278,22 @@ function Hero() {
           </Link>
           <a
             href="#roi"
-            className="rounded-xl border border-white/20 px-8 py-3.5 text-base font-medium text-gray-300 transition-all hover:border-white/40 hover:text-white"
+            className="rounded-xl border border-white/20 px-8 py-3.5 text-base font-medium text-gray-200 transition-all hover:border-white/40 hover:bg-white/5 hover:text-white"
           >
             Calcular mi ROI
           </a>
         </div>
 
-        <p className="mt-5 text-xs text-gray-500">
+        <p className="mt-5 text-xs text-gray-400">
           Sin tarjeta de crédito · desde $9.900/usuario/mes · Datos almacenados en Colombia
         </p>
 
-        {/* Mockup preview */}
+        {/* Preview */}
         <div className="relative mx-auto mt-16 max-w-3xl">
-          <div className="rounded-2xl border border-white/10 bg-gradient-to-b from-white/5 to-white/0 p-1 shadow-2xl">
-            <div className="overflow-hidden rounded-xl bg-[#0d1b3e]">
-              <div className="flex items-center gap-1.5 border-b border-white/10 bg-white/5 px-4 py-2.5">
-                <span className="h-2.5 w-2.5 rounded-full bg-red-500/60" />
-                <span className="h-2.5 w-2.5 rounded-full bg-amber-500/60" />
-                <span className="h-2.5 w-2.5 rounded-full bg-green-500/60" />
-                <div className="ml-3 flex-1 rounded bg-white/10 px-3 py-0.5 text-[10px] text-gray-500">
-                  app.bcwork.co/dashboard
-                </div>
-              </div>
-              <div className="grid grid-cols-3 gap-3 p-4">
-                {[
-                  { label: 'Empleados activos', val: '24', color: 'text-cyan-400' },
-                  { label: 'Productividad prom.', val: '78%', color: 'text-green-400' },
-                  { label: 'Horas hoy', val: '192h', color: 'text-blue-400' },
-                ].map((stat) => (
-                  <div
-                    key={stat.label}
-                    className="rounded-lg border border-white/10 bg-white/5 p-3"
-                  >
-                    <p className="text-[10px] text-gray-500">{stat.label}</p>
-                    <p className={`mt-1 text-xl font-bold ${stat.color}`}>{stat.val}</p>
-                  </div>
-                ))}
-                <div className="col-span-3 h-24 rounded-lg border border-white/10 bg-white/5 p-3">
-                  <div className="mb-2 text-[10px] text-gray-500">Actividad semanal</div>
-                  <div className="flex h-12 items-end gap-1">
-                    {[40, 65, 55, 80, 72, 90, 60].map((h, i) => (
-                      <div
-                        key={i}
-                        className="flex-1 rounded-t bg-cyan-500/60"
-                        style={{ height: `${h}%` }}
-                      />
-                    ))}
-                  </div>
-                </div>
-              </div>
-            </div>
+          <div className="rounded-2xl border border-white/10 bg-gradient-to-b from-white/10 to-white/0 p-1.5 shadow-2xl">
+            <ProductPreview />
           </div>
-          <div className="absolute -inset-4 -z-10 rounded-3xl bg-cyan-500/5 blur-2xl" />
+          <div className="absolute -inset-6 -z-10 rounded-[2rem] bg-cyan-500/10 blur-3xl" />
         </div>
       </div>
     </section>
@@ -269,7 +302,7 @@ function Hero() {
 
 function Stats() {
   return (
-    <section className="border-y border-white/10 bg-white/5 py-12">
+    <section className="border-y border-white/10 bg-white/[0.03] py-12">
       <div className="mx-auto max-w-5xl px-6">
         <div className="grid grid-cols-2 gap-8 sm:grid-cols-4">
           {STATS.map((s) => (
@@ -286,8 +319,9 @@ function Stats() {
 
 function Features() {
   return (
-    <section id="features" className="bg-[#0f172a] px-6 py-24">
-      <div className="mx-auto max-w-5xl">
+    <section id="features" className="relative bg-[#0f172a] px-6 py-24">
+      <div className="pointer-events-none absolute inset-x-0 top-0 h-40 bg-gradient-to-b from-cyan-500/[0.04] to-transparent" />
+      <div className="relative mx-auto max-w-5xl">
         <div className="mb-14 text-center">
           <p className="mb-3 text-xs font-semibold uppercase tracking-widest text-cyan-400">
             Características
@@ -301,13 +335,13 @@ function Features() {
         </div>
 
         <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
-          {FEATURES.map(({ icon: Icon, title, desc }) => (
+          {FEATURES.map(({ icon: Icon, title, desc, tint }) => (
             <div
               key={title}
-              className="hover:bg-white/8 group rounded-2xl border border-white/10 bg-white/5 p-6 transition-all hover:border-cyan-500/40"
+              className="group rounded-2xl border border-white/10 bg-white/5 p-6 transition-all duration-200 hover:-translate-y-1 hover:border-cyan-500/40 hover:bg-white/[0.07] hover:shadow-lg hover:shadow-cyan-500/5"
             >
-              <div className="mb-4 inline-flex rounded-xl bg-cyan-500/10 p-2.5">
-                <Icon className="h-5 w-5 text-cyan-400" />
+              <div className={`mb-4 inline-flex rounded-xl p-3 ${tint}`}>
+                <Icon className="h-6 w-6" />
               </div>
               <h3 className="mb-2 text-base font-semibold text-white">{title}</h3>
               <p className="text-sm leading-relaxed text-gray-400">{desc}</p>
@@ -335,7 +369,7 @@ function Segments() {
           {SEGMENTS.map(({ icon: Icon, label, desc }) => (
             <div
               key={label}
-              className="rounded-2xl border border-white/10 bg-white/5 p-5 text-center"
+              className="rounded-2xl border border-white/10 bg-white/5 p-5 text-center transition-colors hover:border-white/20"
             >
               <div className="mx-auto mb-3 inline-flex rounded-xl bg-cyan-500/10 p-3">
                 <Icon className="h-5 w-5 text-cyan-400" />
@@ -350,40 +384,46 @@ function Segments() {
   )
 }
 
-function SocialProof() {
+function Differentiators() {
   return (
-    <section className="bg-gradient-to-br from-[#0f172a] via-blue-950/50 to-[#0f172a] px-6 py-20">
-      <div className="mx-auto max-w-4xl">
-        <div className="mb-10 text-center">
-          <p className="mb-2 text-xs font-semibold uppercase tracking-widest text-cyan-400">
-            Testimonios
+    <section className="relative overflow-hidden bg-gradient-to-br from-[#0f172a] via-blue-950/40 to-[#0f172a] px-6 py-24">
+      <div className="pointer-events-none absolute left-1/2 top-0 h-[400px] w-[700px] -translate-x-1/2 rounded-full bg-blue-600/10 blur-3xl" />
+      <div className="relative mx-auto max-w-5xl">
+        <div className="mb-12 text-center">
+          <p className="mb-3 text-xs font-semibold uppercase tracking-widest text-cyan-400">
+            Por qué BCWork
           </p>
-          <div className="flex justify-center gap-1">
-            {[1, 2, 3, 4, 5].map((i) => (
-              <Star key={i} className="h-4 w-4 fill-amber-400 text-amber-400" />
-            ))}
-          </div>
+          <h2 className="text-3xl font-bold text-white sm:text-4xl">
+            Cumplimiento y control, sin la complejidad
+          </h2>
         </div>
-
-        <div className="grid gap-6 sm:grid-cols-2">
-          {TESTIMONIALS.map((t) => (
-            <div key={t.name} className="rounded-2xl border border-white/10 bg-white/5 p-6">
-              <blockquote className="mb-5 text-sm leading-relaxed text-gray-300">
-                &ldquo;{t.quote}&rdquo;
-              </blockquote>
-              <div className="flex items-center gap-3">
-                <div className="flex h-9 w-9 items-center justify-center rounded-full bg-cyan-500/20 text-xs font-bold text-cyan-400">
-                  {t.initials}
-                </div>
-                <div>
-                  <p className="text-sm font-medium text-white">{t.name}</p>
-                  <p className="text-xs text-gray-400">
-                    {t.role} · {t.company}
-                  </p>
-                </div>
+        <div className="grid gap-6 sm:grid-cols-3">
+          {DIFFERENTIATORS.map(({ icon: Icon, title, desc }) => (
+            <div
+              key={title}
+              className="rounded-2xl border border-white/10 bg-white/5 p-7 backdrop-blur-sm"
+            >
+              <div className="mb-4 inline-flex rounded-xl bg-cyan-500/15 p-3">
+                <Icon className="h-6 w-6 text-cyan-300" />
               </div>
+              <h3 className="mb-2 text-lg font-semibold text-white">{title}</h3>
+              <p className="text-sm leading-relaxed text-gray-300">{desc}</p>
             </div>
           ))}
+        </div>
+        <div className="mt-10 flex flex-wrap items-center justify-center gap-x-6 gap-y-2 text-xs text-gray-400">
+          <span className="inline-flex items-center gap-1.5">
+            <CheckCircle className="h-3.5 w-3.5 text-emerald-400" /> Consentimiento informado
+          </span>
+          <span className="inline-flex items-center gap-1.5">
+            <CheckCircle className="h-3.5 w-3.5 text-emerald-400" /> Aviso de privacidad
+          </span>
+          <span className="inline-flex items-center gap-1.5">
+            <CheckCircle className="h-3.5 w-3.5 text-emerald-400" /> Portal de transparencia /me
+          </span>
+          <span className="inline-flex items-center gap-1.5">
+            <CheckCircle className="h-3.5 w-3.5 text-emerald-400" /> Exportación de datos
+          </span>
         </div>
       </div>
     </section>
@@ -403,13 +443,13 @@ function FAQ() {
           {FAQS.map(({ q, a }) => (
             <details
               key={q}
-              className="open:bg-white/8 group rounded-xl border border-white/10 bg-white/5 px-5 py-4 open:border-cyan-500/40"
+              className="group rounded-xl border border-white/10 bg-white/5 px-5 py-4 open:border-cyan-500/40 open:bg-white/[0.07]"
             >
               <summary className="flex cursor-pointer list-none items-center justify-between gap-4 text-sm font-medium text-white">
                 {q}
                 <ChevronRight className="h-4 w-4 shrink-0 text-gray-400 transition-transform group-open:rotate-90" />
               </summary>
-              <p className="mt-3 text-sm leading-relaxed text-gray-400">{a}</p>
+              <p className="mt-3 text-sm leading-relaxed text-gray-300">{a}</p>
             </details>
           ))}
         </div>
@@ -420,15 +460,19 @@ function FAQ() {
 
 function CTA() {
   return (
-    <section className="bg-gradient-to-r from-blue-900 to-cyan-900 px-6 py-20 text-center">
-      <div className="mx-auto max-w-2xl">
+    <section className="relative overflow-hidden bg-gradient-to-r from-blue-900 to-cyan-900 px-6 py-24 text-center">
+      <div className="pointer-events-none absolute inset-0 opacity-20">
+        <div className="absolute -left-20 top-0 h-72 w-72 rounded-full bg-cyan-400/30 blur-3xl" />
+        <div className="absolute -right-20 bottom-0 h-72 w-72 rounded-full bg-blue-400/30 blur-3xl" />
+      </div>
+      <div className="relative mx-auto max-w-2xl">
         <p className="mb-3 text-sm font-semibold uppercase tracking-widest text-cyan-300">
           Empieza hoy
         </p>
         <h2 className="mb-4 text-3xl font-extrabold text-white sm:text-4xl">
-          Tu competencia ya tiene visibilidad sobre sus equipos remotos
+          Ten visibilidad real sobre tu equipo remoto
         </h2>
-        <p className="mb-8 text-gray-300">
+        <p className="mb-8 text-gray-200">
           14 días gratis · Sin tarjeta de crédito · Configuración en menos de 10 minutos
         </p>
         <div className="flex flex-col items-center gap-3 sm:flex-row sm:justify-center">
@@ -441,12 +485,12 @@ function CTA() {
           </Link>
           <a
             href="mailto:ventas@bcwork.co"
-            className="inline-flex items-center gap-2 rounded-xl border border-white/30 px-8 py-3.5 text-base font-medium text-white transition-all hover:border-white/60"
+            className="inline-flex items-center gap-2 rounded-xl border border-white/30 px-8 py-3.5 text-base font-medium text-white transition-all hover:border-white/60 hover:bg-white/10"
           >
             Hablar con ventas
           </a>
         </div>
-        <p className="mt-5 text-xs text-cyan-300/60">
+        <p className="mt-5 text-xs text-cyan-200/70">
           Precio fijo en COP · Sin variación por TRM · Factura electrónica
         </p>
       </div>
@@ -542,13 +586,13 @@ function Footer() {
 
 export default function LandingPage() {
   return (
-    <div className="min-h-screen bg-[#0f172a] text-white">
-      <Navbar />
+    <div className="min-h-screen bg-[#0b1220] text-white">
+      <LandingNav />
       <Hero />
       <Stats />
       <Features />
       <Segments />
-      <SocialProof />
+      <Differentiators />
       <div id="roi">
         <ROICalculator />
       </div>
