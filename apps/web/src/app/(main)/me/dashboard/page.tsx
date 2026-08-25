@@ -110,20 +110,17 @@ export default function EmployeeDashboard() {
 
       {/* Estado del agente */}
       {!hasAgent && (
-        <div className="flex items-center gap-3 rounded-xl border border-blue-200 bg-blue-50 p-4">
-          <MonitorDown className="h-5 w-5 shrink-0 text-blue-500" />
+        <div className="flex items-center gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4">
+          <MonitorDown className="h-5 w-5 shrink-0 text-amber-500" />
           <div className="flex-1">
-            <p className="text-sm font-medium text-blue-800">Agente no instalado</p>
-            <p className="text-xs text-blue-600">
-              Sin el agente no se registra actividad ni sesiones.
+            <p className="text-sm font-medium text-amber-800">
+              Aún no hay un agente vinculado a tu cuenta
+            </p>
+            <p className="text-xs text-amber-600">
+              Tu administrador instala el agente en tu equipo. Cuando esté activo, verás aquí tu
+              actividad.
             </p>
           </div>
-          <Link
-            href="/me/agent"
-            className="shrink-0 rounded-md bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700"
-          >
-            Instalar agente
-          </Link>
         </div>
       )}
       {hasAgent && (

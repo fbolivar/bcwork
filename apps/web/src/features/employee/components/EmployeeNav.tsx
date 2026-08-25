@@ -10,7 +10,6 @@ import {
   User,
   CalendarClock,
   ShieldCheck,
-  MonitorDown,
   Bell,
   X,
   Camera,
@@ -150,7 +149,6 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       { href: '/me/profile', label: 'Mi perfil', icon: User },
       { href: '/me/devices', label: 'Mis dispositivos', icon: Monitor },
-      { href: '/me/agent', label: 'Activar agente', icon: MonitorDown },
       { href: '/me/privacy', label: 'Mi privacidad', icon: ShieldCheck },
       { href: '/me/export', label: 'Exportar datos', icon: Download },
     ],
