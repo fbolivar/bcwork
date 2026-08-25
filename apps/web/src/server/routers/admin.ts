@@ -1060,7 +1060,7 @@ export const adminRouter = router({
       z.object({
         userId: z.string().uuid().optional(),
         page: z.number().int().min(1).default(1),
-        pageSize: z.number().int().min(1).max(50).default(20),
+        pageSize: z.number().int().min(1).max(500).default(20),
       }),
     )
     .query(async ({ ctx, input }) => {
