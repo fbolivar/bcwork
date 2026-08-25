@@ -64,6 +64,7 @@ export function AppCatalogManager() {
 
   const utils = trpc.useUtils()
   const { data: rules, isLoading } = trpc.admin.listAppRules.useQuery()
+  const { data: discovered } = trpc.admin.listUnclassifiedApps.useQuery()
 
   const upsert = trpc.admin.upsertAppRule.useMutation({
     onSuccess: () => {
@@ -71,8 +72,18 @@ export function AppCatalogManager() {
       setCreating(false)
       setEditingId(null)
       void utils.admin.listAppRules.invalidate()
+      void utils.admin.listUnclassifiedApps.invalidate()
     },
   })
+
+  const quickClassify = (identifier: string, productivity: Productivity) =>
+    upsert.mutate({
+      display_name: identifier,
+      identifier,
+      identifier_type: 'process',
+      category: 'other',
+      productivity,
+    })
   const remove = trpc.admin.deleteAppRule.useMutation({
     onSuccess: () => void utils.admin.listAppRules.invalidate(),
   })
@@ -105,6 +116,71 @@ export function AppCatalogManager() {
           al índice de productividad; las <strong>No productivas</strong> lo reducen.
         </p>
       </div>
+
+      {/* Apps detectadas sin clasificar */}
+      {(discovered ?? []).length > 0 && (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 p-4">
+          <div className="mb-1 flex items-center gap-2">
+            <Search className="h-4 w-4 text-amber-600" />
+            <h3 className="text-sm font-semibold text-amber-800">
+              Apps detectadas sin clasificar ({(discovered ?? []).length})
+            </h3>
+          </div>
+          <p className="mb-3 text-xs text-amber-700">
+            Aplicaciones que tus colaboradores realmente usan pero aún no están en el catálogo.
+            Clasifícalas con un clic para que cuenten en la productividad.
+          </p>
+          <div className="space-y-1.5">
+            {(discovered ?? []).map((app) => {
+              const hours = app.total_seconds / 3600
+              const usage =
+                hours >= 1 ? `${hours.toFixed(1)} h` : `${Math.round(app.total_seconds / 60)} min`
+              return (
+                <div
+                  key={app.app_identifier}
+                  className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-white px-3 py-2"
+                >
+                  <div className="min-w-0">
+                    <span className="flex items-center gap-1.5 font-medium text-gray-900">
+                      <Monitor className="h-3.5 w-3.5 text-gray-400" />
+                      {app.app_identifier}
+                    </span>
+                    <span className="text-xs text-gray-400">
+                      {usage} de uso · {app.event_count} registros
+                    </span>
+                  </div>
+                  <div className="flex shrink-0 gap-1.5">
+                    <button
+                      type="button"
+                      disabled={upsert.isPending}
+                      onClick={() => quickClassify(app.app_identifier, 'productive')}
+                      className="rounded-md bg-green-100 px-2.5 py-1 text-xs font-medium text-green-700 hover:bg-green-200 disabled:opacity-50"
+                    >
+                      Productiva
+                    </button>
+                    <button
+                      type="button"
+                      disabled={upsert.isPending}
+                      onClick={() => quickClassify(app.app_identifier, 'neutral')}
+                      className="rounded-md bg-amber-100 px-2.5 py-1 text-xs font-medium text-amber-700 hover:bg-amber-200 disabled:opacity-50"
+                    >
+                      Neutral
+                    </button>
+                    <button
+                      type="button"
+                      disabled={upsert.isPending}
+                      onClick={() => quickClassify(app.app_identifier, 'non_productive')}
+                      className="rounded-md bg-red-100 px-2.5 py-1 text-xs font-medium text-red-700 hover:bg-red-200 disabled:opacity-50"
+                    >
+                      No productiva
+                    </button>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
 
       {/* Controles */}
       <div className="flex flex-wrap items-center gap-2">

@@ -646,6 +646,51 @@ export const adminRouter = router({
     return data ?? []
   }),
 
+  // Apps vistas en la actividad real que aún NO están en el catálogo, con su uso.
+  // Agrega en el servidor sobre los eventos recientes (sin función SQL).
+  listUnclassifiedApps: adminProcedure.query(async ({ ctx }) => {
+    const tid = ctx.user!.tid
+
+    const { data: cat } = await ctx.db
+      .from('app_catalog')
+      .select('identifier')
+      .eq('tenant_id', tid)
+      .eq('identifier_type', 'process')
+    const known = new Set((cat ?? []).map((c) => (c.identifier ?? '').toLowerCase()))
+
+    const PAGES = 6
+    const SIZE = 1000
+    const totals = new Map<string, { seconds: number; count: number }>()
+    for (let p = 0; p < PAGES; p++) {
+      const { data, error } = await ctx.db
+        .from('activity_events')
+        .select('app_identifier, duration_seconds')
+        .eq('tenant_id', tid)
+        .not('app_identifier', 'is', null)
+        .order('started_at', { ascending: false })
+        .range(p * SIZE, p * SIZE + SIZE - 1)
+      if (error || !data || data.length === 0) break
+      for (const e of data) {
+        const id = (e.app_identifier ?? '').trim()
+        if (!id || known.has(id.toLowerCase())) continue
+        const cur = totals.get(id) ?? { seconds: 0, count: 0 }
+        cur.seconds += e.duration_seconds ?? 0
+        cur.count += 1
+        totals.set(id, cur)
+      }
+      if (data.length < SIZE) break
+    }
+
+    return [...totals.entries()]
+      .map(([app_identifier, v]) => ({
+        app_identifier,
+        total_seconds: v.seconds,
+        event_count: v.count,
+      }))
+      .sort((a, b) => b.total_seconds - a.total_seconds)
+      .slice(0, 50)
+  }),
+
   upsertAppRule: adminProcedure
     .input(
       z.object({
