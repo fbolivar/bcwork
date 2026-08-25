@@ -64,7 +64,6 @@ export async function POST(req: NextRequest) {
       user_id: null, // sin asignar hasta que la persona se elija
       name: hostname,
       os: platform,
-      platform,
       hostname,
       windows_username: windows_username ?? null,
       agent_version: service_version ?? '1.0.0',
