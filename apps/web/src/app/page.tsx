@@ -145,19 +145,19 @@ function AuroraBackground() {
   return (
     <div className="pointer-events-none fixed inset-0 -z-10 overflow-hidden bg-[#070b16]">
       <div
-        className="aurora-blob aurora-a left-1/2 top-[-10%] h-[46rem] w-[46rem]"
-        style={{ background: 'radial-gradient(circle, rgba(34,211,238,0.28), transparent 60%)' }}
+        className="aurora-blob aurora-a left-1/2 top-[-12%] h-[48rem] w-[48rem]"
+        style={{ background: 'radial-gradient(circle, rgba(34,211,238,0.42), transparent 62%)' }}
       />
       <div
-        className="aurora-blob aurora-b right-[-10%] top-[20%] h-[38rem] w-[38rem]"
-        style={{ background: 'radial-gradient(circle, rgba(139,92,246,0.26), transparent 60%)' }}
+        className="aurora-blob aurora-b right-[-12%] top-[16%] h-[42rem] w-[42rem]"
+        style={{ background: 'radial-gradient(circle, rgba(139,92,246,0.40), transparent 62%)' }}
       />
       <div
-        className="aurora-blob aurora-c left-[-8%] top-[55%] h-[40rem] w-[40rem]"
-        style={{ background: 'radial-gradient(circle, rgba(232,121,249,0.20), transparent 60%)' }}
+        className="aurora-blob aurora-c left-[-10%] top-[52%] h-[44rem] w-[44rem]"
+        style={{ background: 'radial-gradient(circle, rgba(232,121,249,0.30), transparent 62%)' }}
       />
       {/* Viñeta para legibilidad */}
-      <div className="absolute inset-0 bg-[#070b16]/40" />
+      <div className="absolute inset-0 bg-[#070b16]/30" />
     </div>
   )
 }
@@ -212,15 +212,20 @@ function ProductPreview() {
         <div className="grid grid-cols-5 gap-2.5">
           <div className="col-span-3 rounded-lg border border-white/10 bg-white/5 p-3">
             <p className="mb-2 text-[10px] text-gray-400">Actividad del equipo</p>
-            <div className="flex h-20 items-end gap-1.5">
+            <div className="flex h-16 items-end gap-1.5">
               {bars.map((b, i) => (
-                <div key={i} className="flex flex-1 flex-col items-center gap-1">
-                  <div
-                    className="w-full rounded-t bg-gradient-to-t from-cyan-500/40 to-cyan-400"
-                    style={{ height: `${b.h}%` }}
-                  />
-                  <span className="text-[8px] text-gray-500">{b.d}</span>
-                </div>
+                <div
+                  key={i}
+                  className="flex-1 rounded-t bg-gradient-to-t from-cyan-500/50 to-cyan-300"
+                  style={{ height: `${b.h}%` }}
+                />
+              ))}
+            </div>
+            <div className="mt-1 flex gap-1.5">
+              {bars.map((b, i) => (
+                <span key={i} className="flex-1 text-center text-[8px] text-gray-500">
+                  {b.d}
+                </span>
               ))}
             </div>
           </div>
