@@ -84,10 +84,13 @@ export function DashboardStats() {
   const stats = trpc.admin.getStats.useQuery(undefined, { refetchInterval: 60_000 })
   const snap = trpc.admin.getTeamSnapshot.useQuery(undefined, { refetchInterval: 30_000 })
   const { data: geoLocations = [] } = trpc.manager.getTeamGeoLocations.useQuery()
+  const { data: me } = trpc.auth.me.useQuery(undefined, { staleTime: 5 * 60 * 1000 })
 
   const now = new Date()
   const hour = now.getHours()
-  const greeting = hour < 12 ? 'Buenos días' : hour < 18 ? 'Buenas tardes' : 'Buenas noches'
+  const saludo = hour < 12 ? 'Buenos días' : hour < 18 ? 'Buenas tardes' : 'Buenas noches'
+  const firstName = me?.full_name?.trim().split(' ')[0]
+  const greeting = firstName ? `${saludo}, ${firstName}` : saludo
   const dateStr = now.toLocaleDateString('es-CO', {
     weekday: 'long',
     day: 'numeric',
