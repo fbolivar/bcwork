@@ -1,6 +1,11 @@
 import { z } from 'zod'
 import { TRPCError } from '@trpc/server'
 import { router, protectedProcedure, requireRole } from '../trpc'
+import {
+  assertCareerPlanInTenant,
+  assertMilestoneInTenant,
+  assertUserInTenant,
+} from '../tenant-guard'
 import { broadcastNotification, broadcastNotificationToMany } from '@/lib/realtime-broadcast'
 
 // ─── Geo helpers ──────────────────────────────────────────────────────────────
@@ -2436,10 +2441,12 @@ export const managerRouter = router({
     )
     .mutation(async ({ ctx, input }) => {
       const tenantId = ctx.user!.tid
+      await assertUserInTenant(ctx.db, input.employee_id, tenantId)
       const { data: maxOrder } = await ctx.db
         .from('onboarding_tasks')
         .select('order_index')
         .eq('employee_id', input.employee_id)
+        .eq('tenant_id', tenantId)
         .order('order_index', { ascending: false })
         .limit(1)
         .single()
@@ -4124,6 +4131,8 @@ export const managerRouter = router({
     )
     .mutation(async ({ ctx, input }) => {
       const db = ctx.db as any
+      // El hito hereda el tenant del plan: verificar que el plan sea de esta empresa.
+      await assertCareerPlanInTenant(ctx.db, input.career_plan_id, ctx.user!.tid)
       const { data, error } = await db
         .from('career_milestones')
         .insert({
@@ -4154,6 +4163,7 @@ export const managerRouter = router({
     .mutation(async ({ ctx, input }) => {
       const db = ctx.db as any
       const { id, ...rest } = input
+      await assertMilestoneInTenant(ctx.db, id, ctx.user!.tid)
       await db.from('career_milestones').update(rest).eq('id', id)
     }),
 
@@ -4161,6 +4171,7 @@ export const managerRouter = router({
     .input(z.object({ id: z.string().uuid() }))
     .mutation(async ({ ctx, input }) => {
       const db = ctx.db as any
+      await assertMilestoneInTenant(ctx.db, input.id, ctx.user!.tid)
       await db.from('career_milestones').delete().eq('id', input.id)
     }),
 })

@@ -37,10 +37,13 @@ export async function resolveAgentKey(
 
   const deviceId = (key.name as string).replace('agent:', '')
 
+  // El device debe ser del mismo tenant que la api_key: si no, la identidad
+  // resultante cruzaria empresas.
   const { data: device } = await db
     .from('agent_devices')
     .select('id, user_id, tenant_id, revoked_at')
     .eq('id', deviceId)
+    .eq('tenant_id', key.tenant_id)
     .single()
 
   if (!device) return null

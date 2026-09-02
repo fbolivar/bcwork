@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import { TRPCError } from '@trpc/server'
 import { router, adminProcedure, protectedProcedure, tenantAdminProcedure } from '../trpc'
+import { assertUserInTenant } from '../tenant-guard'
 import { hashPassword, generateRandomPassword, validatePasswordPolicy } from '@/lib/auth/password'
 import { logAudit } from '@/lib/auth/audit'
 import { encodeBcw, decodeBcw, BCW_VERSION } from '@/lib/bcw'
@@ -2327,10 +2328,13 @@ export const adminRouter = router({
         sick_days_used,
       } = input
 
+      await assertUserInTenant(ctx.db, employee_id, ctx.user!.tid)
+
       const { data: existing } = await ctx.db
         .from('absence_balances')
         .select('id')
         .eq('employee_id', employee_id)
+        .eq('tenant_id', ctx.user!.tid)
         .eq('year', year)
         .maybeSingle()
 
@@ -3467,6 +3471,7 @@ export const adminRouter = router({
     )
     .mutation(async ({ ctx, input }) => {
       const { id, ...rest } = input
+      await assertUserInTenant(ctx.db, input.employee_id, ctx.user!.tid)
       const payload = { ...rest, tenant_id: ctx.user!.tid, created_by: ctx.user!.sub }
       let error
       if (id) {
@@ -3486,6 +3491,7 @@ export const adminRouter = router({
           .from('users')
           .select('full_name, email')
           .eq('id', input.employee_id)
+          .eq('tenant_id', ctx.user!.tid)
           .single()
         if (emp?.email) {
           void sendPayslipIssuedEmail({
@@ -3715,6 +3721,7 @@ export const adminRouter = router({
     )
     .mutation(async ({ ctx, input }) => {
       const { id, ...rest } = input
+      await assertUserInTenant(ctx.db, input.employee_id, ctx.user!.tid)
       const payload = { ...rest, tenant_id: ctx.user!.tid, created_by: ctx.user!.sub }
       let error
       if (id) {
@@ -3804,6 +3811,7 @@ export const adminRouter = router({
     )
     .mutation(async ({ ctx, input }) => {
       const { id, ...rest } = input
+      if (input.employee_id) await assertUserInTenant(ctx.db, input.employee_id, ctx.user!.tid)
       const payload = { ...rest, tenant_id: ctx.user!.tid, created_by: ctx.user!.sub }
       let error
       if (id) {

@@ -8,6 +8,7 @@
     "build": "pnpm --filter @bcwork/web build",
     "typecheck": "pnpm -r typecheck",
     "lint": "pnpm -r lint",
+    "check:tenant": "node scripts/check-tenant-isolation.mjs",
     "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md}\" --ignore-path .prettierignore",
     "prepare": "husky"
   },
