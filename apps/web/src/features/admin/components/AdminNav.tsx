@@ -149,6 +149,12 @@ const GROUPS: NavGroup[] = [
   },
 ]
 
+// Ocultos durante el piloto: el cliente gestiona finanzas y documentos en otro
+// aplicativo, asi que estas secciones no aportan valor. Se conservan las rutas
+// y los datos; solo se quitan del menu.
+const HIDDEN_GROUPS = new Set(['Documentos', 'Finanzas'])
+const VISIBLE_GROUPS = GROUPS.filter((g) => !HIDDEN_GROUPS.has(g.label))
+
 function NavGroup({ group, pathname }: { group: NavGroup; pathname: string }) {
   const isActiveGroup = group.items.some((i) => pathname.startsWith(i.href))
   const [open, setOpen] = useState(isActiveGroup)
@@ -225,7 +231,7 @@ export function AdminNav() {
         </Link>
 
         <div className="space-y-1">
-          {GROUPS.map((group) => (
+          {VISIBLE_GROUPS.map((group) => (
             <NavGroup key={group.label} group={group} pathname={pathname} />
           ))}
         </div>

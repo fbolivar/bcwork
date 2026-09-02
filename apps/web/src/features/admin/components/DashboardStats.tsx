@@ -89,7 +89,8 @@ export function DashboardStats() {
   const now = new Date()
   const hour = now.getHours()
   const saludo = hour < 12 ? 'Buenos días' : hour < 18 ? 'Buenas tardes' : 'Buenas noches'
-  const firstName = me?.full_name?.trim().split(' ')[0]
+  const rawName = me?.full_name?.trim().split(/\s+/)[0]
+  const firstName = rawName ? rawName.charAt(0).toUpperCase() + rawName.slice(1) : undefined
   const greeting = firstName ? `${saludo}, ${firstName}` : saludo
   const dateStr = now.toLocaleDateString('es-CO', {
     weekday: 'long',
