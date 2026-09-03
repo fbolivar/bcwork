@@ -41,7 +41,7 @@ function isLocked(lockedUntil: string | null): boolean {
 export const authRouter = router({
   // ─── SIGNUP TENANT ─────────────────────────────────────────────────────────
   signupTenant: publicProcedure.input(signupTenantSchema).mutation(async ({ input, ctx }) => {
-    const db = ctx.db
+    const db = ctx.adminDb
 
     // Verificar email no duplicado
     const { data: existing } = await db
@@ -159,7 +159,7 @@ export const authRouter = router({
 
   // ─── LOGIN ──────────────────────────────────────────────────────────────────
   login: publicProcedure.input(loginSchema).mutation(async ({ input, ctx }) => {
-    const db = ctx.db
+    const db = ctx.adminDb
 
     // Buscar usuario por email (sin RLS — no hay contexto aún)
     const { data: user } = await db
@@ -320,7 +320,7 @@ export const authRouter = router({
   refresh: publicProcedure
     .input(z.object({ refreshToken: z.string() }))
     .mutation(async ({ input, ctx }) => {
-      const db = ctx.db
+      const db = ctx.adminDb
 
       let sessionId: string
       let userId: string
@@ -392,7 +392,7 @@ export const authRouter = router({
   logout: protectedProcedure
     .input(z.object({ refreshToken: z.string().optional() }))
     .mutation(async ({ input, ctx }) => {
-      const db = ctx.db
+      const db = ctx.adminDb
 
       if (input.refreshToken) {
         const { createHash } = await import('crypto')
@@ -423,7 +423,7 @@ export const authRouter = router({
 
   // ─── ME ─────────────────────────────────────────────────────────────────────
   me: protectedProcedure.query(async ({ ctx }) => {
-    const db = ctx.db
+    const db = ctx.adminDb
     if (ctx.user.tid) await setTenantContext(db, ctx.user.tid, ctx.user.role)
 
     const { data: user } = await db
@@ -448,7 +448,7 @@ export const authRouter = router({
       }),
     )
     .mutation(async ({ input, ctx }) => {
-      const db = ctx.db
+      const db = ctx.adminDb
 
       const { data: user } = await db
         .from('users')
@@ -518,7 +518,7 @@ export const authRouter = router({
 
   // ─── SETUP MFA ───────────────────────────────────────────────────────────────
   setupMfa: protectedProcedure.mutation(async ({ ctx }) => {
-    const db = ctx.db
+    const db = ctx.adminDb
 
     const { data: user } = await db
       .from('users')
@@ -545,7 +545,7 @@ export const authRouter = router({
   verifyMfa: protectedProcedure
     .input(z.object({ code: z.string().length(6) }))
     .mutation(async ({ input, ctx }) => {
-      const db = ctx.db
+      const db = ctx.adminDb
 
       const { data: user } = await db
         .from('users')
@@ -577,7 +577,7 @@ export const authRouter = router({
   disableMfa: protectedProcedure
     .input(z.object({ code: z.string().length(6) }))
     .mutation(async ({ input, ctx }) => {
-      const db = ctx.db
+      const db = ctx.adminDb
 
       const { data: user } = await db
         .from('users')

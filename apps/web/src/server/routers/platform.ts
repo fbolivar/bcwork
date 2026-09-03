@@ -8,7 +8,7 @@ type AuditJson = Database['public']['Tables']['audit_logs']['Row']['before_state
 export const platformRouter = router({
   // ─── MÉTRICAS GLOBALES ────────────────────────────────────────────────────
   getMetrics: platformAdminProcedure.query(async ({ ctx }) => {
-    const db = ctx.db
+    const db = ctx.adminDb
 
     const [tenantsRes, licensesRes, usersRes] = await Promise.all([
       db.from('tenants').select('id, status, created_at, updated_at'),
@@ -75,7 +75,7 @@ export const platformRouter = router({
       }),
     )
     .mutation(async ({ input, ctx }) => {
-      const db = ctx.db
+      const db = ctx.adminDb
 
       const { hashPassword, validatePasswordPolicy } = await import('@/lib/auth/password')
       const { ROLES } = await import('@bcwork/shared')
@@ -180,7 +180,7 @@ export const platformRouter = router({
       }),
     )
     .query(async ({ input, ctx }) => {
-      const db = ctx.db
+      const db = ctx.adminDb
       const offset = (input.page - 1) * input.pageSize
 
       let query = db
@@ -212,7 +212,7 @@ export const platformRouter = router({
   getTenant: platformAdminProcedure
     .input(z.object({ id: z.string().uuid() }))
     .query(async ({ input, ctx }) => {
-      const db = ctx.db
+      const db = ctx.adminDb
       const { data, error } = await db
         .from('tenants')
         .select(`*, licenses(*, plans(code, name, monthly_price_per_seat_cop))`)
@@ -267,7 +267,7 @@ export const platformRouter = router({
       }),
     )
     .mutation(async ({ input, ctx }) => {
-      const db = ctx.db
+      const db = ctx.adminDb
       const { id, ...rawUpdates } = input
       // Strip undefined so Supabase doesn't overwrite existing values with null
       const updates = Object.fromEntries(
@@ -285,7 +285,7 @@ export const platformRouter = router({
         throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
       }
 
-      await ctx.db.from('audit_logs').insert({
+      await ctx.adminDb.from('audit_logs').insert({
         actor_user_id: ctx.user.sub,
         action: 'tenant.updated',
         entity_type: 'tenant',
@@ -309,7 +309,7 @@ export const platformRouter = router({
       }),
     )
     .mutation(async ({ input, ctx }) => {
-      const db = ctx.db
+      const db = ctx.adminDb
       const { licenseId, ...rawUpdates } = input
       const updates = Object.fromEntries(
         Object.entries(rawUpdates).filter(([, v]) => v !== undefined),
@@ -343,7 +343,7 @@ export const platformRouter = router({
 
   // ─── PLANES ───────────────────────────────────────────────────────────────
   listPlans: platformAdminProcedure.query(async ({ ctx }) => {
-    const { data, error } = await ctx.db
+    const { data, error } = await ctx.adminDb
       .from('plans')
       .select('*')
       .order('monthly_price_per_seat_cop')
@@ -363,7 +363,7 @@ export const platformRouter = router({
       }),
     )
     .mutation(async ({ input, ctx }) => {
-      const db = ctx.db
+      const db = ctx.adminDb
       const { id, ...updates } = input
 
       const { error } = await db.from('plans').update(updates).eq('id', id)
@@ -393,7 +393,7 @@ export const platformRouter = router({
       }),
     )
     .query(async ({ input, ctx }) => {
-      const db = ctx.db
+      const db = ctx.adminDb
       const offset = (input.page - 1) * input.pageSize
 
       let query = db
@@ -420,7 +420,7 @@ export const platformRouter = router({
     sixMonthsAgo.setDate(1)
     sixMonthsAgo.setHours(0, 0, 0, 0)
 
-    const { data: tenants } = await ctx.db
+    const { data: tenants } = await ctx.adminDb
       .from('tenants')
       .select('created_at, status')
       .gte('created_at', sixMonthsAgo.toISOString())
@@ -446,7 +446,7 @@ export const platformRouter = router({
 
   // ─── TENANTS EN RIESGO ───────────────────────────────────────────────────
   getAtRiskTenants: platformAdminProcedure.query(async ({ ctx }) => {
-    const db = ctx.db
+    const db = ctx.adminDb
     const now = new Date()
     const in7Days = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000).toISOString()
     const nowIso = now.toISOString()
@@ -519,7 +519,7 @@ export const platformRouter = router({
   extendTrial: platformAdminProcedure
     .input(z.object({ tenantId: z.string().uuid(), days: z.number().int().min(1).max(365) }))
     .mutation(async ({ input, ctx }) => {
-      const db = ctx.db
+      const db = ctx.adminDb
       const { data: license, error } = await db
         .from('licenses')
         .select('id, trial_ends_at, ends_at, status')
@@ -561,7 +561,7 @@ export const platformRouter = router({
   getTenantNotes: platformAdminProcedure
     .input(z.object({ tenantId: z.string().uuid() }))
     .query(async ({ input, ctx }) => {
-      const { data, error } = await ctx.db
+      const { data, error } = await ctx.adminDb
         .from('tenant_notes')
         .select('id, content, created_at, author_id, users(full_name, email)')
         .eq('tenant_id', input.tenantId)
@@ -575,7 +575,7 @@ export const platformRouter = router({
   createTenantNote: platformAdminProcedure
     .input(z.object({ tenantId: z.string().uuid(), content: z.string().min(1).max(2000) }))
     .mutation(async ({ input, ctx }) => {
-      const { error } = await ctx.db.from('tenant_notes').insert({
+      const { error } = await ctx.adminDb.from('tenant_notes').insert({
         tenant_id: input.tenantId,
         content: input.content.trim(),
         author_id: ctx.user.sub,
@@ -587,7 +587,7 @@ export const platformRouter = router({
   deleteTenantNote: platformAdminProcedure
     .input(z.object({ noteId: z.string().uuid() }))
     .mutation(async ({ input, ctx }) => {
-      const { error } = await ctx.db.from('tenant_notes').delete().eq('id', input.noteId)
+      const { error } = await ctx.adminDb.from('tenant_notes').delete().eq('id', input.noteId)
       if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
       return { success: true }
     }),
@@ -602,7 +602,7 @@ export const platformRouter = router({
       }),
     )
     .query(async ({ input, ctx }) => {
-      const db = ctx.db
+      const db = ctx.adminDb
       const offset = (input.page - 1) * input.pageSize
       const q = `%${input.query}%`
 
@@ -632,7 +632,7 @@ export const platformRouter = router({
       }),
     )
     .mutation(async ({ input, ctx }) => {
-      const { error } = await ctx.db
+      const { error } = await ctx.adminDb
         .from('tenants')
         .update({
           maintenance_mode: input.enabled,
@@ -643,7 +643,7 @@ export const platformRouter = router({
 
       if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
 
-      await ctx.db.from('audit_logs').insert({
+      await ctx.adminDb.from('audit_logs').insert({
         actor_user_id: ctx.user.sub,
         action: 'tenant.updated',
         entity_type: 'tenant',
@@ -668,7 +668,7 @@ export const platformRouter = router({
     .mutation(async ({ input, ctx }) => {
       const results = await Promise.allSettled(
         input.tenantIds.map(async (tenantId) => {
-          const { data: license } = await ctx.db
+          const { data: license } = await ctx.adminDb
             .from('licenses')
             .select('id, trial_ends_at, ends_at')
             .eq('tenant_id', tenantId)
@@ -684,7 +684,7 @@ export const platformRouter = router({
           newDate.setDate(newDate.getDate() + input.days)
           const newIso = newDate.toISOString()
 
-          await ctx.db
+          await ctx.adminDb
             .from('licenses')
             .update({
               trial_ends_at: newIso,
@@ -702,7 +702,7 @@ export const platformRouter = router({
   getTenantTimeline: platformAdminProcedure
     .input(z.object({ tenantId: z.string().uuid() }))
     .query(async ({ input, ctx }) => {
-      const { data, error } = await ctx.db
+      const { data, error } = await ctx.adminDb
         .from('audit_logs')
         .select('id, action, occurred_at, after_state, actor_user_id')
         .eq('entity_id', input.tenantId)
@@ -724,7 +724,7 @@ export const platformRouter = router({
     )
     .mutation(async ({ input, ctx }) => {
       // Buscar tenant admin
-      const { data: admin, error: adminErr } = await ctx.db
+      const { data: admin, error: adminErr } = await ctx.adminDb
         .from('users')
         .select('id, email, full_name')
         .eq('tenant_id', input.tenantId)
@@ -735,7 +735,7 @@ export const platformRouter = router({
       if (adminErr || !admin)
         throw new TRPCError({ code: 'NOT_FOUND', message: 'No hay tenant_admin activo' })
 
-      const { data: tenant } = await ctx.db
+      const { data: tenant } = await ctx.adminDb
         .from('tenants')
         .select('legal_name, trade_name')
         .eq('id', input.tenantId)
@@ -757,7 +757,7 @@ export const platformRouter = router({
         })
 
       await Promise.all([
-        ctx.db.from('audit_logs').insert({
+        ctx.adminDb.from('audit_logs').insert({
           actor_user_id: ctx.user.sub,
           action: 'tenant.updated',
           entity_type: 'tenant',
@@ -767,7 +767,7 @@ export const platformRouter = router({
             subject: input.subject,
           } as unknown as AuditJson,
         }),
-        ctx.db.from('tenant_communications').insert({
+        ctx.adminDb.from('tenant_communications').insert({
           tenant_id: input.tenantId,
           subject: input.subject,
           body: input.body,
@@ -782,7 +782,7 @@ export const platformRouter = router({
 
   // ─── DATOS DE REVENUE ─────────────────────────────────────────────────────
   getRevenueData: platformAdminProcedure.query(async ({ ctx }) => {
-    const db = ctx.db
+    const db = ctx.adminDb
 
     const [licensesRes, plansRes, tenantsRes] = await Promise.all([
       db
@@ -841,7 +841,7 @@ export const platformRouter = router({
 
   // ─── REVENUE TREND (MoM) ─────────────────────────────────────────────────
   getRevenueTrend: platformAdminProcedure.query(async ({ ctx }) => {
-    const db = ctx.db
+    const db = ctx.adminDb
 
     const [allLicensesRes, plansRes] = await Promise.all([
       db
@@ -940,7 +940,7 @@ export const platformRouter = router({
       }),
     )
     .mutation(async ({ input, ctx }) => {
-      const { error } = await ctx.db
+      const { error } = await ctx.adminDb
         .from('licenses')
         .update({ feature_overrides: input.overrides, updated_at: new Date().toISOString() })
         .eq('id', input.licenseId)
@@ -953,7 +953,7 @@ export const platformRouter = router({
   getRenewalPipeline: platformAdminProcedure
     .input(z.object({ daysAhead: z.number().int().min(1).max(180).default(60) }))
     .query(async ({ input, ctx }) => {
-      const db = ctx.db
+      const db = ctx.adminDb
       const now = new Date()
       const cutoff = new Date(now.getTime() + input.daysAhead * 24 * 60 * 60 * 1000).toISOString()
 
@@ -983,7 +983,7 @@ export const platformRouter = router({
       }),
     )
     .mutation(async ({ input, ctx }) => {
-      const { error } = await ctx.db
+      const { error } = await ctx.adminDb
         .from('licenses')
         .update({
           renewal_status: input.renewalStatus,
@@ -998,7 +998,7 @@ export const platformRouter = router({
 
   // ─── ONBOARDING FUNNEL ───────────────────────────────────────────────────
   getOnboardingFunnel: platformAdminProcedure.query(async ({ ctx }) => {
-    const db = ctx.db
+    const db = ctx.adminDb
 
     const [tenantsRes, usersCountRes, schedulesRes] = await Promise.all([
       db
@@ -1061,7 +1061,7 @@ export const platformRouter = router({
 
   // ─── PLATFORM ALERTS (para cron) ─────────────────────────────────────────
   getPlatformAlerts: platformAdminProcedure.query(async ({ ctx }) => {
-    const db = ctx.db
+    const db = ctx.adminDb
     const now = new Date()
     const in3days = new Date(now.getTime() + 3 * 24 * 60 * 60 * 1000).toISOString()
     const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000).toISOString()
@@ -1091,7 +1091,7 @@ export const platformRouter = router({
 
   // ─── HEALTH SCORE ────────────────────────────────────────────────────────
   getHealthScores: platformAdminProcedure.query(async ({ ctx }) => {
-    const db = ctx.db
+    const db = ctx.adminDb
     const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString()
     const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()
 
@@ -1169,7 +1169,7 @@ export const platformRouter = router({
 
   // ─── MRR WATERFALL ────────────────────────────────────────────────────────
   getMrrWaterfall: platformAdminProcedure.query(async ({ ctx }) => {
-    const db = ctx.db
+    const db = ctx.adminDb
 
     const sixMonthsAgo = new Date(Date.now() - 180 * 24 * 60 * 60 * 1000).toISOString()
     const [licensesRes, plansRes] = await Promise.all([
@@ -1228,7 +1228,7 @@ export const platformRouter = router({
   getTenantCommunications: platformAdminProcedure
     .input(z.object({ tenantId: z.string().uuid() }))
     .query(async ({ input, ctx }) => {
-      const { data, error } = await ctx.db
+      const { data, error } = await ctx.adminDb
         .from('tenant_communications')
         .select('id, subject, body, channel, sent_by, sent_at, metadata')
         .eq('tenant_id', input.tenantId)
@@ -1249,7 +1249,7 @@ export const platformRouter = router({
       }),
     )
     .mutation(async ({ input, ctx }) => {
-      const { error } = await ctx.db.from('tenant_communications').insert({
+      const { error } = await ctx.adminDb.from('tenant_communications').insert({
         tenant_id: input.tenantId,
         subject: input.subject,
         body: input.body,
@@ -1262,7 +1262,7 @@ export const platformRouter = router({
 
   // ─── ADOPCIÓN DE FEATURES ────────────────────────────────────────────────
   getFeatureAdoption: platformAdminProcedure.query(async ({ ctx }) => {
-    const db = ctx.db
+    const db = ctx.adminDb
 
     const [licensesRes, plansRes] = await Promise.all([
       db
@@ -1316,21 +1316,25 @@ export const platformRouter = router({
   getTenantTags: platformAdminProcedure
     .input(z.object({ tenantId: z.string().uuid() }))
     .query(async ({ input, ctx }) => {
-      const { data } = await ctx.db.from('tenants').select('tags').eq('id', input.tenantId).single()
+      const { data } = await ctx.adminDb
+        .from('tenants')
+        .select('tags')
+        .eq('id', input.tenantId)
+        .single()
       return (data?.tags as string[] | null) ?? []
     }),
 
   addTenantTag: platformAdminProcedure
     .input(z.object({ tenantId: z.string().uuid(), tag: z.string().min(1).max(50) }))
     .mutation(async ({ input, ctx }) => {
-      const { data: current } = await ctx.db
+      const { data: current } = await ctx.adminDb
         .from('tenants')
         .select('tags')
         .eq('id', input.tenantId)
         .single()
       const existing = (current?.tags as string[] | null) ?? []
       if (existing.includes(input.tag)) return { success: true }
-      const { error } = await ctx.db
+      const { error } = await ctx.adminDb
         .from('tenants')
         .update({ tags: [...existing, input.tag] })
         .eq('id', input.tenantId)
@@ -1341,13 +1345,13 @@ export const platformRouter = router({
   removeTenantTag: platformAdminProcedure
     .input(z.object({ tenantId: z.string().uuid(), tag: z.string().min(1).max(50) }))
     .mutation(async ({ input, ctx }) => {
-      const { data: current } = await ctx.db
+      const { data: current } = await ctx.adminDb
         .from('tenants')
         .select('tags')
         .eq('id', input.tenantId)
         .single()
       const existing = (current?.tags as string[] | null) ?? []
-      const { error } = await ctx.db
+      const { error } = await ctx.adminDb
         .from('tenants')
         .update({ tags: existing.filter((t) => t !== input.tag) })
         .eq('id', input.tenantId)
@@ -1356,7 +1360,7 @@ export const platformRouter = router({
     }),
 
   getAllTags: platformAdminProcedure.query(async ({ ctx }) => {
-    const { data } = await ctx.db.from('tenants').select('tags').neq('status', 'cancelled')
+    const { data } = await ctx.adminDb.from('tenants').select('tags').neq('status', 'cancelled')
     const allTags = new Set<string>()
     for (const row of data ?? []) {
       for (const tag of (row.tags as string[] | null) ?? []) allTags.add(tag)
@@ -1366,7 +1370,7 @@ export const platformRouter = router({
 
   // ─── COHORT ANALYSIS ─────────────────────────────────────────────────────
   getCohortAnalysis: platformAdminProcedure.query(async ({ ctx }) => {
-    const db = ctx.db
+    const db = ctx.adminDb
 
     const { data: tenants } = await db
       .from('tenants')
@@ -1428,7 +1432,7 @@ export const platformRouter = router({
 
   // ─── ACTIVIDAD EN TIEMPO REAL ────────────────────────────────────────────
   getLiveActivity: platformAdminProcedure.query(async ({ ctx }) => {
-    const db = ctx.db
+    const db = ctx.adminDb
     const since = new Date(Date.now() - 15 * 60 * 1000).toISOString()
     const yesterdaySince = new Date(Date.now() - 15 * 60 * 1000 - 24 * 60 * 60 * 1000).toISOString()
     const yesterdayUntil = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
@@ -1498,7 +1502,7 @@ export const platformRouter = router({
       }),
     )
     .query(async ({ ctx, input }) => {
-      const db = ctx.db
+      const db = ctx.adminDb
 
       let q = db.from('tenants').select('id, trade_name, legal_name, contact_email, status, tags')
 
@@ -1541,7 +1545,7 @@ export const platformRouter = router({
       }),
     )
     .mutation(async ({ ctx, input }) => {
-      const db = ctx.db
+      const db = ctx.adminDb
       const { sendPlatformEmail } = await import('@/lib/email')
 
       const { data: tenants } = await db
@@ -1580,7 +1584,7 @@ export const platformRouter = router({
 
   // ─── PIPELINE DE UPSELL ───────────────────────────────────────────────────
   getUpsellPipeline: platformAdminProcedure.query(async ({ ctx }) => {
-    const db = ctx.db
+    const db = ctx.adminDb
 
     const [tenantsRes, licensesRes, plansRes, usersRes, sessionsRes] = await Promise.all([
       db.from('tenants').select('id, trade_name, legal_name, status, tags'),
@@ -1699,7 +1703,7 @@ export const platformRouter = router({
 
   // ─── ANUNCIOS PLATAFORMA ─────────────────────────────────────────────────
   getAdminAnnouncements: platformAdminProcedure.query(async ({ ctx }) => {
-    const { data } = await ctx.db
+    const { data } = await ctx.adminDb
       .from('platform_announcements')
       .select('*')
       .order('created_at', { ascending: false })
@@ -1724,7 +1728,7 @@ export const platformRouter = router({
       }),
     )
     .mutation(async ({ ctx, input }) => {
-      const { data, error } = await ctx.db
+      const { data, error } = await ctx.adminDb
         .from('platform_announcements')
         .insert({
           title: input.title,
@@ -1778,7 +1782,7 @@ export const platformRouter = router({
         if (rest.isPublished) patch.published_at = new Date().toISOString()
       }
 
-      const { error } = await ctx.db.from('platform_announcements').update(patch).eq('id', id)
+      const { error } = await ctx.adminDb.from('platform_announcements').update(patch).eq('id', id)
       if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
       return { ok: true }
     }),
@@ -1786,7 +1790,7 @@ export const platformRouter = router({
   deleteAnnouncement: platformAdminProcedure
     .input(z.object({ id: z.string().uuid() }))
     .mutation(async ({ ctx, input }) => {
-      const { error } = await ctx.db.from('platform_announcements').delete().eq('id', input.id)
+      const { error } = await ctx.adminDb.from('platform_announcements').delete().eq('id', input.id)
       if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
       return { ok: true }
     }),
@@ -1800,7 +1804,7 @@ export const platformRouter = router({
     )
     .query(async ({ ctx, input }) => {
       const now = new Date().toISOString()
-      const { data } = await ctx.db
+      const { data } = await ctx.adminDb
         .from('platform_announcements')
         .select('*')
         .eq('is_published', true)
@@ -1838,7 +1842,7 @@ export const platformRouter = router({
       const { signAccessToken } = await import('@/lib/auth/jwt')
 
       // Buscar el tenant_admin de este tenant
-      const { data: adminUser, error } = await ctx.db
+      const { data: adminUser, error } = await ctx.adminDb
         .from('users')
         .select('id, email, role')
         .eq('tenant_id', input.tenantId)
@@ -1862,7 +1866,7 @@ export const platformRouter = router({
       } as Parameters<typeof signAccessToken>[0] & { imp: boolean })
 
       // Auditoría
-      await ctx.db.from('audit_logs').insert({
+      await ctx.adminDb.from('audit_logs').insert({
         actor_user_id: ctx.user.sub,
         action: 'tenant.impersonated',
         entity_type: 'tenant',

@@ -18,8 +18,31 @@ export function getDb(): SupabaseClient {
   return _db
 }
 
+/**
+ * Cliente por-petición que consulta como rol `authenticated`, con el JWT del
+ * usuario. A diferencia de `getDb()`, este NO tiene BYPASSRLS: las políticas
+ * `tenant_isolation` se aplican y el aislamiento deja de depender de que cada
+ * query recuerde filtrar por `tenant_id`.
+ *
+ * No se cachea: cada usuario necesita su propio token.
+ */
+export function getTenantDb(accessToken: string): SupabaseClient {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL
+  const anon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+  if (!url || !anon) {
+    throw new Error('Missing NEXT_PUBLIC_SUPABASE_URL or NEXT_PUBLIC_SUPABASE_ANON_KEY')
+  }
+  return createClient<Database>(url, anon, {
+    auth: { persistSession: false, autoRefreshToken: false },
+    global: { headers: { Authorization: `Bearer ${accessToken}` } },
+  })
+}
+
 // Setea el contexto de tenant en la sesión Postgres antes de cualquier query.
-// Llamar en cada request autenticado.
+//
+// OBSOLETO: no protege nada. `set_config` corre en una conexión del pool de
+// PostgREST distinta de la que ejecuta la query siguiente, así que el GUC nunca
+// llega. Se conserva solo mientras el flag TENANT_RLS_ENFORCED esté apagado.
 export async function setTenantContext(db: SupabaseClient, tenantId: string, role: string) {
   await db.rpc('set_tenant_context', {
     p_tenant: tenantId,

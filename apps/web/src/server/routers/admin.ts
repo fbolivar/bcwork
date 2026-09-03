@@ -114,7 +114,11 @@ export const adminRouter = router({
     .mutation(async ({ ctx, input }) => {
       const tenantId = ctx.user!.tid
 
-      const { data: existing } = await ctx.db
+      // A propósito con adminDb: el email tiene que ser único en TODA la
+      // plataforma, porque el login busca por email antes de saber el tenant.
+      // Bajo RLS esta consulta solo vería la propia empresa y dejaría pasar
+      // duplicados entre empresas, que romperían el login.
+      const { data: existing } = await ctx.adminDb
         .from('users')
         .select('id')
         .eq('email', input.email.toLowerCase())
