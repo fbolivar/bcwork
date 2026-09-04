@@ -630,6 +630,9 @@ export const managerRouter = router({
           geo_country: input.country ?? null,
           geo_lat: lat,
           geo_lon: lon,
+          // Fijada a mano: la geolocalización por IP ya no la sobrescribe.
+          // Al limpiar la ciudad se vuelve a permitir la detección automática.
+          geo_manual: Boolean(input.city || input.country),
         })
         .eq('id', input.userId)
         .eq('tenant_id', ctx.user!.tid)

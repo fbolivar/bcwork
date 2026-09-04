@@ -27,6 +27,13 @@ async function maybeUpdateUserGeo(
   const last = _userGeoTs.get(userId) ?? 0
   if (Date.now() - last < GEO_REFRESH_MS) return
   _userGeoTs.set(userId, Date.now())
+
+  // Si un administrador fijó la ubicación a mano, manda esa. La IP resuelve a
+  // la ciudad donde el ISP registra el rango (en Colombia casi siempre Bogotá),
+  // no a donde está la persona.
+  const { data: u } = await db.from('users').select('geo_manual').eq('id', userId).maybeSingle()
+  if (u?.geo_manual) return
+
   try {
     // ipinfo.io: HTTPS, free 50k/month, no key needed
     const res = await fetch(`https://ipinfo.io/${ip}/json`, {

@@ -5057,6 +5057,7 @@ export type Database = {
           failed_login_attempts: number | null
           full_name: string
           geo_city: string | null
+          geo_manual: boolean
           geo_country: string | null
           geo_lat: number | null
           geo_lon: number | null
@@ -5085,6 +5086,7 @@ export type Database = {
           failed_login_attempts?: number | null
           full_name: string
           geo_city?: string | null
+          geo_manual?: boolean
           geo_country?: string | null
           geo_lat?: number | null
           geo_lon?: number | null
@@ -5113,6 +5115,7 @@ export type Database = {
           failed_login_attempts?: number | null
           full_name?: string
           geo_city?: string | null
+          geo_manual?: boolean
           geo_country?: string | null
           geo_lat?: number | null
           geo_lon?: number | null
