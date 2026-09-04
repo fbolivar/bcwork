@@ -541,7 +541,9 @@ export const employeeRouter = router({
     .input(z.object({ userAgent: z.string().max(500) }))
     .mutation(async ({ ctx, input }) => {
       const grantedAt = new Date().toISOString()
-      const evidenceRaw = `${ctx.user!.sub}:${CONSENT_TYPE}:${POLICY_VERSION}:${grantedAt}`
+      // La IP entra en el hash: la prueba del consentimiento (Decreto 1377) se
+      // apoya en fecha + origen + agente + version de la politica.
+      const evidenceRaw = `${ctx.user!.sub}:${CONSENT_TYPE}:${POLICY_VERSION}:${grantedAt}:${ctx.ip}`
       const evidenceHash = createHash('sha256').update(evidenceRaw).digest('hex')
 
       const { error } = await ctx.db.from('consents').insert({
@@ -552,6 +554,7 @@ export const employeeRouter = router({
         granted: true,
         granted_at: grantedAt,
         evidence_hash: evidenceHash,
+        ip_inet: ctx.ip,
         user_agent: input.userAgent.slice(0, 500),
       })
 

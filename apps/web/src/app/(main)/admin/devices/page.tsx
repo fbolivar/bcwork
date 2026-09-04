@@ -1,5 +1,6 @@
 import { DeviceManager } from '@/features/admin/components/DeviceManager'
 import { TenantInstallerCard } from '@/features/admin/components/TenantInstallerCard'
+import { ConsentWarningCard } from '@/features/admin/components/ConsentWarningCard'
 
 export default function DevicesPage() {
   return (
@@ -10,6 +11,7 @@ export default function DevicesPage() {
           Gestiona los agentes instalados en dispositivos de tus colaboradores.
         </p>
       </div>
+      <ConsentWarningCard />
       <TenantInstallerCard />
       <DeviceManager />
     </div>

@@ -1106,6 +1106,48 @@ export const adminRouter = router({
     return { totalApps: totalApps ?? 0, devicesWithInventory: deviceSet.size }
   }),
 
+  // Colaboradores con agente instalado que NO tienen consentimiento vigente.
+  // Ley 1581/2012: el monitoreo requiere autorizacion previa del titular. Esto
+  // no bloquea la captura — la hace visible para que el administrador regularice.
+  getMonitoringWithoutConsent: adminProcedure.query(async ({ ctx }) => {
+    const tenantId = ctx.user!.tid
+
+    const [{ data: devices }, { data: consents }] = await Promise.all([
+      ctx.db
+        .from('agent_devices')
+        .select('user_id, hostname, enrolled_at')
+        .eq('tenant_id', tenantId)
+        .is('revoked_at', null)
+        .not('user_id', 'is', null),
+      ctx.db
+        .from('consents')
+        .select('user_id')
+        .eq('tenant_id', tenantId)
+        .eq('consent_type', 'monitoring_basic')
+        .eq('granted', true)
+        .is('revoked_at', null),
+    ])
+
+    const consintieron = new Set((consents ?? []).map((c) => c.user_id))
+    const pendientes = (devices ?? []).filter((d) => d.user_id && !consintieron.has(d.user_id))
+    if (pendientes.length === 0) return []
+
+    const { data: users } = await ctx.db
+      .from('users')
+      .select('id, full_name, email')
+      .eq('tenant_id', tenantId)
+      .in('id', [...new Set(pendientes.map((d) => d.user_id as string))])
+
+    const byId = new Map((users ?? []).map((u) => [u.id, u]))
+    return pendientes.map((d) => ({
+      userId: d.user_id as string,
+      fullName: byId.get(d.user_id as string)?.full_name ?? '(desconocido)',
+      email: String(byId.get(d.user_id as string)?.email ?? ''),
+      hostname: d.hostname,
+      enrolledAt: d.enrolled_at,
+    }))
+  }),
+
   listDevices: adminProcedure
     .input(
       z.object({
