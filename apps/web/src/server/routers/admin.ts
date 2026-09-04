@@ -1118,6 +1118,156 @@ export const adminRouter = router({
   }),
 
   /**
+   * Cumplimiento de jornada por colaborador, con comparación contra el período
+   * anterior y las excepciones del período.
+   *
+   * `expected_seconds` y `overtime_seconds` ya se calculaban a diario y no se
+   * mostraban en ninguna pantalla: el panel decía "estuvo 71 minutos" cuando lo
+   * reportable es "cumplió el 13% de su jornada".
+   */
+  getComplianceReport: adminProcedure
+    .input(
+      z.object({
+        from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+        to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+      }),
+    )
+    .query(async ({ ctx, input }) => {
+      const tenantId = ctx.user!.tid
+
+      // Período anterior de la misma longitud, para el "vs."
+      const dLen = Math.max(
+        1,
+        Math.round(
+          (Date.parse(`${input.to}T00:00:00Z`) - Date.parse(`${input.from}T00:00:00Z`)) / 86400000,
+        ) + 1,
+      )
+      const prevTo = new Date(Date.parse(`${input.from}T00:00:00Z`) - 86400000)
+      const prevFrom = new Date(prevTo.getTime() - (dLen - 1) * 86400000)
+      const iso = (d: Date) => d.toISOString().slice(0, 10)
+
+      const [{ data: rows }, { data: prevRows }, { data: users }, { data: company }] =
+        await Promise.all([
+          ctx.db
+            .from('daily_user_metrics')
+            .select(
+              'user_id, metric_date, expected_seconds, active_seconds, productive_seconds, overtime_seconds',
+            )
+            .eq('tenant_id', tenantId)
+            .gte('metric_date', input.from)
+            .lte('metric_date', input.to),
+          ctx.db
+            .from('daily_user_metrics')
+            .select('user_id, expected_seconds, active_seconds')
+            .eq('tenant_id', tenantId)
+            .gte('metric_date', iso(prevFrom))
+            .lte('metric_date', iso(prevTo)),
+          ctx.db
+            .from('users')
+            .select('id, full_name, department, position')
+            .eq('tenant_id', tenantId)
+            .eq('status', 'active'),
+          ctx.db
+            .from('tenants')
+            .select('trade_name, legal_name, nit, logo_url')
+            .eq('id', tenantId)
+            .maybeSingle(),
+        ])
+
+      type Acc = {
+        expected: number
+        active: number
+        productive: number
+        overtime: number
+        dias: number
+        incompletos: number
+        conExtra: number
+      }
+      const acc = new Map<string, Acc>()
+      for (const r of rows ?? []) {
+        if (!r.user_id) continue
+        const a = acc.get(r.user_id) ?? {
+          expected: 0,
+          active: 0,
+          productive: 0,
+          overtime: 0,
+          dias: 0,
+          incompletos: 0,
+          conExtra: 0,
+        }
+        const esperado = r.expected_seconds ?? 0
+        const real = r.active_seconds ?? 0
+        a.expected += esperado
+        a.active += real
+        a.productive += r.productive_seconds ?? 0
+        a.overtime += r.overtime_seconds ?? 0
+        a.dias += 1
+        // Jornada incompleta: menos del 80% de lo pactado ese día.
+        if (esperado > 0 && real < esperado * 0.8) a.incompletos += 1
+        if ((r.overtime_seconds ?? 0) > 0) a.conExtra += 1
+        acc.set(r.user_id, a)
+      }
+
+      const prevAcc = new Map<string, { expected: number; active: number }>()
+      for (const r of prevRows ?? []) {
+        if (!r.user_id) continue
+        const p = prevAcc.get(r.user_id) ?? { expected: 0, active: 0 }
+        p.expected += r.expected_seconds ?? 0
+        p.active += r.active_seconds ?? 0
+        prevAcc.set(r.user_id, p)
+      }
+
+      const byId = new Map((users ?? []).map((u) => [u.id, u]))
+      const people = [...acc.entries()].map(([userId, a]) => {
+        const u = byId.get(userId)
+        const ratio = a.expected > 0 ? a.active / a.expected : null
+        const prev = prevAcc.get(userId)
+        const prevRatio = prev && prev.expected > 0 ? prev.active / prev.expected : null
+        return {
+          userId,
+          fullName: u?.full_name ?? 'Colaborador',
+          department: u?.department ?? null,
+          position: u?.position ?? null,
+          expectedSeconds: a.expected,
+          activeSeconds: a.active,
+          productiveSeconds: a.productive,
+          overtimeSeconds: a.overtime,
+          daysWithData: a.dias,
+          incompleteDays: a.incompletos,
+          daysWithOvertime: a.conExtra,
+          complianceRatio: ratio,
+          previousRatio: prevRatio,
+          // null cuando no hay con qué comparar: un delta inventado es peor que
+          // un hueco declarado.
+          delta: ratio !== null && prevRatio !== null ? ratio - prevRatio : null,
+        }
+      })
+
+      people.sort((a, b) => (a.complianceRatio ?? 0) - (b.complianceRatio ?? 0))
+
+      const totExpected = people.reduce((s, p) => s + p.expectedSeconds, 0)
+      const totActive = people.reduce((s, p) => s + p.activeSeconds, 0)
+
+      return {
+        from: input.from,
+        to: input.to,
+        previousFrom: iso(prevFrom),
+        previousTo: iso(prevTo),
+        company: company ?? null,
+        people,
+        totals: {
+          expectedSeconds: totExpected,
+          activeSeconds: totActive,
+          complianceRatio: totExpected > 0 ? totActive / totExpected : null,
+          overtimeSeconds: people.reduce((s, p) => s + p.overtimeSeconds, 0),
+          incompleteDays: people.reduce((s, p) => s + p.incompleteDays, 0),
+          peopleBelow80: people.filter((p) => p.complianceRatio !== null && p.complianceRatio < 0.8)
+            .length,
+        },
+      }
+    }),
+
+  /**
    * Riesgo de desconexión laboral (Ley 2191 de 2022).
    *
    * Invierte el encuadre del producto: no vigila al trabajador, le avisa al

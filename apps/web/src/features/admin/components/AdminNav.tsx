@@ -71,6 +71,7 @@ const GROUPS: NavGroup[] = [
     label: 'Tiempo',
     icon: Clock,
     items: [
+      { href: '/admin/workday-compliance', label: 'Cumplimiento de jornada', icon: Clock },
       { href: '/admin/schedules', label: 'Horarios', icon: Clock },
       { href: '/admin/absences', label: 'Ausencias', icon: CalendarOff },
       { href: '/admin/pto', label: 'Balance PTO', icon: CalendarDays },
