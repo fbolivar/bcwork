@@ -1,14 +1,12 @@
 import { NextResponse } from 'next/server'
 import { getDb } from '@/lib/db'
+import { denyIfNotCron } from '@/lib/cron-auth'
 
 export const dynamic = 'force-dynamic'
 
 export async function GET(request: Request) {
-  // Verify Vercel cron secret to prevent unauthorized calls
-  const authHeader = request.headers.get('authorization')
-  if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
+  const deny = denyIfNotCron(request)
+  if (deny) return deny
 
   const db = getDb()
   const now = new Date()

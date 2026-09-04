@@ -1,14 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getDb } from '@/lib/db'
 import { sendPlatformWeeklyDigest } from '@/lib/email'
+import { denyIfNotCron } from '@/lib/cron-auth'
 
 export const runtime = 'nodejs'
 
 export async function GET(req: NextRequest) {
-  const secret = req.headers.get('authorization')
-  if (secret !== `Bearer ${process.env.CRON_SECRET}`) {
-    return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
-  }
+  const deny = denyIfNotCron(req)
+  if (deny) return deny
 
   const db = getDb()
   const now = new Date()

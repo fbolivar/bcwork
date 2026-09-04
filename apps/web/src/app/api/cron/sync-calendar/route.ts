@@ -6,12 +6,11 @@ import {
   getEventDates,
   daysBetween,
 } from '@/lib/integrations/google-calendar'
+import { denyIfNotCron } from '@/lib/cron-auth'
 
 export async function GET(req: NextRequest) {
-  const secret = req.headers.get('authorization')
-  if (secret !== `Bearer ${process.env.CRON_SECRET}`) {
-    return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
-  }
+  const deny = denyIfNotCron(req)
+  if (deny) return deny
 
   const db = getDb()
   const { data: integrations } = await db

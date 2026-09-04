@@ -3,12 +3,11 @@ import { getDb } from '@/lib/db'
 import { dispatchWebhook } from '@/lib/webhooks'
 import { sendTeamsNotification } from '@/lib/integrations/teams'
 import { sendWhatsAppMessage } from '@/lib/integrations/whatsapp'
+import { denyIfNotCron } from '@/lib/cron-auth'
 
 export async function GET(req: NextRequest) {
-  const secret = req.headers.get('authorization')
-  if (secret !== `Bearer ${process.env.CRON_SECRET}`) {
-    return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
-  }
+  const deny = denyIfNotCron(req)
+  if (deny) return deny
 
   const today = new Date().toISOString().slice(0, 10)
   const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10)
