@@ -548,7 +548,7 @@ export const managerRouter = router({
 
     const { data: users } = await ctx.db
       .from('users')
-      .select('id, full_name, geo_city, geo_country, geo_lat, geo_lon')
+      .select('id, full_name, geo_city, geo_country, geo_lat, geo_lon, geo_manual')
       .in('id', userIds)
       .eq('tenant_id', ctx.user!.tid)
 
@@ -573,6 +573,8 @@ export const managerRouter = router({
           city: user.geo_city ?? null,
           lat: user.geo_lat,
           lon: user.geo_lon,
+          // Declarada por un administrador: es un dato afirmado, no medido.
+          source: (user.geo_manual ? 'manual' : 'ip') as 'manual' | 'ip' | null,
         }
       }
       // Fall back to IP-based geolocation
@@ -585,6 +587,9 @@ export const managerRouter = router({
         city: geo?.city ?? null,
         lat: geo?.lat ?? null,
         lon: geo?.lon ?? null,
+        // Estimada: ipinfo devuelve la ciudad donde el ISP registra el rango,
+        // no donde esta el equipo.
+        source: (geo ? 'ip' : null) as 'manual' | 'ip' | null,
       }
     })
   }),

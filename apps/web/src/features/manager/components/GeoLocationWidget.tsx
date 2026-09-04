@@ -14,6 +14,29 @@ interface UserLoc {
   country_code: string | null
   lat: number | null
   lon: number | null
+  /** 'manual' = la declaró un administrador · 'ip' = estimada por la IP */
+  source?: 'manual' | 'ip' | null
+}
+
+// La ubicación por IP resuelve a la ciudad donde el ISP registra el rango, no a
+// donde está el equipo. Distinguirla de la declarada evita que se lea como una
+// medición real.
+const DECLARADA = '#06b6d4' // cian: dato afirmado por una persona
+const ESTIMADA = '#94a3b8' // gris: aproximación
+
+const esDeclarada = (l: UserLoc) => l.source === 'manual'
+
+function OrigenBadge({ loc }: { loc: UserLoc }) {
+  const declarada = esDeclarada(loc)
+  return (
+    <span
+      className={`shrink-0 rounded px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide ${
+        declarada ? 'bg-cyan-50 text-cyan-700' : 'bg-gray-100 text-gray-500'
+      }`}
+    >
+      {declarada ? 'declarada' : 'estimada'}
+    </span>
+  )
 }
 
 interface Tooltip {
@@ -107,14 +130,19 @@ export function GeoLocationWidget({ locations }: { locations: UserLoc[] }) {
                 <g style={{ cursor: 'pointer' }}>
                   <circle
                     r={isSelected ? 14 : 10}
-                    fill={isSelected ? '#f59e0b' : '#06b6d4'}
+                    fill={isSelected ? '#f59e0b' : esDeclarada(loc) ? DECLARADA : ESTIMADA}
                     opacity={0.2}
                   />
+                  {/* Relleno para la declarada; anillo hueco y punteado para la
+                      estimada, que no es una medición del equipo. */}
                   <circle
                     r={isSelected ? 7 : 5}
-                    fill={isSelected ? '#f59e0b' : '#06b6d4'}
-                    stroke="#fff"
+                    fill={
+                      isSelected ? '#f59e0b' : esDeclarada(loc) ? DECLARADA : 'rgba(13,27,62,0.85)'
+                    }
+                    stroke={isSelected ? '#fff' : esDeclarada(loc) ? '#fff' : ESTIMADA}
                     strokeWidth={1.5}
+                    strokeDasharray={!isSelected && !esDeclarada(loc) ? '2 1.5' : undefined}
                     opacity={0.95}
                   />
                 </g>
@@ -138,6 +166,11 @@ export function GeoLocationWidget({ locations }: { locations: UserLoc[] }) {
               {[tooltip.loc.city, tooltip.loc.country].filter(Boolean).join(', ') ||
                 'Ubicación desconocida'}
             </p>
+            <p className="mt-0.5 text-[9px] text-gray-400">
+              {esDeclarada(tooltip.loc)
+                ? 'Declarada por un administrador'
+                : 'Estimada por IP — puede no ser la ciudad real'}
+            </p>
           </div>
         )}
 
@@ -152,6 +185,9 @@ export function GeoLocationWidget({ locations }: { locations: UserLoc[] }) {
               <p className="text-[10px] text-gray-500">
                 {[selected.city, selected.country].filter(Boolean).join(', ') || '—'}
               </p>
+              <p className="text-[9px] text-gray-400">
+                {esDeclarada(selected) ? 'Declarada' : 'Estimada por IP'}
+              </p>
             </div>
             <button
               type="button"
@@ -163,6 +199,32 @@ export function GeoLocationWidget({ locations }: { locations: UserLoc[] }) {
           </div>
         )}
       </div>
+
+      {/* Leyenda: sin esto, un punto estimado se lee como una medición real */}
+      {mapped.length > 0 && (
+        <div className="mt-2.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-[10px] text-gray-500">
+          <span className="inline-flex items-center gap-1.5">
+            <svg width="10" height="10" aria-hidden="true">
+              <circle cx="5" cy="5" r="4" fill={DECLARADA} />
+            </svg>
+            Declarada por un administrador
+          </span>
+          <span className="inline-flex items-center gap-1.5">
+            <svg width="10" height="10" aria-hidden="true">
+              <circle
+                cx="5"
+                cy="5"
+                r="3.5"
+                fill="none"
+                stroke={ESTIMADA}
+                strokeWidth="1.5"
+                strokeDasharray="2 1.5"
+              />
+            </svg>
+            Estimada por IP — ciudad del proveedor de internet, no del equipo
+          </span>
+        </div>
+      )}
 
       {/* User list */}
       {mapped.length > 0 && (
@@ -193,7 +255,12 @@ export function GeoLocationWidget({ locations }: { locations: UserLoc[] }) {
                     {[loc.city, loc.country].filter(Boolean).join(', ') || 'Ubicación desconocida'}
                   </p>
                 </div>
-                <MapPin className="h-3 w-3 shrink-0 text-cyan-400" />
+                <OrigenBadge loc={loc} />
+                <MapPin
+                  className={`h-3 w-3 shrink-0 ${
+                    esDeclarada(loc) ? 'text-cyan-400' : 'text-gray-300'
+                  }`}
+                />
               </button>
             ))}
           </div>
