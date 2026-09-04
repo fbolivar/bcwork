@@ -456,7 +456,7 @@ export const adminRouter = router({
     const { data, error } = await ctx.db
       .from('work_schedules')
       .select(
-        'id, name, timezone, days_of_week, start_time, end_time, disconnection_grace_minutes, break_alert_enabled, break_alert_interval_minutes, break_alert_message, end_of_day_alert_enabled, end_of_day_alert_offset_minutes, end_of_day_alert_message, created_at',
+        'id, name, timezone, weekly_hours, days_of_week, start_time, end_time, disconnection_grace_minutes, break_alert_enabled, break_alert_interval_minutes, break_alert_message, end_of_day_alert_enabled, end_of_day_alert_offset_minutes, end_of_day_alert_message, created_at',
       )
       .eq('tenant_id', ctx.user!.tid)
       .order('name', { ascending: true })
@@ -1421,6 +1421,51 @@ export const adminRouter = router({
           productivity_ratio: Number(metricsRes.data?.productivity_ratio ?? 0),
         },
       }
+    }),
+
+  /**
+   * Agentes que dejaron de reportar.
+   *
+   * El de CK Solutions estuvo nueve días caído sin que nada lo delatara: la
+   * empresa creía estar monitoreada y no lo estaba. Un agente mudo no genera
+   * error, genera silencio — y el silencio se lee igual que "nadie trabajó".
+   */
+  getStaleAgents: adminProcedure
+    .input(z.object({ hours: z.number().int().min(1).max(720).default(24) }))
+    .query(async ({ ctx, input }) => {
+      const corte = new Date(Date.now() - input.hours * 3600_000).toISOString()
+
+      const { data: devices } = await ctx.db
+        .from('agent_devices')
+        .select('id, hostname, user_id, last_seen_at, enrolled_at, service_version')
+        .eq('tenant_id', ctx.user!.tid)
+        .is('revoked_at', null)
+
+      const mudos = (devices ?? []).filter((d) => !d.last_seen_at || d.last_seen_at < corte)
+      if (mudos.length === 0) return []
+
+      const ids = [...new Set(mudos.map((d) => d.user_id).filter(Boolean))] as string[]
+      const { data: users } = ids.length
+        ? await ctx.db
+            .from('users')
+            .select('id, full_name')
+            .eq('tenant_id', ctx.user!.tid)
+            .in('id', ids)
+        : { data: [] }
+      const byId = new Map((users ?? []).map((u) => [u.id, u.full_name]))
+
+      return mudos
+        .map((d) => ({
+          deviceId: d.id,
+          hostname: d.hostname,
+          fullName: d.user_id ? (byId.get(d.user_id) ?? 'Colaborador') : '(sin asignar)',
+          lastSeenAt: d.last_seen_at,
+          serviceVersion: d.service_version,
+          hoursSilent: d.last_seen_at
+            ? Math.floor((Date.now() - Date.parse(d.last_seen_at)) / 3600_000)
+            : null,
+        }))
+        .sort((a, b) => (b.hoursSilent ?? 99999) - (a.hoursSilent ?? 99999))
     }),
 
   // Colaboradores con agente instalado que NO tienen consentimiento vigente.

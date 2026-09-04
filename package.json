@@ -10,7 +10,8 @@
     "lint": "pnpm -r lint",
     "check:tenant": "node scripts/check-tenant-isolation.mjs",
     "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md}\" --ignore-path .prettierignore",
-    "prepare": "husky"
+    "prepare": "husky",
+    "publish:agent": "node scripts/publish-agent.mjs"
   },
   "lint-staged": {
     "**/*.{ts,tsx,js,jsx}": [

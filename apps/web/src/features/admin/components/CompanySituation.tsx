@@ -3,6 +3,7 @@
 import Link from 'next/link'
 import { TrendingUp, TrendingDown, ArrowRight, AlertTriangle, CheckCircle2 } from 'lucide-react'
 import { trpc } from '@/lib/trpc-client'
+import { excesoJornada, jornadaMaximaSemanal } from '@bcwork/shared'
 
 /**
  * "¿Cómo va la empresa?" — la pregunta que el Resumen no respondía.
@@ -44,6 +45,13 @@ export function CompanySituation() {
     undefined,
     { staleTime: 60_000 },
   )
+  const { data: agentesMudos = [] } = trpc.admin.getStaleAgents.useQuery(
+    { hours: 24 },
+    { staleTime: 60_000 },
+  )
+  const { data: horarios = [] } = trpc.admin.listSchedules.useQuery(undefined, {
+    staleTime: 5 * 60_000,
+  })
 
   if (isLoading) {
     return <div className="h-28 animate-pulse rounded-xl bg-gray-100" />
@@ -92,6 +100,25 @@ export function CompanySituation() {
       texto: `${d.fullName} es monitoreado sin haber aceptado la política`,
       href: '/admin/devices',
     })),
+    // Un agente mudo se lee igual que "no trabajo": hay que distinguirlo.
+    ...agentesMudos.map((d) => ({
+      tipo: 'agente' as const,
+      texto:
+        d.hoursSilent === null
+          ? `${d.fullName} (${d.hostname}): el agente nunca ha reportado`
+          : `${d.fullName} (${d.hostname}): el agente lleva ${d.hoursSilent} h sin reportar`,
+      href: '/admin/devices',
+    })),
+    // El cumplimiento se mide contra el horario configurado: si ese horario
+    // excede el maximo legal, todos los porcentajes comparan contra algo que la
+    // ley ya no permite.
+    ...horarios
+      .filter((h) => excesoJornada(Number(h.weekly_hours ?? 0)) > 0)
+      .map((h) => ({
+        tipo: 'jornada' as const,
+        texto: `El horario "${h.name}" tiene ${Number(h.weekly_hours)} h semanales; el máximo legal vigente es ${jornadaMaximaSemanal()} h (Ley 2101)`,
+        href: '/admin/schedules',
+      })),
     ...(sinClasificar
       ? [
           {
@@ -188,7 +215,9 @@ export function CompanySituation() {
                 >
                   <AlertTriangle
                     className={`h-3.5 w-3.5 shrink-0 ${
-                      a.tipo === 'consentimiento' ? 'text-red-500' : 'text-amber-500'
+                      a.tipo === 'consentimiento' || a.tipo === 'agente' || a.tipo === 'jornada'
+                        ? 'text-red-500'
+                        : 'text-amber-500'
                     }`}
                   />
                   <span className="flex-1">{a.texto}</span>
