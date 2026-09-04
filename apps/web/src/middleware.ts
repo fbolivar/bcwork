@@ -23,6 +23,8 @@ const PUBLIC_PREFIXES = [
   '/api/ingest/', // autenticadas por API key propio
   '/api/agent/', // update-check/descarga — autenticadas por API key del device
   '/api/payments/', // webhooks de pagos (Wompi) — autenticados por firma propia
+  '/api/cron/', // jobs de Vercel — autenticados con CRON_SECRET en cada ruta
+  // (sin esto el middleware los redirigía al login y nunca corrían)
   '/legal/',
 ]
 
