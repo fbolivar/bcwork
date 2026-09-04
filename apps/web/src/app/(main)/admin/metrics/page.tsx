@@ -1,4 +1,5 @@
 import { MetricsDashboard } from '@/features/admin/components/MetricsDashboard'
+import { DisconnectionPanel } from '@/features/admin/components/DisconnectionPanel'
 
 export default function MetricsPage() {
   return (
@@ -6,9 +7,10 @@ export default function MetricsPage() {
       <div>
         <h1 className="text-xl font-semibold text-gray-900">Métricas y KPIs</h1>
         <p className="mt-1 text-sm text-gray-500">
-          Productividad, actividad y tendencias del equipo. Actualización nocturna automática.
+          Productividad, actividad y tendencias del equipo. Se recalcula cada hora.
         </p>
       </div>
+      <DisconnectionPanel />
       <MetricsDashboard />
     </div>
   )

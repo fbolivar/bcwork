@@ -5,6 +5,7 @@ import { keepPreviousData } from '@tanstack/react-query'
 import { trpc } from '@/lib/trpc-client'
 import { formatDate } from '@/lib/format'
 import { InviteUserModal } from './InviteUserModal'
+import { UserDayPanel } from './UserDayPanel'
 import {
   UserPlus,
   ShieldCheck,
@@ -14,6 +15,7 @@ import {
   Check,
   Loader2,
   CalendarDays,
+  Clock,
   ChevronDown,
   Pencil,
   KeyRound,
@@ -535,6 +537,7 @@ export function UserTable() {
   const [page, setPage] = useState(1)
   const [showInvite, setShowInvite] = useState(false)
   const [locationUser, setLocationUser] = useState<UserRow | null>(null)
+  const [dayUser, setDayUser] = useState<UserRow | null>(null)
   const [scheduleUser, setScheduleUser] = useState<UserRow | null>(null)
   const [editUser, setEditUser] = useState<UserRow | null>(null)
 
@@ -691,6 +694,15 @@ export function UserTable() {
                     <div className="flex items-center gap-2">
                       <button
                         type="button"
+                        title="Ver la jornada: franja del día, activo vs inactivo"
+                        onClick={() => setDayUser(user as UserRow)}
+                        className="flex items-center gap-1 rounded px-2 py-1 text-xs font-medium text-cyan-700 hover:bg-cyan-50"
+                      >
+                        <Clock className="h-3.5 w-3.5" />
+                        Ver día
+                      </button>
+                      <button
+                        type="button"
                         title="Editar usuario"
                         onClick={() => setEditUser(user as UserRow)}
                         className="flex items-center gap-1 rounded px-2 py-1 text-xs font-medium text-gray-600 hover:bg-gray-100"
@@ -766,6 +778,13 @@ export function UserTable() {
       {showInvite && <InviteUserModal onClose={() => setShowInvite(false)} />}
       {editUser && <EditUserModal user={editUser} onClose={() => setEditUser(null)} />}
       {locationUser && <LocationModal user={locationUser} onClose={() => setLocationUser(null)} />}
+      {dayUser && (
+        <UserDayPanel
+          userId={dayUser.id}
+          fullName={dayUser.full_name ?? 'Colaborador'}
+          onClose={() => setDayUser(null)}
+        />
+      )}
       {scheduleUser && (
         <AssignScheduleModal
           user={scheduleUser}

@@ -4770,6 +4770,7 @@ export type Database = {
           created_at: string | null
           data_protection_officer: string | null
           data_retention_months: number | null
+          capture_window_titles: boolean
           id: string
           legal_name: string
           logo_url: string | null
@@ -4791,6 +4792,7 @@ export type Database = {
           created_at?: string | null
           data_protection_officer?: string | null
           data_retention_months?: number | null
+          capture_window_titles?: boolean
           id?: string
           legal_name: string
           logo_url?: string | null
@@ -4812,6 +4814,7 @@ export type Database = {
           created_at?: string | null
           data_protection_officer?: string | null
           data_retention_months?: number | null
+          capture_window_titles?: boolean
           id?: string
           legal_name?: string
           logo_url?: string | null

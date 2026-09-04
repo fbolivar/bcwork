@@ -148,6 +148,17 @@ export async function POST(req: NextRequest) {
       })
     }
 
+    // Los títulos de ventana solo se guardan si la empresa lo activó de forma
+    // explícita: pueden contener datos de clientes, montos o salud, y la Ley
+    // 1581 exige finalidad declarada. El agente los sigue enviando; el servidor
+    // decide si se persisten.
+    const { data: tenantCfg } = await db
+      .from('tenants')
+      .select('capture_window_titles')
+      .eq('id', tenantId)
+      .maybeSingle()
+    const guardarTitulos = tenantCfg?.capture_window_titles === true
+
     const rows = events.map((e) => ({
       tenant_id: tenantId,
       user_id: userId,
@@ -156,7 +167,7 @@ export async function POST(req: NextRequest) {
       event_type: e.event_type,
       app_identifier: e.app_identifier ?? null,
       domain: e.domain ?? null,
-      window_title: e.window_title ?? null,
+      window_title: guardarTitulos ? (e.window_title ?? null) : null,
       productivity:
         (e.app_identifier && catalogMap.get(e.app_identifier)) ?? e.productivity ?? null,
       started_at: e.started_at,

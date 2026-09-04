@@ -2,6 +2,7 @@ import { z } from 'zod'
 import { TRPCError } from '@trpc/server'
 import { router, adminProcedure, protectedProcedure, tenantAdminProcedure } from '../trpc'
 import { assertUserInTenant } from '../tenant-guard'
+import { localDayRange, localHourAndDow } from '@/lib/tz'
 import { hashPassword, generateRandomPassword, validatePasswordPolicy } from '@/lib/auth/password'
 import { logAudit } from '@/lib/auth/audit'
 import { encodeBcw, decodeBcw, BCW_VERSION } from '@/lib/bcw'
@@ -14,6 +15,16 @@ import {
 import type { Database } from '@bcwork/db'
 
 type UserInsert = Database['public']['Tables']['users']['Insert']
+
+// Zona horaria del tenant; sin ella los cortes de día y las horas nocturnas
+// se calcularían en UTC y quedarían corridos cinco horas en Colombia.
+async function getTenantTimezone(
+  db: { from: (t: 'tenants') => any },
+  tenantId: string,
+): Promise<string> {
+  const { data } = await db.from('tenants').select('timezone').eq('id', tenantId).maybeSingle()
+  return (data?.timezone as string) || 'America/Bogota'
+}
 
 export const adminRouter = router({
   // ─── Dashboard ────────────────────────────────────────────────────────────
@@ -1105,6 +1116,162 @@ export const adminRouter = router({
     const deviceSet = new Set((devices ?? []).map((d) => d.device_id))
     return { totalApps: totalApps ?? 0, devicesWithInventory: deviceSet.size }
   }),
+
+  /**
+   * Riesgo de desconexión laboral (Ley 2191 de 2022).
+   *
+   * Invierte el encuadre del producto: no vigila al trabajador, le avisa al
+   * empleador que está incumpliendo. Marca actividad fuera de la jornada — de
+   * noche, de madrugada o en fin de semana — porque la obligación de garantizar
+   * la desconexión es de la empresa, no de la persona.
+   *
+   * Las horas se evalúan en la zona del tenant: en UTC, las 19:00 de Bogotá
+   * parecerían medianoche y el conteo sería falso.
+   */
+  getDisconnectionRisk: adminProcedure
+    .input(z.object({ days: z.number().int().min(1).max(90).default(14) }))
+    .query(async ({ ctx, input }) => {
+      const tenantId = ctx.user!.tid
+      const tz = await getTenantTimezone(ctx.db, tenantId)
+      const from = new Date(Date.now() - input.days * 86400000).toISOString()
+
+      const [{ data: events }, { data: users }] = await Promise.all([
+        ctx.db
+          .from('activity_events')
+          .select('user_id, started_at, duration_seconds')
+          .eq('tenant_id', tenantId)
+          .gte('started_at', from)
+          .order('started_at', { ascending: false })
+          .limit(20000),
+        ctx.db.from('users').select('id, full_name').eq('tenant_id', tenantId),
+      ])
+
+      const nombres = new Map((users ?? []).map((u) => [u.id, u.full_name ?? 'Colaborador']))
+
+      type Acc = {
+        userId: string
+        nocturno: number
+        madrugada: number
+        finDeSemana: number
+        dias: Set<string>
+        ultima: string | null
+      }
+      const porUsuario = new Map<string, Acc>()
+
+      for (const e of events ?? []) {
+        if (!e.user_id || !e.started_at) continue
+        const { hour, dow } = localHourAndDow(e.started_at, tz)
+        const esNocturno = hour >= 20 && hour <= 23
+        const esMadrugada = hour >= 0 && hour < 6
+        const esFinde = dow === 0 || dow === 6
+        if (!esNocturno && !esMadrugada && !esFinde) continue
+
+        const a = porUsuario.get(e.user_id) ?? {
+          userId: e.user_id,
+          nocturno: 0,
+          madrugada: 0,
+          finDeSemana: 0,
+          dias: new Set<string>(),
+          ultima: null,
+        }
+        const secs = e.duration_seconds ?? 0
+        if (esMadrugada) a.madrugada += secs
+        else if (esNocturno) a.nocturno += secs
+        if (esFinde) a.finDeSemana += secs
+        a.dias.add(e.started_at.slice(0, 10))
+        if (!a.ultima || e.started_at > a.ultima) a.ultima = e.started_at
+        porUsuario.set(e.user_id, a)
+      }
+
+      return [...porUsuario.values()]
+        .map((a) => ({
+          userId: a.userId,
+          fullName: nombres.get(a.userId) ?? 'Colaborador',
+          nightSeconds: a.nocturno,
+          earlyMorningSeconds: a.madrugada,
+          weekendSeconds: a.finDeSemana,
+          daysAffected: a.dias.size,
+          lastAt: a.ultima,
+          totalSeconds: a.nocturno + a.madrugada + a.finDeSemana,
+        }))
+        .filter((r) => r.totalSeconds >= 300) // menos de 5 min es ruido, no una jornada
+        .sort((a, b) => b.totalSeconds - a.totalSeconds)
+    }),
+
+  // Detalle del día de un colaborador: la franja de actividad y el reparto
+  // entre tiempo activo e inactivo. Hasta ahora esta vista solo existía para el
+  // empleado sobre sí mismo; el administrador únicamente veía promedios.
+  getUserDayDetail: adminProcedure
+    .input(
+      z.object({
+        userId: z.string().uuid(),
+        date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+      }),
+    )
+    .query(async ({ ctx, input }) => {
+      await assertUserInTenant(ctx.db, input.userId, ctx.user!.tid)
+      const tz = await getTenantTimezone(ctx.db, ctx.user!.tid)
+      const { from, to } = localDayRange(input.date, tz)
+
+      const [eventsRes, metricsRes, sessionsRes] = await Promise.all([
+        ctx.db
+          .from('activity_events')
+          .select('id, started_at, duration_seconds, app_identifier, productivity')
+          .eq('tenant_id', ctx.user!.tid)
+          .eq('user_id', input.userId)
+          .gte('started_at', from)
+          .lt('started_at', to)
+          .order('started_at', { ascending: true })
+          .limit(1000),
+        ctx.db
+          .from('daily_user_metrics')
+          .select('active_seconds, productive_seconds, non_productive_seconds, productivity_ratio')
+          .eq('tenant_id', ctx.user!.tid)
+          .eq('user_id', input.userId)
+          .eq('metric_date', input.date)
+          .maybeSingle(),
+        ctx.db
+          .from('work_sessions')
+          .select('id, started_at, ended_at, active_seconds, idle_seconds')
+          .eq('tenant_id', ctx.user!.tid)
+          .eq('user_id', input.userId)
+          .gte('started_at', from)
+          .lt('started_at', to)
+          .order('started_at', { ascending: true }),
+      ])
+
+      const sessions = sessionsRes.data ?? []
+      const activeSeconds = sessions.reduce((s, x) => s + (x.active_seconds ?? 0), 0)
+      const idleSeconds = sessions.reduce((s, x) => s + (x.idle_seconds ?? 0), 0)
+
+      return {
+        timezone: tz,
+        events: (eventsRes.data ?? []).map((e) => ({
+          id: String(e.id),
+          started_at: e.started_at,
+          duration_seconds: e.duration_seconds ?? 0,
+          app_identifier: e.app_identifier ?? null,
+          productivity: (e.productivity ?? 'neutral') as string,
+        })),
+        sessions: sessions.map((s) => ({
+          id: String(s.id),
+          started_at: s.started_at,
+          ended_at: s.ended_at,
+          active_seconds: s.active_seconds ?? 0,
+          idle_seconds: s.idle_seconds ?? 0,
+        })),
+        totals: {
+          active_seconds: activeSeconds,
+          idle_seconds: idleSeconds,
+          // Presencia = tiempo con el equipo encendido. Distinguirla del tiempo
+          // activo es lo que hace creíble cualquier porcentaje.
+          presence_seconds: activeSeconds + idleSeconds,
+          productive_seconds: metricsRes.data?.productive_seconds ?? 0,
+          non_productive_seconds: metricsRes.data?.non_productive_seconds ?? 0,
+          productivity_ratio: Number(metricsRes.data?.productivity_ratio ?? 0),
+        },
+      }
+    }),
 
   // Colaboradores con agente instalado que NO tienen consentimiento vigente.
   // Ley 1581/2012: el monitoreo requiere autorizacion previa del titular. Esto
