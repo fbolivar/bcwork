@@ -14,6 +14,7 @@ import {
   Clock,
 } from 'lucide-react'
 import Link from 'next/link'
+import { CompanySituation } from './CompanySituation'
 
 const GeoLocationWidget = dynamic(
   () =>
@@ -85,6 +86,10 @@ export function DashboardStats() {
   const snap = trpc.admin.getTeamSnapshot.useQuery(undefined, { refetchInterval: 30_000 })
   const { data: geoLocations = [] } = trpc.manager.getTeamGeoLocations.useQuery()
   const { data: me } = trpc.auth.me.useQuery(undefined, { staleTime: 5 * 60 * 1000 })
+  const { data: consentPendientes = [] } = trpc.admin.getMonitoringWithoutConsent.useQuery(
+    undefined,
+    { staleTime: 60_000 },
+  )
 
   const now = new Date()
   const hour = now.getHours()
@@ -153,7 +158,12 @@ export function DashboardStats() {
         </div>
       </div>
 
-      {/* 4 KPI cards — operacionales de hoy */}
+      {/* La respuesta primero: como va la empresa. Antes el panel abria con
+          inventario (dispositivos, usuarios, sesiones) y nunca decia si la
+          semana habia sido buena o mala. */}
+      <CompanySituation />
+
+      {/* Estado operativo: util, pero es contexto, no la respuesta. */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {/* Dispositivos */}
         <div className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
@@ -317,11 +327,19 @@ export function DashboardStats() {
         />
 
         <UtilCard
-          label="Cumplimiento legal"
-          value="Activo"
-          sub="Ley 1581/2012 · Ley 2191/2022"
+          label="Consentimientos"
+          value={
+            consentPendientes.length === 0
+              ? 'Al día'
+              : `${consentPendientes.length} pendiente${consentPendientes.length === 1 ? '' : 's'}`
+          }
+          sub={
+            consentPendientes.length === 0
+              ? 'todos los agentes autorizados'
+              : 'monitoreo sin autorización (Ley 1581)'
+          }
           icon={ShieldCheck}
-          color="#22c55e"
+          color={consentPendientes.length === 0 ? '#22c55e' : '#ef4444'}
         />
       </div>
 
