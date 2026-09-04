@@ -62,6 +62,7 @@ export function UserDayPanel({
 
   const tz = data?.timezone ?? 'America/Bogota'
   const t = data?.totals
+  const hayInactividad = (t?.idle_seconds ?? 0) > 0
 
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-4">
@@ -103,7 +104,13 @@ export function UserDayPanel({
                 hint="equipo encendido"
               />
               <Metrica label="Activo" value={hhmm(t!.active_seconds)} hint="con interacción" />
-              <Metrica label="Inactivo" value={hhmm(t!.idle_seconds)} hint="sin interacción" />
+              {/* El agente todavía no reporta inactividad (la envía fija en 0).
+                  Mostrar "0m" haría pasar por medición algo que no se midió. */}
+              <Metrica
+                label="Inactivo"
+                value={hayInactividad ? hhmm(t!.idle_seconds) : 'sin dato'}
+                hint={hayInactividad ? 'sin interacción' : 'el agente no lo reporta'}
+              />
               <Metrica
                 label="Productivo"
                 value={hhmm(t!.productive_seconds)}
@@ -111,7 +118,7 @@ export function UserDayPanel({
               />
             </div>
 
-            {t!.presence_seconds > 0 && (
+            {hayInactividad && t!.presence_seconds > 0 && (
               <div className="mt-3">
                 <div className="flex h-2 overflow-hidden rounded-full bg-gray-100">
                   <div
@@ -183,7 +190,11 @@ export function UserDayPanel({
             {data.sessions.length > 0 && (
               <div className="mt-5">
                 <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-widest text-gray-400">
-                  Sesiones ({data.sessions.length})
+                  Tramos reportados ({data.sessions.length})
+                </p>
+                <p className="mb-1.5 text-[10px] text-amber-600">
+                  El agente abre un tramo por cada envío y no los cierra, así que esto no equivale a
+                  jornadas. Se corrige en la próxima versión del agente.
                 </p>
                 <div className="max-h-40 space-y-1 overflow-y-auto">
                   {data.sessions.map((s) => (
