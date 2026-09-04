@@ -1,6 +1,6 @@
 {
   "productName": "BCWork Agent",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "identifier": "com.bcfabric.bcwork-agent",
   "build": {
     "frontendDist": "../dist",

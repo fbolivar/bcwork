@@ -18,7 +18,11 @@ const VERSION: &str = env!("CARGO_PKG_VERSION");
 const SENDER_INTERVAL_SECS: u64 = 60;
 const WATCHDOG_INTERVAL_SECS: u64 = 15;
 const INVENTORY_INTERVAL_SECS: u64 = 12 * 3600;
-const UPDATE_INTERVAL_SECS: u64 = 6 * 3600;
+// Cada 30 min: la consulta es un GET que devuelve un JSON pequeño, y a cambio
+// una corrección llega a la flota en media hora en vez de seis. El primer
+// chequeo ocurre al arrancar el servicio, así que reiniciarlo fuerza la
+// actualización de inmediato.
+const UPDATE_INTERVAL_SECS: u64 = 30 * 60;
 const BATCH_SIZE: usize = 500;
 
 fn main() {
