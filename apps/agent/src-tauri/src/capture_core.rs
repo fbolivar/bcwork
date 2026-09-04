@@ -15,6 +15,9 @@ pub struct SessionCounters {
     pub idle_seconds: u64,
     pub current_app: Option<String>,
     pub started: bool,
+    /// Inicio de la jornada en curso (RFC3339). El servicio lo usa como
+    /// `started_at` de la sesión en el servidor.
+    pub session_started_at: Option<String>,
 }
 
 /// Un tick de captura: mide idle + ventana activa, actualiza contadores y (si hay
@@ -48,6 +51,26 @@ pub fn capture_step(db_path: &Path, mut counters: SessionCounters) -> SessionCou
             log::error!("no se pudo bufferizar evento: {}", e);
         }
     }
+
+    if counters.session_started_at.is_none() {
+        // Arranque del helper = jornada nueva. Se olvida el id anterior para que
+        // el servidor abra otra sesión: si no, los contadores (que vuelven a
+        // cero) pisarían los valores ya acumulados de la sesión vieja.
+        counters.session_started_at = Some(now.to_rfc3339());
+        buffer::clear_state(db_path, "session_id");
+    }
+
+    // Publicar el estado para el servicio: es el único camino por el que la
+    // inactividad medida aquí llega al servidor.
+    let _ = buffer::set_state(db_path, "active_seconds", &counters.active_seconds.to_string());
+    let _ = buffer::set_state(db_path, "idle_seconds", &counters.idle_seconds.to_string());
+    if let Some(ref started) = counters.session_started_at {
+        let _ = buffer::set_state(db_path, "session_started_at", started);
+    }
+    if !is_idle {
+        let _ = buffer::set_state(db_path, "last_activity_at", &now.to_rfc3339());
+    }
+
     counters
 }
 

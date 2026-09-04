@@ -40,7 +40,11 @@ pub fn init(path: &Path) -> Result<()> {
             sent            INTEGER NOT NULL DEFAULT 0,
             created_at      TEXT    NOT NULL DEFAULT (datetime('now'))
         );
-        CREATE INDEX IF NOT EXISTS idx_events_sent ON events(sent);",
+        CREATE INDEX IF NOT EXISTS idx_events_sent ON events(sent);
+        CREATE TABLE IF NOT EXISTS agent_state (
+            k TEXT PRIMARY KEY,
+            v TEXT NOT NULL
+        );",
     )?;
     Ok(())
 }
@@ -109,4 +113,37 @@ pub fn mark_sent(path: &Path, ids: &[i64]) -> Result<()> {
 pub fn count_pending(path: &Path) -> Result<i64> {
     let conn = Connection::open(path)?;
     Ok(conn.query_row("SELECT COUNT(*) FROM events WHERE sent = 0", [], |r| r.get(0))?)
+}
+
+// ── Estado compartido helper ↔ servicio ─────────────────────────────────────
+//
+// El helper corre en la sesión del usuario y es el único que mide inactividad;
+// el servicio es el único que habla con el servidor. La BD del buffer (en WAL)
+// es el canal entre ambos: sin esto el servicio no tiene forma de conocer los
+// contadores y terminaba enviando ceros.
+
+pub fn set_state(path: &Path, k: &str, v: &str) -> Result<()> {
+    let conn = Connection::open(path)?;
+    conn.busy_timeout(std::time::Duration::from_secs(5))?;
+    conn.execute(
+        "INSERT INTO agent_state (k, v) VALUES (?1, ?2)
+         ON CONFLICT(k) DO UPDATE SET v = excluded.v",
+        params![k, v],
+    )?;
+    Ok(())
+}
+
+pub fn get_state(path: &Path, k: &str) -> Option<String> {
+    let conn = Connection::open(path).ok()?;
+    conn.busy_timeout(std::time::Duration::from_secs(5)).ok()?;
+    conn.query_row("SELECT v FROM agent_state WHERE k = ?1", params![k], |r| {
+        r.get::<_, String>(0)
+    })
+    .ok()
+}
+
+pub fn clear_state(path: &Path, k: &str) {
+    if let Ok(conn) = Connection::open(path) {
+        let _ = conn.execute("DELETE FROM agent_state WHERE k = ?1", params![k]);
+    }
 }

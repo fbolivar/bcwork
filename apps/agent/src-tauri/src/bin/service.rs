@@ -114,6 +114,10 @@ async fn worker_main(shutdown_rx: std::sync::mpsc::Receiver<()>) {
     loop {
         if shutdown_rx.try_recv().is_ok() {
             log::info!("shutdown solicitado");
+            // Drenar lo pendiente y cerrar la sesión: si no, queda abierta para
+            // siempre y la jornada nunca tiene hora de fin.
+            let _ = send_batch(&creds, &db_path).await;
+            close_session(&creds, &db_path).await;
             // Un stop del servicio es una acción de administrador: lo reportamos.
             let _ = ingest::report_tamper(&creds, "stop_attempt", Some("service stop")).await;
             break;
@@ -181,6 +185,54 @@ async fn worker_main(shutdown_rx: std::sync::mpsc::Receiver<()>) {
     }
 }
 
+/// Cierra la sesión abierta en el servidor (`is_active: false`) y olvida el id.
+/// Sin esto todas las work_sessions quedaban con ended_at en NULL.
+async fn close_session(creds: &bcwork_agent::ingest::Credentials, db_path: &std::path::Path) {
+    use bcwork_agent::buffer;
+
+    let Some(session_id) = buffer::get_state(db_path, "session_id") else {
+        return;
+    };
+    let active_seconds: i64 = buffer::get_state(db_path, "active_seconds")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(0);
+    let idle_seconds: i64 = buffer::get_state(db_path, "idle_seconds")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(0);
+
+    let payload = serde_json::json!({
+        "batch_id": uuid::Uuid::new_v4().to_string(),
+        "events": [],
+        "session_state": {
+            "session_id": session_id,
+            "started_at": buffer::get_state(db_path, "session_started_at"),
+            "is_active": false,
+            "active_seconds": active_seconds,
+            "idle_seconds": idle_seconds,
+        },
+    });
+
+    let client = reqwest::Client::new();
+    let sent = client
+        .post(format!(
+            "{}/api/ingest/activity",
+            creds.server_url.trim_end_matches('/')
+        ))
+        .bearer_auth(&creds.api_key)
+        .json(&payload)
+        .send()
+        .await;
+
+    match sent {
+        Ok(r) if r.status().is_success() => {
+            buffer::clear_state(db_path, "session_id");
+            log::info!("sesión cerrada en el servidor");
+        }
+        Ok(r) => log::warn!("no se pudo cerrar la sesión: {}", r.status()),
+        Err(e) => log::warn!("no se pudo cerrar la sesión: {e}"),
+    }
+}
+
 async fn send_batch(
     creds: &bcwork_agent::ingest::Credentials,
     db_path: &std::path::Path,
@@ -208,21 +260,32 @@ async fn send_batch(
         })
         .collect();
 
-    let total_active: i64 = events.iter().map(|e| e.duration_seconds).sum();
-    let started_at = events
-        .first()
-        .map(|e| e.started_at.clone())
-        .unwrap_or_else(|| chrono::Utc::now().to_rfc3339());
+    // Contadores reales publicados por el helper. Antes se enviaba
+    // `session_id: null` e `idle_seconds: 0` fijos: el servidor abría una sesión
+    // nueva por cada lote (miles sin cerrar) y la inactividad medida se perdía.
+    let session_id = buffer::get_state(db_path, "session_id");
+    let active_seconds: i64 = buffer::get_state(db_path, "active_seconds")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or_else(|| events.iter().map(|e| e.duration_seconds).sum());
+    let idle_seconds: i64 = buffer::get_state(db_path, "idle_seconds")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(0);
+    let started_at = buffer::get_state(db_path, "session_started_at").unwrap_or_else(|| {
+        events
+            .first()
+            .map(|e| e.started_at.clone())
+            .unwrap_or_else(|| chrono::Utc::now().to_rfc3339())
+    });
 
     let payload = serde_json::json!({
         "batch_id": uuid::Uuid::new_v4().to_string(),
         "events": batch_events,
         "session_state": {
-            "session_id": null,
+            "session_id": session_id,
             "started_at": started_at,
             "is_active": true,
-            "active_seconds": total_active,
-            "idle_seconds": 0,
+            "active_seconds": active_seconds,
+            "idle_seconds": idle_seconds,
         },
     });
 
@@ -241,6 +304,13 @@ async fn send_batch(
     if status.is_success() {
         let ids: Vec<i64> = events.iter().filter_map(|e| e.id).collect();
         buffer::mark_sent(db_path, &ids)?;
+        // Guardar el id que asignó el servidor: sin esto el próximo lote vuelve
+        // a abrir otra sesión.
+        if let Ok(body) = resp.json::<serde_json::Value>().await {
+            if let Some(sid) = body.get("session_id").and_then(|v| v.as_str()) {
+                let _ = buffer::set_state(db_path, "session_id", sid);
+            }
+        }
         log::info!("batch enviado: {} eventos", ids.len());
     } else if status.as_u16() == 401 || status.as_u16() == 403 {
         // Device sin asignar todavía, o revocado. No drenar; reintentar luego.
