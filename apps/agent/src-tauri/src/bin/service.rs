@@ -243,10 +243,15 @@ async fn send_batch(
 ) -> anyhow::Result<()> {
     use bcwork_agent::buffer;
 
+    // Sin eventos igual se envía: es el latido del agente.
+    //
+    // capture_step solo genera eventos cuando hay actividad, así que un equipo
+    // encendido con la persona inactiva no producía ningún envío y last_seen_at
+    // quedaba congelado: el panel lo mostraba "offline", idéntico a un equipo
+    // apagado. Para un producto de teletrabajo esa confusión importa — inactivo
+    // y apagado no son lo mismo. El latido además hace llegar los segundos de
+    // inactividad mientras están ocurriendo, no recién cuando la persona vuelve.
     let events = buffer::take_pending(db_path, BATCH_SIZE)?;
-    if events.is_empty() {
-        return Ok(());
-    }
 
     let batch_events: Vec<serde_json::Value> = events
         .iter()
@@ -280,6 +285,12 @@ async fn send_batch(
             .map(|e| e.started_at.clone())
             .unwrap_or_else(|| chrono::Utc::now().to_rfc3339())
     });
+
+    // El helper aún no arrancó a capturar: sin contadores no hay nada que latir
+    // y abrir una sesión vacía en el servidor solo ensuciaría los datos.
+    if events.is_empty() && buffer::get_state(db_path, "session_started_at").is_none() {
+        return Ok(());
+    }
 
     let payload = serde_json::json!({
         "batch_id": uuid::Uuid::new_v4().to_string(),
@@ -315,7 +326,11 @@ async fn send_batch(
                 let _ = buffer::set_state(db_path, "session_id", sid);
             }
         }
-        log::info!("batch enviado: {} eventos", ids.len());
+        if ids.is_empty() {
+            log::debug!("latido enviado (sin eventos)");
+        } else {
+            log::info!("batch enviado: {} eventos", ids.len());
+        }
     } else if status.as_u16() == 401 || status.as_u16() == 403 {
         // Device sin asignar todavía, o revocado. No drenar; reintentar luego.
         log::warn!("actividad rechazada ({}): device sin asignar o revocado", status);
