@@ -13,8 +13,9 @@
  *   2. Lo deja como installers/update.msi  → canal de auto-actualización.
  *   3. Lo deja como scripts/base-installer.msi → base de instaladores nuevos.
  *   4. Registra version + sha256 en agent_release.
- *   5. Por cada empresa activa: hornea un token nuevo, arma el ZIP y registra
- *      el hash en agent_provisioning_tokens.
+ *   5. Por cada empresa activa: hornea un token nuevo (vence a los 90 dias),
+ *      arma el ZIP, registra el hash y revoca los tokens anteriores de esa
+ *      empresa — el ZIP vigente es el nuevo.
  *
  * Uso:
  *   node scripts/publish-agent.mjs [--msi <ruta>] [--notes "..."] [--dry-run]
@@ -165,14 +166,35 @@ async function main() {
       copyFileSync(join(RAIZ, 'apps/agent/scripts/Instalar.bat'), join(stage, 'Instalar.bat'))
       zipear(stage, join(RAIZ, 'apps/web/installers', `${t.id}.zip`))
 
+      // 90 días: un token de aprovisionamiento enrola equipos nuevos en la
+      // empresa, y sin vencimiento un ZIP viejo queda siendo una credencial
+      // valida para siempre.
+      const vence = new Date(Date.now() + 90 * 86400000).toISOString()
       const { error } = await db.from('agent_provisioning_tokens').insert({
         tenant_id: t.id,
         token_hash,
         token_prefix,
         created_by: admin.id,
+        expires_at: vence,
       })
       if (error) throw new Error(error.message)
-      console.log(`  ✓ ${t.trade_name} (${t.status}) — token ${token_prefix}`)
+
+      // Revocar los anteriores de esta empresa: el ZIP que se sirve es el nuevo,
+      // y dejarlos vivos era lo que hacia crecer la pila publicacion tras
+      // publicacion (13 activos con solo 3 clientes).
+      const { data: revocados } = await db
+        .from('agent_provisioning_tokens')
+        .update({ revoked_at: new Date().toISOString() })
+        .eq('tenant_id', t.id)
+        .is('revoked_at', null)
+        .neq('token_hash', token_hash)
+        .select('token_prefix')
+
+      const nRev = revocados?.length ?? 0
+      console.log(
+        `  ✓ ${t.trade_name} (${t.status}) — token ${token_prefix}` +
+          (nRev > 0 ? `, ${nRev} anterior(es) revocado(s)` : ''),
+      )
     } finally {
       rmSync(stage, { recursive: true, force: true })
     }

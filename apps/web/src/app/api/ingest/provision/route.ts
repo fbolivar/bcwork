@@ -42,7 +42,7 @@ export async function POST(req: NextRequest) {
 
   const { data: prov, error: provErr } = await db
     .from('agent_provisioning_tokens')
-    .select('id, tenant_id, created_by, revoked_at')
+    .select('id, tenant_id, created_by, revoked_at, expires_at')
     .eq('token_hash', tokenHash)
     .single()
 
@@ -51,6 +51,12 @@ export async function POST(req: NextRequest) {
   }
   if (prov.revoked_at) {
     return NextResponse.json({ error: 'token_revoked' }, { status: 401 })
+  }
+  // Un token de aprovisionamiento enrola equipos nuevos en la empresa: que
+  // caduque es lo que evita que un ZIP viejo siga siendo una credencial válida
+  // para siempre.
+  if (prov.expires_at && new Date(prov.expires_at) < new Date()) {
+    return NextResponse.json({ error: 'token_expired' }, { status: 401 })
   }
 
   // API key del device (el hash sirve también como device_token_hash)

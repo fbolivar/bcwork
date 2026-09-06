@@ -1003,6 +1003,9 @@ export const adminRouter = router({
           token_prefix: token.slice(0, 8),
           label: input.label ?? null,
           created_by: ctx.user!.sub,
+          // Misma caducidad que los que emite el script de publicación: un
+          // token sin vencimiento es una credencial de enrolamiento eterna.
+          expires_at: new Date(Date.now() + 90 * 86400000).toISOString(),
         })
         .select('id, token_prefix, created_at')
         .single()

@@ -660,6 +660,7 @@ export type Database = {
           tenant_id: string
           token_hash: string
           token_prefix: string
+          expires_at: string | null
         }
         Insert: {
           created_at?: string | null
@@ -672,6 +673,7 @@ export type Database = {
           tenant_id: string
           token_hash: string
           token_prefix: string
+          expires_at?: string | null
         }
         Update: {
           created_at?: string | null
@@ -684,6 +686,7 @@ export type Database = {
           tenant_id?: string
           token_hash?: string
           token_prefix?: string
+          expires_at?: string | null
         }
         Relationships: [
           {
