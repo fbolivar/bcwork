@@ -2,10 +2,12 @@
 
 import { useState } from 'react'
 import { trpc as api } from '@/lib/trpc-client'
+import { downloadXlsx, type Sheet } from '@/lib/xlsx'
 import {
   BarChart2,
   Download,
   FileText,
+  FileSpreadsheet,
   Play,
   Calendar,
   LayoutDashboard,
@@ -99,7 +101,9 @@ function downloadCSV(rows: unknown[], filename: string, preface: string[] = []) 
   )
   const body = [header, ...lines]
   const csv = (preface.length ? [...preface, '', ...body] : body).join('\n')
-  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
+  // El BOM es lo unico que hace que Excel lea el archivo como UTF-8; sin el,
+  // toda tilde sale corrupta.
+  const blob = new Blob(['﻿', csv], { type: 'text/csv;charset=utf-8;' })
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
   a.href = url
@@ -213,6 +217,34 @@ export function ReportBuilderPanel() {
         `Generado,${csvCell(new Date().toLocaleString('es-CO'))}`,
       ]
     : []
+
+  /** Dos hojas: el comparativo por area y el detalle fila a fila. */
+  function downloadExcel() {
+    const hojas: Sheet[] = []
+    if (groups.length > 0) {
+      hojas.push({
+        name: 'Resumen',
+        header: ['Departamento', 'Personas', metricLabel, 'Período anterior', 'Variación %'],
+        rows: [
+          ...groups.map((g) => [g.department, g.people, g.value, g.previousValue, g.deltaPct]),
+          ...(totals ? [['TOTAL', null, totals.value, totals.previousValue, totals.deltaPct]] : []),
+        ],
+      })
+    }
+    if (rows.length > 0) {
+      hojas.push({
+        name: 'Detalle',
+        header: columns.map((c) => COLUMN_LABELS[c] ?? c),
+        rows: rows.map((r) =>
+          columns.map((c) => {
+            const v = r[c]
+            return typeof v === 'number' || typeof v === 'string' ? v : v == null ? null : String(v)
+          }),
+        ),
+      })
+    }
+    downloadXlsx(hojas, `bcwork-${reportType}-${dateFrom}-${dateTo}.xlsx`)
+  }
 
   async function downloadPDF() {
     if (!rows.length) return
@@ -340,6 +372,61 @@ export function ReportBuilderPanel() {
         })
         doc.setFont('helvetica', 'normal')
         y += 5
+      }
+
+      // ── Grafico de barras: actual contra anterior, por departamento ──
+      // jsPDF no dibuja graficos, pero un comparativo de barras son rectangulos
+      // y no justifica arrastrar una libreria de charts al PDF.
+      if (groups.length > 0) {
+        const alto = 34
+        const anchoGraf = contentW
+        const maximo = Math.max(...groups.map((g) => Math.max(g.value, g.previousValue ?? 0)), 1)
+        const paso = anchoGraf / groups.length
+        const anchoBarra = Math.min(paso / 3, 14)
+        const base = y + alto
+
+        doc.setFont('helvetica', 'bold')
+        doc.setFontSize(9)
+        doc.setTextColor(30, 41, 59)
+        doc.text('Comparativo por departamento', margin, y - 1)
+        doc.setFont('helvetica', 'normal')
+
+        // Eje base
+        doc.setDrawColor(203, 213, 225)
+        doc.setLineWidth(0.2)
+        doc.line(margin, base, margin + anchoGraf, base)
+
+        groups.forEach((g, i) => {
+          const centro = margin + paso * i + paso / 2
+          const hAct = (g.value / maximo) * (alto - 4)
+          const hPrev = ((g.previousValue ?? 0) / maximo) * (alto - 4)
+
+          doc.setFillColor(148, 163, 184) // anterior, gris
+          doc.rect(centro - anchoBarra - 0.5, base - hPrev, anchoBarra, hPrev, 'F')
+          doc.setFillColor(8, 145, 178) // actual, cian
+          doc.rect(centro + 0.5, base - hAct, anchoBarra, hAct, 'F')
+
+          doc.setFontSize(6.5)
+          doc.setTextColor(100, 100, 100)
+          const etiqueta =
+            (doc.splitTextToSize(g.department, paso - 2)[0] as string) ?? g.department
+          doc.text(etiqueta, centro, base + 4, { align: 'center' })
+          doc.setTextColor(30, 41, 59)
+          doc.text(fmtValor(g.value), centro, base - hAct - 1.5, { align: 'center' })
+        })
+
+        // Leyenda
+        const leyendaY = base + 9
+        doc.setFillColor(8, 145, 178)
+        doc.rect(margin, leyendaY - 2.5, 3, 3, 'F')
+        doc.setFontSize(7)
+        doc.setTextColor(90, 90, 90)
+        doc.text('Período actual', margin + 5, leyendaY)
+        doc.setFillColor(148, 163, 184)
+        doc.rect(margin + 34, leyendaY - 2.5, 3, 3, 'F')
+        doc.text('Período anterior', margin + 39, leyendaY)
+
+        y = leyendaY + 7
       }
 
       // ── Detalle ──
@@ -529,6 +616,16 @@ export function ReportBuilderPanel() {
               <Play className="h-3.5 w-3.5" />
               {isFetching ? 'Generando...' : 'Generar informe'}
             </button>
+            {rows.length > 0 && (
+              <button
+                type="button"
+                onClick={downloadExcel}
+                className="flex items-center gap-1.5 rounded-lg border border-gray-200 px-4 py-2 text-sm text-gray-600 hover:bg-gray-50"
+              >
+                <FileSpreadsheet className="h-3.5 w-3.5" />
+                Exportar Excel
+              </button>
+            )}
             {rows.length > 0 && (
               <button
                 type="button"
