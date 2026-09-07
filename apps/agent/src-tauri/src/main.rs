@@ -20,7 +20,7 @@ use bcwork_agent::{buffer, capture_core, ingest, paths};
 static ASSIGNED: AtomicBool = AtomicBool::new(false);
 
 fn main() {
-    env_logger::init();
+    init_helper_logging();
     let _ = paths::ensure_base_dir();
     let _ = buffer::init(&paths::buffer_db());
 
@@ -54,6 +54,26 @@ fn main() {
         })
         .run(tauri::generate_context!())
         .expect("error running helper");
+}
+
+/// El helper corre en la sesion del usuario y tampoco tenia consola donde
+/// escribir. Va a su propio archivo para no entrelazarse con el del servicio.
+fn init_helper_logging() {
+    let dir = paths::log_dir();
+    let _ = std::fs::create_dir_all(&dir);
+    let path = dir.join("helper.log");
+    if let Ok(md) = std::fs::metadata(&path) {
+        if md.len() > 5 * 1024 * 1024 {
+            let _ = std::fs::rename(&path, dir.join("helper.log.old"));
+        }
+    }
+    let mut b = env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info"));
+    b.format_timestamp_secs();
+    if let Ok(f) = std::fs::OpenOptions::new().create(true).append(true).open(&path) {
+        b.target(env_logger::Target::Pipe(Box::new(f)));
+    }
+    b.init();
+    log::info!("--- helper iniciado ---");
 }
 
 async fn capture_loop() {

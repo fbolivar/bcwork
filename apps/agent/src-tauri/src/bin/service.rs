@@ -80,10 +80,35 @@ fn flag_value(args: &[String], flag: &str) -> Option<String> {
         .cloned()
 }
 
+/// Log a archivo en ProgramData\BCWork\logs.
+///
+/// Antes esto solo creaba el directorio y dejaba a env_logger escribiendo en
+/// stderr — que en un servicio de Windows no existe. Resultado: carpeta de logs
+/// vacia y cero rastro. El 2026-09-07, con tres equipos mudos, el diagnostico
+/// tuvo que deducirse desde la base de datos porque el agente no habia dejado
+/// una sola linea.
 fn init_logging() {
-    // Log a archivo en ProgramData\BCWork\logs (SYSTEM no tiene consola).
-    let _ = std::fs::create_dir_all(bcwork_agent::paths::log_dir());
-    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
+    let dir = bcwork_agent::paths::log_dir();
+    let _ = std::fs::create_dir_all(&dir);
+    let path = dir.join("service.log");
+
+    // Rotacion simple: un equipo del piloto no deberia acumular mas de unos MB.
+    if let Ok(md) = std::fs::metadata(&path) {
+        if md.len() > 5 * 1024 * 1024 {
+            let _ = std::fs::rename(&path, dir.join("service.log.old"));
+        }
+    }
+
+    let mut b = env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info"));
+    b.format_timestamp_secs();
+    match std::fs::OpenOptions::new().create(true).append(true).open(&path) {
+        Ok(f) => {
+            b.target(env_logger::Target::Pipe(Box::new(f)));
+        }
+        Err(e) => eprintln!("no se pudo abrir el log ({}): {e}", path.display()),
+    }
+    b.init();
+    log::info!("--- servicio iniciado (v{}) ---", VERSION);
 }
 
 /// Bucle principal del servicio. Termina cuando `shutdown_rx` recibe señal.
@@ -94,6 +119,17 @@ async fn worker_main(shutdown_rx: std::sync::mpsc::Receiver<()>) {
     if let Err(e) = buffer::init(&db_path) {
         log::error!("no se pudo iniciar el buffer: {e}");
     }
+
+    // Reaplicar la configuración del servicio en cada arranque.
+    //
+    // Los equipos instalados antes de septiembre de 2026 quedaron con un SDDL
+    // que ni SYSTEM ni los administradores podían modificar, y eso rompía las
+    // actualizaciones sin dejar forma de repararlo en remoto. Corriendo como
+    // LocalSystem —y siendo el propietario del objeto— el servicio puede
+    // reescribir su propio descriptor y curarse solo. Es best-effort: si no
+    // puede, lo registra y sigue.
+    #[cfg(target_os = "windows")]
+    win::apply_hardening();
 
     // Aprovisionar (reintenta hasta lograrlo).
     let mut creds = loop {
@@ -446,6 +482,7 @@ mod win {
             ServiceManager::local_computer(None::<&str>, ServiceManagerAccess::CREATE_SERVICE)?;
 
         let exe = std::env::current_exe().expect("current exe");
+        let exe_path = exe.clone();
         let service_info = ServiceInfo {
             name: OsString::from(SERVICE_NAME),
             display_name: OsString::from(SERVICE_DISPLAY),
@@ -459,17 +496,40 @@ mod win {
             account_password: None,
         };
 
-        let service = manager.create_service(
+        // En una ACTUALIZACION el servicio ya existe y create_service devuelve
+        // ERROR_SERVICE_EXISTS. Antes eso abortaba la funcion con `?` y jamas se
+        // llegaba a start_now(): el MSI dejaba los binarios nuevos y el servicio
+        // apagado, esperando que alguien entrara a la maquina a encenderlo.
+        // Fue lo que dejo mudos a los tres equipos de GVM entre el 4 y el 7 de
+        // septiembre de 2026. Instalar tiene que ser idempotente.
+        match manager.create_service(
             &service_info,
             ServiceAccess::CHANGE_CONFIG | ServiceAccess::START,
-        )?;
-        service.set_description(
-            "Monitoreo de actividad laboral BCWork. Servicio protegido; su detención queda registrada.",
-        )?;
+        ) {
+            Ok(service) => {
+                let _ = service.set_description(
+                    "Monitoreo de actividad laboral BCWork. Servicio protegido; su detención queda registrada.",
+                );
+                drop(service);
+            }
+            Err(e) => {
+                // Ya existia: se actualiza la config y se sigue. Cualquier otro
+                // error tampoco debe impedir el arranque.
+                log::warn!("create_service no aplico ({e}); se asume servicio existente");
+                let _ = std::process::Command::new("sc.exe")
+                    .args([
+                        "config",
+                        SERVICE_NAME,
+                        "binPath=",
+                        &format!("\"{}\"", exe_path.display()),
+                        "start=",
+                        "auto",
+                    ])
+                    .status();
+            }
+        }
 
-        // Reinicio automático ante caídas (watchdog del propio SCM).
-        // Config de failure actions y deny-stop se aplican con sc.exe para máxima compatibilidad.
-        drop(service);
+        // Pase lo que pase arriba, el servicio queda endurecido y ARRANCADO.
         apply_hardening();
         let _ = start_now();
         Ok(())
@@ -485,7 +545,7 @@ mod win {
     /// Endurecimiento vía sc.exe:
     /// - failure actions: reiniciar el servicio a los 5s en los 3 primeros fallos.
     /// - deny-stop SDDL: los usuarios estándar no pueden detenerlo (sí SYSTEM/Admins).
-    fn apply_hardening() {
+    pub fn apply_hardening() {
         let _ = std::process::Command::new("sc.exe")
             .args([
                 "failure",
@@ -497,13 +557,42 @@ mod win {
             ])
             .status();
 
-        // SDDL: Admins (BA) y SYSTEM (SY) control total; Usuarios autenticados (AU)
-        // pueden consultar estado pero NO detener/pausar/borrar.
-        // CCLCSWRPWPDTLOCRRC = full-ish; para AU quitamos WP/DT/RP (stop/pause/start).
-        let sddl = "D:(A;;CCLCSWRPWPDTLOCRRC;;;SY)(A;;CCLCSWRPWPDTLOCRRC;;;BA)(A;;CCLCSWLOCRRC;;;AU)(A;;CCLCSWLOCRRC;;;IU)S:(AU;FA;CCDCLCSWRPWPDTLOCRSDRCWDWO;;;WD)";
+        // Sin este flag, el SCM solo reintenta ante una caida abrupta. Con el,
+        // tambien reintenta si el proceso termina sin reportar SERVICE_STOPPED,
+        // que es una red de seguridad mas para no depender de visitar equipos.
         let _ = std::process::Command::new("sc.exe")
-            .args(["sdset", SERVICE_NAME, sddl])
+            .args(["failureflag", SERVICE_NAME, "1"])
             .status();
+
+        // SDDL del servicio.
+        //
+        // La version anterior concedia a SY y BA solo CCLCSWRPWPDTLOCRRC: sin DC
+        // (cambiar configuracion) ni SD (borrar). El agente se blindaba tanto
+        // contra el empleado que se blindaba contra si mismo — el desinstalador
+        // no podia borrar el servicio durante una actualizacion, el instalador
+        // encontraba uno existente, y nadie podia repararlo. Fue lo que dejo
+        // mudos a tres equipos entre el 4 y el 7 de septiembre de 2026.
+        //
+        // Ahora SY y BA tienen control total (CCDCLCSWRPWPDTLOCRSDRCWDWO) y la
+        // proteccion se mantiene donde importa: los usuarios estandar (AU/IU)
+        // pueden consultar pero no arrancar, detener ni pausar.
+        const SDDL_FULL: &str = "CCDCLCSWRPWPDTLOCRSDRCWDWO";
+        let sddl = format!(
+            "D:(A;;{f};;;SY)(A;;{f};;;BA)(A;;CCLCSWLOCRRC;;;AU)(A;;CCLCSWLOCRRC;;;IU)S:(AU;FA;{f};;;WD)",
+            f = SDDL_FULL
+        );
+        let out = std::process::Command::new("sc.exe")
+            .args(["sdset", SERVICE_NAME, &sddl])
+            .output();
+        match out {
+            Ok(o) if o.status.success() => log::info!("SDDL del servicio actualizado"),
+            Ok(o) => log::warn!(
+                "no se pudo aplicar el SDDL ({}): {}",
+                o.status,
+                String::from_utf8_lossy(&o.stdout).trim()
+            ),
+            Err(e) => log::warn!("no se pudo aplicar el SDDL: {e}"),
+        }
     }
 
     /// Endurece las ACL en `%ProgramData%\BCWork`:
