@@ -13,6 +13,7 @@ import {
   TrendingUp,
   CalendarOff,
   DollarSign,
+  Users,
 } from 'lucide-react'
 
 type ReportType = 'overview' | 'attendance' | 'productivity' | 'absences' | 'payroll'
@@ -113,12 +114,29 @@ export function ReportBuilderPanel() {
   const [reportType, setReportType] = useState<ReportType>('overview')
   const [dateFrom, setDateFrom] = useState(firstDay.toISOString().slice(0, 10))
   const [dateTo, setDateTo] = useState(today.toISOString().slice(0, 10))
+  const [department, setDepartment] = useState('')
   const [enabled, setEnabled] = useState(false)
 
   const { data: company } = api.admin.getSettings.useQuery()
 
+  // Los departamentos salen de la nomina, no del informe: hay que poder filtrar
+  // ANTES de generarlo.
+  const { data: plantilla } = api.admin.listUsers.useQuery({ pageSize: 100 })
+  const departamentos = [
+    ...new Set(
+      ((plantilla?.data ?? []) as { department: string | null }[])
+        .map((u) => u.department)
+        .filter(Boolean) as string[],
+    ),
+  ].sort((a, b) => a.localeCompare(b, 'es'))
+
   const { data, isFetching, refetch } = api.admin.runCustomReport.useQuery(
-    { report_type: reportType, date_from: toISO(dateFrom), date_to: toISO(dateTo) },
+    {
+      report_type: reportType,
+      date_from: toISO(dateFrom),
+      date_to: toISO(dateTo),
+      ...(department ? { department } : {}),
+    },
     { enabled },
   )
 
@@ -130,6 +148,20 @@ export function ReportBuilderPanel() {
   }
 
   const rows = (data?.rows ?? []) as Record<string, unknown>[]
+  const groups = data?.groups ?? []
+  const totals = data?.totals
+  const metricLabel = data?.metricLabel ?? ''
+  const esDinero = reportType === 'payroll'
+
+  const fmtValor = (v: number | null) => {
+    if (v == null) return '—'
+    return esDinero
+      ? v.toLocaleString('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 })
+      : v.toLocaleString('es-CO', { maximumFractionDigits: 1 })
+  }
+  const periodoPrevio = data?.period
+    ? `${data.period.previousFrom.slice(0, 10)} — ${data.period.previousTo.slice(0, 10)}`
+    : ''
 
   const firstRow = rows[0]
   const columns =
@@ -143,8 +175,19 @@ export function ReportBuilderPanel() {
     total_hours: 'Horas',
     avg_productivity: 'Productividad %',
     date: 'Fecha',
-    productive_seconds: 'Segundos productivos',
-    duration_seconds: 'Duración (s)',
+    metric_date: 'Fecha',
+    active_hours: 'Horas activas',
+    idle_hours: 'Horas inactivas',
+    productive_hours: 'Horas productivas',
+    non_productive_hours: 'Horas no productivas',
+    productivity_pct: 'Productividad %',
+    compliance_pct: 'Cumplimiento %',
+    days_with_data: 'Días con datos',
+    days: 'Días',
+    absence_type: 'Tipo',
+    location_type: 'Ubicación',
+    period_start: 'Inicio período',
+    period_end: 'Fin período',
     started_at: 'Inicio',
     ended_at: 'Fin',
     start_date: 'Inicio ausencia',
@@ -166,6 +209,7 @@ export function ReportBuilderPanel() {
         `NIT,${csvCell(company.nit ?? '')}`,
         `Informe,${csvCell(selected.label)}`,
         `Periodo,${csvCell(`${dateFrom} a ${dateTo}`)}`,
+        `Departamento,${csvCell(department || 'Toda la empresa')}`,
         `Generado,${csvCell(new Date().toLocaleString('es-CO'))}`,
       ]
     : []
@@ -227,6 +271,84 @@ export function ReportBuilderPanel() {
         y,
       )
       y += 6
+
+      // ── Resumen por departamento y contra el periodo anterior ──
+      if (groups.length > 0) {
+        doc.setFont('helvetica', 'bold')
+        doc.setFontSize(9)
+        doc.setTextColor(30, 41, 59)
+        doc.text(`${metricLabel} por departamento`, margin, y + 4)
+        doc.setFont('helvetica', 'normal')
+        doc.setFontSize(7)
+        doc.setTextColor(120, 120, 120)
+        doc.text(`Período anterior: ${periodoPrevio}`, margin + 70, y + 4)
+        y += 8
+
+        const anchos = [70, 22, 34, 34, 24]
+        const cabeceras = ['Departamento', 'Personas', metricLabel, 'Anterior', 'Variación']
+        doc.setFillColor(241, 245, 249)
+        doc.rect(
+          margin,
+          y,
+          anchos.reduce((a, b) => a + b, 0),
+          7,
+          'F',
+        )
+        doc.setFont('helvetica', 'bold')
+        doc.setFontSize(7.5)
+        doc.setTextColor(30, 41, 59)
+        let x = margin
+        cabeceras.forEach((h, i) => {
+          doc.text(h, x + 2, y + 5)
+          x += anchos[i]!
+        })
+        y += 7
+
+        doc.setFont('helvetica', 'normal')
+        doc.setTextColor(30, 30, 30)
+        const filas = [
+          ...groups.map((g) => [
+            g.department,
+            String(g.people),
+            fmtValor(g.value),
+            fmtValor(g.previousValue),
+            g.deltaPct == null ? 'sin base' : `${g.deltaPct > 0 ? '+' : ''}${g.deltaPct}%`,
+          ]),
+          ...(totals
+            ? [
+                [
+                  'TOTAL',
+                  '',
+                  fmtValor(totals.value),
+                  fmtValor(totals.previousValue),
+                  totals.deltaPct == null
+                    ? 'sin base'
+                    : `${totals.deltaPct > 0 ? '+' : ''}${totals.deltaPct}%`,
+                ],
+              ]
+            : []),
+        ]
+        filas.forEach((f, idx) => {
+          if (idx === filas.length - 1 && totals) doc.setFont('helvetica', 'bold')
+          x = margin
+          f.forEach((celda, i) => {
+            const t = (doc.splitTextToSize(celda, anchos[i]! - 3)[0] as string) ?? ''
+            doc.text(t, x + 2, y + 5)
+            x += anchos[i]!
+          })
+          y += 6.5
+        })
+        doc.setFont('helvetica', 'normal')
+        y += 5
+      }
+
+      // ── Detalle ──
+      doc.setFont('helvetica', 'bold')
+      doc.setFontSize(9)
+      doc.setTextColor(30, 41, 59)
+      doc.text('Detalle', margin, y + 4)
+      y += 8
+      doc.setTextColor(30, 30, 30)
 
       // ── Tabla ──
       const cols = columns
@@ -362,7 +484,34 @@ export function ReportBuilderPanel() {
                 className="rounded-lg border border-gray-200 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-300"
               />
             </div>
+            {departamentos.length > 0 && (
+              <div>
+                <label className="mb-1 block text-xs text-gray-500">
+                  <Users className="mr-1 inline h-3 w-3" />
+                  Departamento
+                </label>
+                <select
+                  value={department}
+                  title="Departamento"
+                  onChange={(e) => {
+                    setDepartment(e.target.value)
+                    setEnabled(false)
+                  }}
+                  className="rounded-lg border border-gray-200 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-300"
+                >
+                  <option value="">Toda la empresa</option>
+                  {departamentos.map((d) => (
+                    <option key={d} value={d}>
+                      {d}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
           </div>
+          <p className="mt-2 text-[11px] text-gray-400">
+            El informe se compara automáticamente contra el período anterior de la misma duración.
+          </p>
         </div>
 
         {/* Paso 3 */}
@@ -441,6 +590,98 @@ export function ReportBuilderPanel() {
               <p>Generado: {new Date().toLocaleDateString('es-CO')}</p>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Comparacion por departamento contra el periodo anterior. Es lo que
+          convierte un numero suelto en una lectura: 120 h no dice nada, 120 h
+          contra 145 h del mes pasado si. */}
+      {groups.length > 0 && (
+        <div className="overflow-hidden rounded-xl border border-gray-100 bg-white">
+          <div className="flex flex-wrap items-baseline justify-between gap-2 border-b border-gray-50 px-5 py-3">
+            <p className="text-sm font-semibold text-gray-700">{metricLabel} por departamento</p>
+            <p className="text-[11px] text-gray-400">período anterior: {periodoPrevio}</p>
+          </div>
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="border-b border-gray-100 bg-gray-50 text-left">
+                <th className="px-4 py-2.5 text-[10px] font-semibold uppercase tracking-widest text-gray-400">
+                  Departamento
+                </th>
+                <th className="px-4 py-2.5 text-right text-[10px] font-semibold uppercase tracking-widest text-gray-400">
+                  Personas
+                </th>
+                <th className="px-4 py-2.5 text-right text-[10px] font-semibold uppercase tracking-widest text-gray-400">
+                  {metricLabel}
+                </th>
+                <th className="px-4 py-2.5 text-right text-[10px] font-semibold uppercase tracking-widest text-gray-400">
+                  Período anterior
+                </th>
+                <th className="px-4 py-2.5 text-right text-[10px] font-semibold uppercase tracking-widest text-gray-400">
+                  Variación
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {groups.map((g) => (
+                <tr key={g.department} className="border-b border-gray-50 last:border-0">
+                  <td className="px-4 py-2 font-medium text-gray-700">{g.department}</td>
+                  <td className="px-4 py-2 text-right text-gray-500">{g.people}</td>
+                  <td className="px-4 py-2 text-right font-semibold text-gray-900">
+                    {fmtValor(g.value)}
+                  </td>
+                  <td className="px-4 py-2 text-right text-gray-500">
+                    {fmtValor(g.previousValue)}
+                  </td>
+                  <td
+                    className={`px-4 py-2 text-right font-medium ${
+                      g.deltaPct == null
+                        ? 'text-gray-300'
+                        : g.deltaPct > 0
+                          ? 'text-emerald-600'
+                          : g.deltaPct < 0
+                            ? 'text-rose-600'
+                            : 'text-gray-400'
+                    }`}
+                  >
+                    {g.deltaPct == null ? 'sin base' : `${g.deltaPct > 0 ? '+' : ''}${g.deltaPct}%`}
+                  </td>
+                </tr>
+              ))}
+              {totals && (
+                <tr className="border-t border-gray-200 bg-gray-50">
+                  <td className="px-4 py-2 font-semibold text-gray-700">Total</td>
+                  <td className="px-4 py-2" />
+                  <td className="px-4 py-2 text-right font-bold text-gray-900">
+                    {fmtValor(totals.value)}
+                  </td>
+                  <td className="px-4 py-2 text-right text-gray-500">
+                    {fmtValor(totals.previousValue)}
+                  </td>
+                  <td
+                    className={`px-4 py-2 text-right font-bold ${
+                      totals.deltaPct == null
+                        ? 'text-gray-300'
+                        : totals.deltaPct > 0
+                          ? 'text-emerald-600'
+                          : totals.deltaPct < 0
+                            ? 'text-rose-600'
+                            : 'text-gray-400'
+                    }`}
+                  >
+                    {totals.deltaPct == null
+                      ? 'sin base'
+                      : `${totals.deltaPct > 0 ? '+' : ''}${totals.deltaPct}%`}
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+          {reportType === 'absences' && (
+            <p className="border-t border-gray-50 px-5 py-2 text-[11px] text-gray-400">
+              Aquí más ausencias es peor: el color verde solo indica que el número subió.
+            </p>
+          )}
         </div>
       )}
 

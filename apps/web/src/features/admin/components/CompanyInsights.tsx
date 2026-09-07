@@ -81,12 +81,15 @@ export function CompanyInsights() {
   }))
 
   const d = data.distribution
-  const totalReparto = d.productive + d.nonProductive + d.neutral + d.idle
+  // El reparto se calcula sobre el tiempo CON actividad. La inactividad va aparte
+  // porque incluye noches y fines de semana con el equipo encendido: mezclarla
+  // aplasta el grafico (en GVM son 155 h contra 21 de trabajo real) y no dice
+  // nada sobre la jornada.
+  const totalReparto = d.productive + d.nonProductive + d.neutral
   const partes = [
     { k: 'Productivo', v: d.productive, c: C.productivo },
     { k: 'No productivo', v: d.nonProductive, c: C.noProductivo },
-    { k: 'Neutral', v: d.neutral, c: C.neutral },
-    { k: 'Inactivo', v: d.idle, c: C.inactivo },
+    { k: 'Neutral / sin clasificar', v: d.neutral, c: C.neutral },
   ].filter((p) => p.v > 0)
 
   const maxApp = data.topApps[0]?.seconds ?? 1
@@ -146,8 +149,8 @@ export function CompanyInsights() {
       <div className="grid gap-3 lg:grid-cols-2">
         {/* Reparto del tiempo: responde "¿en qué se va el día?" */}
         <Caja
-          titulo="En qué se va el tiempo"
-          sub={`${horas(totalReparto)} registradas en el período`}
+          titulo="En qué se va el tiempo activo"
+          sub={`${horas(totalReparto)} con interacción en el período`}
         >
           {totalReparto === 0 ? (
             <p className="py-6 text-center text-xs text-gray-400">Sin tiempo registrado.</p>
@@ -181,6 +184,12 @@ export function CompanyInsights() {
                 <p className="mt-2 text-[11px] text-amber-600">
                   La mayor parte está sin clasificar: revisá el catálogo de aplicaciones para que
                   estas cifras signifiquen algo.
+                </p>
+              )}
+              {d.idle > 0 && (
+                <p className="mt-2 border-t border-gray-100 pt-2 text-[11px] text-gray-400">
+                  Aparte: {horas(d.idle)} de equipo encendido sin interacción. Incluye noches y
+                  fines de semana si el equipo queda prendido, así que no es tiempo de jornada.
                 </p>
               )}
             </>
