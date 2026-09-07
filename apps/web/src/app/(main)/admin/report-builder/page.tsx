@@ -1,4 +1,5 @@
 import { ReportBuilderPanel } from '@/features/admin/components/ReportBuilderPanel'
+import { ReportSchedulesPanel } from '@/features/admin/components/ReportSchedulesPanel'
 
 export const metadata = { title: 'Constructor de Informes — BCWork' }
 
@@ -12,6 +13,9 @@ export default function ReportBuilderPage() {
         </p>
       </div>
       <ReportBuilderPanel />
+      <div className="mt-6">
+        <ReportSchedulesPanel />
+      </div>
     </div>
   )
 }

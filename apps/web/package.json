@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test:schedule": "tsx scripts/test-report-schedule.mts"
   },
   "dependencies": {
     "@ai-sdk/react": "^3.0.178",

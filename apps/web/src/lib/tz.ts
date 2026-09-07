@@ -63,3 +63,13 @@ export function localHourAndDow(iso: string, timeZone: string): { hour: number; 
   const dow = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].indexOf(wd)
   return { hour, dow: dow < 0 ? 0 : dow }
 }
+
+/**
+ * Minutos que la hora local va por delante de UTC (Colombia: -300).
+ *
+ * Lo usa el programador de informes: sin esto, un envio pedido "a las 7:00"
+ * saldria a las 2:00 de la madrugada del trabajador.
+ */
+export function offsetMinutes(at: Date, timeZone: string): number {
+  return offsetMs(at, timeZone) / 60_000
+}
