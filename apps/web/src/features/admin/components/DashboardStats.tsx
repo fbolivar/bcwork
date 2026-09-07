@@ -15,6 +15,7 @@ import {
 } from 'lucide-react'
 import Link from 'next/link'
 import { CompanySituation } from './CompanySituation'
+import { CompanyInsights } from './CompanyInsights'
 
 const GeoLocationWidget = dynamic(
   () =>
@@ -162,6 +163,9 @@ export function DashboardStats() {
           inventario (dispositivos, usuarios, sesiones) y nunca decia si la
           semana habia sido buena o mala. */}
       <CompanySituation />
+
+      {/* Gráficos: la parte que respondía 'cómo venimos' y no existía. */}
+      <CompanyInsights />
 
       {/* Estado operativo: util, pero es contexto, no la respuesta. */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">

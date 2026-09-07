@@ -1128,6 +1128,116 @@ export const adminRouter = router({
    * mostraban en ninguna pantalla: el panel decía "estuvo 71 minutos" cuando lo
    * reportable es "cumplió el 13% de su jornada".
    */
+  /**
+   * Insumos del Resumen: tendencia semanal, reparto del tiempo, top de apps y
+   * presencial/remoto.
+   *
+   * Los tres ultimos ya se calculaban a diario en daily_user_metrics
+   * (apps_top poblado en 28 de 28 filas, location_type en 28 de 28) y no
+   * aparecian en ninguna pantalla. Esto no agrega captura: muestra lo que ya
+   * habia.
+   */
+  getCompanyInsights: adminProcedure
+    .input(z.object({ weeks: z.number().int().min(2).max(12).default(4) }))
+    .query(async ({ ctx, input }) => {
+      const tenantId = ctx.user!.tid
+      const tz = await getTenantTimezone(ctx.db, tenantId)
+      const desde = new Date(Date.now() - input.weeks * 7 * 86400000).toISOString().slice(0, 10)
+
+      const [{ data: metrics }, { data: sessions }] = await Promise.all([
+        ctx.db
+          .from('daily_user_metrics')
+          .select(
+            'user_id, metric_date, expected_seconds, active_seconds, productive_seconds, non_productive_seconds, apps_top, location_type',
+          )
+          .eq('tenant_id', tenantId)
+          .gte('metric_date', desde),
+        ctx.db
+          .from('work_sessions')
+          .select('idle_seconds, active_seconds, started_at')
+          .eq('tenant_id', tenantId)
+          .gte('started_at', `${desde}T00:00:00Z`),
+      ])
+
+      const filas = metrics ?? []
+
+      // ── Tendencia semanal (lunes como inicio, en hora del tenant) ──────────
+      const lunesDe = (fecha: string) => {
+        const d = new Date(`${fecha}T12:00:00Z`)
+        const dow = (d.getUTCDay() + 6) % 7 // 0 = lunes
+        d.setUTCDate(d.getUTCDate() - dow)
+        return d.toISOString().slice(0, 10)
+      }
+
+      type Sem = { expected: number; active: number; productive: number; dias: Set<string> }
+      const porSemana = new Map<string, Sem>()
+      for (const r of filas) {
+        if (!r.metric_date) continue
+        const k = lunesDe(r.metric_date)
+        const a = porSemana.get(k) ?? { expected: 0, active: 0, productive: 0, dias: new Set() }
+        a.expected += r.expected_seconds ?? 0
+        a.active += r.active_seconds ?? 0
+        a.productive += r.productive_seconds ?? 0
+        a.dias.add(r.metric_date)
+        porSemana.set(k, a)
+      }
+
+      const trend = [...porSemana.entries()]
+        .sort((a, b) => (a[0] < b[0] ? -1 : 1))
+        .map(([weekStart, a]) => ({
+          weekStart,
+          expectedSeconds: a.expected,
+          activeSeconds: a.active,
+          productiveSeconds: a.productive,
+          complianceRatio: a.expected > 0 ? a.active / a.expected : null,
+          productivityRatio: a.active > 0 ? a.productive / a.active : null,
+          days: a.dias.size,
+        }))
+
+      // ── Reparto del tiempo del periodo ─────────────────────────────────────
+      const productive = filas.reduce((s, r) => s + (r.productive_seconds ?? 0), 0)
+      const nonProductive = filas.reduce((s, r) => s + (r.non_productive_seconds ?? 0), 0)
+      const active = filas.reduce((s, r) => s + (r.active_seconds ?? 0), 0)
+      const neutral = Math.max(0, active - productive - nonProductive)
+      const idle = (sessions ?? []).reduce((s, x) => s + (x.idle_seconds ?? 0), 0)
+
+      // ── Top de aplicaciones de la empresa ──────────────────────────────────
+      const apps = new Map<string, number>()
+      for (const r of filas) {
+        const lista = (r.apps_top ?? []) as unknown as Array<{ name?: string; secs?: number }>
+        if (!Array.isArray(lista)) continue
+        for (const a of lista) {
+          if (!a?.name) continue
+          apps.set(a.name, (apps.get(a.name) ?? 0) + (Number(a.secs) || 0))
+        }
+      }
+      const topApps = [...apps.entries()]
+        .map(([name, seconds]) => ({ name, seconds }))
+        .sort((a, b) => b.seconds - a.seconds)
+        .slice(0, 8)
+
+      // ── Presencial vs remoto (dias-persona, no segundos) ───────────────────
+      const ubic = new Map<string, number>()
+      for (const r of filas) {
+        const k = r.location_type ?? 'sin_dato'
+        ubic.set(k, (ubic.get(k) ?? 0) + 1)
+      }
+      const locations = [...ubic.entries()]
+        .map(([type, days]) => ({ type, days }))
+        .sort((a, b) => b.days - a.days)
+
+      return {
+        timezone: tz,
+        from: desde,
+        trend,
+        distribution: { productive, nonProductive, neutral, idle },
+        topApps,
+        locations,
+        // Sin esto la UI no puede distinguir "cero" de "todavia no hay dato".
+        hasData: filas.length > 0,
+      }
+    }),
+
   getComplianceReport: adminProcedure
     .input(
       z.object({
