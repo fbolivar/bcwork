@@ -45,7 +45,12 @@ export async function GET(req: NextRequest) {
 
     // Disparar webhooks, Teams y WhatsApp si se generaron notificaciones
     if (notifications > 0) {
-      const { data: tenants } = await db.from('tenants').select('id').eq('status', 'active')
+      // `trial` incluido: una empresa en piloto tiene las mismas alertas
+      // configuradas que una de pago y esperaba recibirlas.
+      const { data: tenants } = await db
+        .from('tenants')
+        .select('id')
+        .in('status', ['active', 'trial'])
       await Promise.allSettled(
         (tenants ?? []).map((t) =>
           dispatchWebhook(t.id, 'alert.fired', { date, notifications_count: notifications }),

@@ -17,11 +17,13 @@ export async function GET(req: NextRequest) {
   const from = fromDate.toISOString().slice(0, 10)
   const to = toDate.toISOString().slice(0, 10)
 
-  // Obtener todos los tenants activos
+  // Empresas en uso. `trial` cuenta: son clientes reales usando el producto —
+  // GVM y CK Solutions llevaban todo el piloto sin recibir un solo resumen
+  // porque este filtro pedía 'active'. Solo se excluyen suspended y cancelled.
   const { data: tenants, error: tenantsError } = await db
     .from('tenants')
     .select('id, legal_name, trade_name')
-    .eq('status', 'active')
+    .in('status', ['active', 'trial'])
 
   if (tenantsError) {
     console.error('[cron/weekly-digest] tenants error:', tenantsError.message)
