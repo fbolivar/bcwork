@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { ChevronLeft, ChevronRight, HelpCircle } from 'lucide-react'
+import { ChevronLeft, ChevronRight } from 'lucide-react'
 import { trpc } from '@/lib/trpc-client'
 import { COLOR, horasCortas } from './panel-identidad'
 import { DayRankings, DayApps } from './DayOverviewLists'
@@ -68,14 +68,20 @@ function Kpi({
   ayuda: string
 }) {
   const color = tono === 'ok' ? 'text-green-600' : tono === 'mal' ? 'text-red-600' : 'text-gray-400'
+  const relleno =
+    tono === 'ok' ? COLOR.sparkOk : tono === 'mal' ? COLOR.sparkMal : COLOR.sparkNeutro
   return (
-    <div className="flex flex-col justify-between rounded-xl border border-gray-200 bg-white">
-      <div className="flex items-start justify-between px-4 pt-3">
-        <p className="text-sm font-semibold text-gray-700">{titulo}</p>
-        <HelpCircle className="h-4 w-4 text-gray-300" aria-label={ayuda} />
+    <div
+      className="flex flex-col justify-between overflow-hidden rounded-xl border border-gray-200 bg-white"
+      title={ayuda}
+    >
+      <div className="px-4 pt-4">
+        <p className="text-[10px] font-semibold uppercase tracking-widest text-gray-400">
+          {titulo}
+        </p>
+        <p className={`mt-1 text-3xl font-bold tabular-nums ${color}`}>{valor}</p>
       </div>
-      <p className={`px-4 pb-1 pt-2 text-3xl font-bold tabular-nums ${color}`}>{valor}</p>
-      <Sparkline values={spark} fill={tono === 'neutro' ? COLOR.sparkNeutro : COLOR.sparkOk} />
+      <Sparkline values={spark} fill={relleno} />
     </div>
   )
 }
@@ -142,26 +148,34 @@ export function DayOverview() {
   ]
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-3">
+      <div className="flex items-baseline justify-between">
+        <h2 className="text-sm font-semibold text-gray-700">El día</h2>
+        <span className="text-[11px] text-gray-400">
+          {data ? `${data.people} persona${data.people === 1 ? '' : 's'}` : ''}
+          {fecha === hoy ? ' · actualiza cada minuto' : ''}
+        </span>
+      </div>
+
       {/* Controles: equipo y fecha */}
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex flex-wrap gap-1 rounded-lg bg-gray-100 p-1">
+        <div className="flex flex-wrap gap-1">
           {tabs.map((t) => (
             <button
               key={t.v}
               type="button"
               onClick={() => setDepto(t.v)}
-              className={`rounded-md px-3 py-1.5 text-sm transition ${
+              className={`rounded-lg px-3 py-1.5 text-xs font-medium transition ${
                 depto === t.v
-                  ? 'bg-white font-medium text-gray-900 shadow-sm'
-                  : 'text-gray-500 hover:text-gray-800'
+                  ? 'bg-blue-50 text-blue-700'
+                  : 'text-gray-500 hover:bg-gray-50 hover:text-gray-800'
               }`}
             >
               {t.l}
             </button>
           ))}
         </div>
-        <div className="flex items-center rounded-lg bg-gray-100">
+        <div className="flex items-center rounded-lg border border-gray-200 bg-white">
           <button
             type="button"
             onClick={() => setFecha(sumarDias(fecha, -1))}
@@ -170,7 +184,7 @@ export function DayOverview() {
           >
             <ChevronLeft className="h-4 w-4" />
           </button>
-          <span className="min-w-[200px] text-center text-sm font-medium text-gray-700">
+          <span className="min-w-[190px] text-center text-xs font-medium capitalize text-gray-700">
             {etiquetaFecha(fecha)}
           </span>
           <button
@@ -186,9 +200,9 @@ export function DayOverview() {
       </div>
 
       {isLoading || !data ? (
-        <div className="grid gap-4 lg:grid-cols-2">
+        <div className="grid gap-3 lg:grid-cols-2">
           <div className="h-72 animate-pulse rounded-xl bg-gray-100" />
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-2 gap-3">
             {[...Array(4)].map((_, i) => (
               <div key={i} className="h-32 animate-pulse rounded-xl bg-gray-100" />
             ))}
@@ -197,7 +211,7 @@ export function DayOverview() {
       ) : (
         <>
           {/* Barra horaria + KPIs */}
-          <div className="grid gap-4 lg:grid-cols-[1.4fr_1fr]">
+          <div className="grid gap-3 lg:grid-cols-[1.4fr_1fr]">
             <div className="flex flex-col rounded-xl border border-gray-200 bg-white p-4">
               <div className="mb-2 flex items-center justify-between">
                 <h3 className="text-sm font-semibold text-gray-700">Barra de productividad</h3>
@@ -228,7 +242,7 @@ export function DayOverview() {
               <BarraHoraria filas={data.hourly} />
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-2 gap-3">
               <Kpi
                 titulo="Productividad"
                 valor={data.kpis.productivityPct === null ? '–' : `${data.kpis.productivityPct}%`}

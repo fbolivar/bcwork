@@ -15,6 +15,7 @@ export const COLOR = {
   cumplimiento: '#0f766e',
   /** Relleno de sparkline. */
   sparkOk: '#bbf7d0',
+  sparkMal: '#fecaca',
   sparkNeutro: '#e5e7eb',
 } as const
 
