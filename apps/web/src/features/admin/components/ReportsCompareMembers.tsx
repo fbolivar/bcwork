@@ -1,48 +1,13 @@
 'use client'
 
-import { useState } from 'react'
-import { ChevronLeft, ChevronRight, Download } from 'lucide-react'
+import { Download } from 'lucide-react'
 import { trpc } from '@/lib/trpc-client'
 import { horasCortas, iniciales } from './panel-identidad'
 import { downloadXlsx } from '@/lib/xlsx'
 
 /** Comparar por miembros: la misma fuente que el Resumen, persona por persona. */
 
-type Modo = 'dia' | 'semana' | 'mes'
-
-function hoyLocal(): string {
-  const d = new Date()
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-}
-function masDias(iso: string, n: number) {
-  const d = new Date(`${iso}T12:00:00Z`)
-  d.setUTCDate(d.getUTCDate() + n)
-  return d.toISOString().slice(0, 10)
-}
-function rango(ancla: string, modo: Modo) {
-  if (modo === 'dia') return { from: ancla, to: ancla }
-  if (modo === 'semana') {
-    const dow = new Date(`${ancla}T12:00:00Z`).getUTCDay()
-    const lunes = masDias(ancla, dow === 0 ? -6 : 1 - dow)
-    return { from: lunes, to: masDias(lunes, 6) }
-  }
-  const primero = `${ancla.slice(0, 7)}-01`
-  const d = new Date(`${primero}T12:00:00Z`)
-  d.setUTCMonth(d.getUTCMonth() + 1, 0)
-  return { from: primero, to: d.toISOString().slice(0, 10) }
-}
-function mover(ancla: string, modo: Modo, n: number) {
-  const d = new Date(`${ancla}T12:00:00Z`)
-  if (modo === 'dia') d.setUTCDate(d.getUTCDate() + n)
-  else if (modo === 'semana') d.setUTCDate(d.getUTCDate() + 7 * n)
-  else d.setUTCMonth(d.getUTCMonth() + n, 1)
-  return d.toISOString().slice(0, 10)
-}
-
-export function ReportsCompareMembers() {
-  const [modo, setModo] = useState<Modo>('semana')
-  const [ancla, setAncla] = useState(hoyLocal())
-  const { from, to } = rango(ancla, modo)
+export function ReportsCompareMembers({ from, to }: { from: string; to: string }) {
   const { data, isLoading } = trpc.admin.getReportsOverview.useQuery(
     { from, to },
     { staleTime: 60_000 },
@@ -103,48 +68,6 @@ export function ReportsCompareMembers() {
         >
           <Download className="h-4 w-4" /> Exportar
         </button>
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="flex items-center rounded-lg border border-gray-200 bg-white">
-            <button
-              type="button"
-              onClick={() => setAncla(mover(ancla, modo, -1))}
-              className="p-2 text-gray-500 hover:text-gray-900"
-              title="Anterior"
-            >
-              <ChevronLeft className="h-4 w-4" />
-            </button>
-            <span className="min-w-[200px] text-center text-xs font-medium text-gray-700">
-              {from === to ? from : `${from} – ${to}`}
-            </span>
-            <button
-              type="button"
-              onClick={() => setAncla(mover(ancla, modo, 1))}
-              disabled={from > hoyLocal()}
-              className="p-2 text-gray-500 hover:text-gray-900 disabled:opacity-30"
-              title="Siguiente"
-            >
-              <ChevronRight className="h-4 w-4" />
-            </button>
-          </div>
-          <div className="flex gap-1 rounded-lg bg-gray-100 p-1">
-            {(
-              [
-                ['dia', 'Día'],
-                ['semana', 'Semana'],
-                ['mes', 'Mes'],
-              ] as const
-            ).map(([v, l]) => (
-              <button
-                key={v}
-                type="button"
-                onClick={() => setModo(v)}
-                className={`rounded-md px-3 py-1.5 text-sm ${modo === v ? 'bg-white font-medium text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-800'}`}
-              >
-                {l}
-              </button>
-            ))}
-          </div>
-        </div>
       </div>
 
       <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white">
