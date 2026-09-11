@@ -461,9 +461,11 @@ export const adminRouter = router({
     const { data, error } = await ctx.db
       .from('work_schedules')
       .select(
-        'id, name, timezone, weekly_hours, days_of_week, start_time, end_time, disconnection_grace_minutes, break_alert_enabled, break_alert_interval_minutes, break_alert_message, end_of_day_alert_enabled, end_of_day_alert_offset_minutes, end_of_day_alert_message, created_at',
+        'id, name, timezone, weekly_hours, days_of_week, start_time, end_time, disconnection_grace_minutes, break_alert_enabled, break_alert_interval_minutes, break_alert_message, end_of_day_alert_enabled, end_of_day_alert_offset_minutes, end_of_day_alert_message, created_at, min_daily_hours, work_from, description',
       )
       .eq('tenant_id', ctx.user!.tid)
+      // Los turnos puntuales (is_template = false) no son plantillas.
+      .eq('is_template', true)
       .order('name', { ascending: true })
 
     if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
@@ -586,6 +588,294 @@ export const adminRouter = router({
           effective_from: today,
         })
       }
+      return { ok: true }
+    }),
+
+  /**
+   * Crear un horario (turno): equipos o personas, fechas, lugar de trabajo,
+   * horas minimas, repeticion y, si se pide, guardarlo como plantilla.
+   *
+   * Por debajo sigue siendo work_schedules + user_schedules por persona, asi
+   * que el cumplimiento y las alertas de desconexion funcionan igual. Si se
+   * elige una plantilla y no se cambia nada, se reutiliza; si se cambia algo
+   * se crea un horario nuevo (plantilla si el usuario lo marca, turno puntual
+   * si no).
+   */
+  createShift: adminProcedure
+    .input(
+      z.object({
+        team_ids: z.array(z.string().uuid()).default([]),
+        user_ids: z.array(z.string().uuid()).default([]),
+        description: z.string().max(300).optional(),
+        template_id: z.string().uuid().nullable().optional(),
+        work_from: z.enum(['office', 'remote', 'hybrid']).default('office'),
+        start_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+        end_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+        start_time: z.string().regex(/^\d{2}:\d{2}$/),
+        end_time: z.string().regex(/^\d{2}:\d{2}$/),
+        min_hours: z.number().min(0.5).max(16),
+        repeat: z.boolean().default(false),
+        days_of_week: z.array(z.number().int().min(0).max(6)).optional(),
+        save_as_template: z.boolean().default(false),
+        template_name: z.string().max(100).optional(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const tid = ctx.user!.tid
+      if (input.end_date < input.start_date) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'El fin del turno es anterior al inicio',
+        })
+      }
+      if (input.end_time <= input.start_time) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'La hora de fin debe ser posterior a la de inicio',
+        })
+      }
+
+      // ── Personas: union de equipos y miembros elegidos ──
+      const personas = new Set(input.user_ids)
+      if (input.team_ids.length) {
+        const { data: miembros } = await ctx.db
+          .from('team_members')
+          .select('user_id')
+          .eq('tenant_id', tid)
+          .in('team_id', input.team_ids)
+        for (const m of miembros ?? []) personas.add(m.user_id)
+      }
+      if (personas.size === 0) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'Elegí al menos un equipo o una persona',
+        })
+      }
+      const { data: validos } = await ctx.db
+        .from('users')
+        .select('id')
+        .eq('tenant_id', tid)
+        .in('id', [...personas])
+      const ids = (validos ?? []).map((u) => u.id)
+      if (ids.length !== personas.size) {
+        throw new TRPCError({
+          code: 'FORBIDDEN',
+          message: 'Alguna persona no pertenece a tu empresa',
+        })
+      }
+
+      // ── Dias: si se repite, los elegidos; si no, los dias reales del rango ──
+      let dias: number[]
+      if (input.repeat) {
+        dias = input.days_of_week?.length ? input.days_of_week : [1, 2, 3, 4, 5]
+      } else {
+        const set = new Set<number>()
+        const d = new Date(`${input.start_date}T12:00:00Z`)
+        const fin = new Date(`${input.end_date}T12:00:00Z`)
+        for (let i = 0; d <= fin && i < 366; i++) {
+          set.add(d.getUTCDay())
+          d.setUTCDate(d.getUTCDate() + 1)
+        }
+        dias = [...set].sort((a, b) => a - b)
+      }
+      const weeklyHours = Math.round(input.min_hours * dias.length * 100) / 100
+
+      // ── Horario: reutilizar la plantilla o crear uno ──
+      let scheduleId: string | null = null
+      let plantilla: Record<string, unknown> | null = null
+      if (input.template_id) {
+        const { data: t } = await ctx.db
+          .from('work_schedules')
+          .select('*')
+          .eq('id', input.template_id)
+          .eq('tenant_id', tid)
+          .maybeSingle()
+        if (!t) throw new TRPCError({ code: 'NOT_FOUND', message: 'Plantilla no encontrada' })
+        plantilla = t as Record<string, unknown>
+        const igual =
+          t.start_time?.slice(0, 5) === input.start_time &&
+          t.end_time?.slice(0, 5) === input.end_time &&
+          JSON.stringify(t.days_of_week ?? []) === JSON.stringify(dias) &&
+          Number(t.min_daily_hours ?? 0) === input.min_hours &&
+          (t.work_from ?? 'office') === input.work_from
+        if (igual && !input.save_as_template) scheduleId = t.id
+      }
+
+      if (!scheduleId) {
+        const tz = await getTenantTimezone(ctx.db, tid)
+        const nombre = input.save_as_template
+          ? input.template_name?.trim() || `Plantilla ${input.start_time}–${input.end_time}`
+          : `Turno ${input.start_date} ${input.start_time}–${input.end_time}`
+        const base = plantilla
+          ? {
+              disconnection_grace_minutes: plantilla.disconnection_grace_minutes as number,
+              break_alert_enabled: plantilla.break_alert_enabled as boolean,
+              break_alert_interval_minutes: plantilla.break_alert_interval_minutes as number,
+              break_alert_message: plantilla.break_alert_message as string,
+              end_of_day_alert_enabled: plantilla.end_of_day_alert_enabled as boolean,
+              end_of_day_alert_offset_minutes: plantilla.end_of_day_alert_offset_minutes as number,
+              end_of_day_alert_message: plantilla.end_of_day_alert_message as string,
+              flex_minutes: plantilla.flex_minutes as number | null,
+              break_minutes: plantilla.break_minutes as number | null,
+            }
+          : {}
+        const { data: nuevo, error } = await ctx.db
+          .from('work_schedules')
+          .insert({
+            tenant_id: tid,
+            name: nombre,
+            timezone: (plantilla?.timezone as string | undefined) ?? tz,
+            days_of_week: dias,
+            start_time: input.start_time,
+            end_time: input.end_time,
+            weekly_hours: weeklyHours,
+            min_daily_hours: input.min_hours,
+            work_from: input.work_from,
+            description: input.description?.trim() || null,
+            is_template: input.save_as_template,
+            ...base,
+          })
+          .select('id')
+          .single()
+        if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+        scheduleId = nuevo.id
+      }
+
+      // ── Asignaciones: primero abrir la nueva, despues cerrar las anteriores.
+      // En este orden, si la insercion falla nadie se queda sin horario.
+      const { error: aErr } = await ctx.db.from('user_schedules').insert(
+        ids.map((user_id) => ({
+          tenant_id: tid,
+          user_id,
+          schedule_id: scheduleId!,
+          effective_from: input.start_date,
+          effective_to: input.repeat ? null : input.end_date,
+          note: input.description?.trim() || null,
+          work_from: input.work_from,
+        })),
+      )
+      if (aErr) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: aErr.message })
+
+      const diaAntes = new Date(`${input.start_date}T12:00:00Z`)
+      diaAntes.setUTCDate(diaAntes.getUTCDate() - 1)
+      const cierre = diaAntes.toISOString().slice(0, 10)
+      const diaDespues = new Date(`${input.end_date}T12:00:00Z`)
+      diaDespues.setUTCDate(diaDespues.getUTCDate() + 1)
+      const reanudar = diaDespues.toISOString().slice(0, 10)
+
+      // Dos horarios vigentes el mismo dia rompen el agregado diario, asi que
+      // no pueden solaparse. Los abiertos que empezaron antes se cierran el
+      // dia anterior al turno. Si el turno es puntual, ademas se reanudan al
+      // dia siguiente: un turno de un dia es una excepcion, no un cambio de
+      // horario para siempre.
+      const { data: abiertos } = await ctx.db
+        .from('user_schedules')
+        .select('user_id, schedule_id, effective_from, note, work_from')
+        .eq('tenant_id', tid)
+        .in('user_id', ids)
+        .is('effective_to', null)
+        .lt('effective_from', input.start_date)
+        .neq('schedule_id', scheduleId!)
+      if (abiertos?.length) {
+        await ctx.db
+          .from('user_schedules')
+          .update({ effective_to: cierre })
+          .eq('tenant_id', tid)
+          .in('user_id', ids)
+          .is('effective_to', null)
+          .lt('effective_from', input.start_date)
+          .neq('schedule_id', scheduleId!)
+        if (!input.repeat) {
+          await ctx.db.from('user_schedules').insert(
+            abiertos.map((a) => ({
+              tenant_id: tid,
+              user_id: a.user_id,
+              schedule_id: a.schedule_id,
+              effective_from: reanudar,
+              effective_to: null,
+              note: a.note,
+              work_from: a.work_from,
+            })),
+          )
+        }
+      }
+      // Los que empezaban el mismo dia o despues quedan superados.
+      await ctx.db
+        .from('user_schedules')
+        .delete()
+        .eq('tenant_id', tid)
+        .in('user_id', ids)
+        .is('effective_to', null)
+        .gte('effective_from', input.start_date)
+        .neq('schedule_id', scheduleId!)
+        .neq('effective_from', reanudar)
+
+      return { ok: true, schedule_id: scheduleId, people: ids.length }
+    }),
+
+  /** Turnos vigentes o futuros, con quien y cuando. */
+  listShifts: adminProcedure.query(async ({ ctx }) => {
+    const tid = ctx.user!.tid
+    const hoy = new Date().toISOString().slice(0, 10)
+    const [{ data: asignaciones, error }, { data: usuarios }] = await Promise.all([
+      ctx.db
+        .from('user_schedules')
+        .select(
+          'user_id, schedule_id, effective_from, effective_to, note, work_from, work_schedules(name, start_time, end_time, days_of_week, min_daily_hours, is_template)',
+        )
+        .eq('tenant_id', tid)
+        .or(`effective_to.is.null,effective_to.gte.${hoy}`)
+        .order('effective_from', { ascending: false }),
+      ctx.db.from('users').select('id, full_name, email').eq('tenant_id', tid),
+    ])
+    if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+    const nombre = new Map((usuarios ?? []).map((u) => [u.id, u.full_name || u.email]))
+    return (asignaciones ?? []).map((a) => {
+      const ws = (Array.isArray(a.work_schedules) ? a.work_schedules[0] : a.work_schedules) as {
+        name: string
+        start_time: string | null
+        end_time: string | null
+        days_of_week: number[] | null
+        min_daily_hours: number | null
+        is_template: boolean
+      } | null
+      return {
+        user_id: a.user_id,
+        user_name: nombre.get(a.user_id) ?? '—',
+        schedule_id: a.schedule_id,
+        schedule_name: ws?.name ?? '—',
+        start_time: ws?.start_time?.slice(0, 5) ?? null,
+        end_time: ws?.end_time?.slice(0, 5) ?? null,
+        days_of_week: ws?.days_of_week ?? [],
+        min_daily_hours: ws?.min_daily_hours ?? null,
+        is_template: ws?.is_template ?? true,
+        effective_from: a.effective_from,
+        effective_to: a.effective_to,
+        note: a.note,
+        work_from: a.work_from,
+      }
+    })
+  }),
+
+  /** Quitar a una persona de un turno: cierra la asignacion hoy. */
+  endShift: adminProcedure
+    .input(
+      z.object({
+        user_id: z.string().uuid(),
+        schedule_id: z.string().uuid(),
+        effective_from: z.string(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const ayer = new Date(Date.now() - 86_400_000).toISOString().slice(0, 10)
+      const { error } = await ctx.db
+        .from('user_schedules')
+        .update({ effective_to: ayer })
+        .eq('tenant_id', ctx.user!.tid)
+        .eq('user_id', input.user_id)
+        .eq('schedule_id', input.schedule_id)
+        .eq('effective_from', input.effective_from)
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
       return { ok: true }
     }),
 

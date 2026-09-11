@@ -5091,6 +5091,9 @@ export type Database = {
           schedule_id: string
           tenant_id: string
           user_id: string
+          note: string | null
+          work_from: string | null
+          created_at: string
         }
         Insert: {
           effective_from: string
@@ -5098,6 +5101,9 @@ export type Database = {
           schedule_id: string
           tenant_id: string
           user_id: string
+          note?: string | null
+          work_from?: string | null
+          created_at?: string
         }
         Update: {
           effective_from?: string
@@ -5105,6 +5111,9 @@ export type Database = {
           schedule_id?: string
           tenant_id?: string
           user_id?: string
+          note?: string | null
+          work_from?: string | null
+          created_at?: string
         }
         Relationships: [
           {
@@ -5462,6 +5471,10 @@ export type Database = {
           timezone: string
           updated_at: string | null
           weekly_hours: number | null
+          is_template: boolean
+          min_daily_hours: number | null
+          work_from: string | null
+          description: string | null
         }
         Insert: {
           break_alert_enabled?: boolean
@@ -5483,6 +5496,10 @@ export type Database = {
           timezone?: string
           updated_at?: string | null
           weekly_hours?: number | null
+          is_template?: boolean
+          min_daily_hours?: number | null
+          work_from?: string | null
+          description?: string | null
         }
         Update: {
           break_alert_enabled?: boolean
@@ -5504,6 +5521,10 @@ export type Database = {
           timezone?: string
           updated_at?: string | null
           weekly_hours?: number | null
+          is_template?: boolean
+          min_daily_hours?: number | null
+          work_from?: string | null
+          description?: string | null
         }
         Relationships: [
           {
