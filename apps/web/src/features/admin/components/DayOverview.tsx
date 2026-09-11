@@ -3,8 +3,8 @@
 import { useState } from 'react'
 import { ChevronLeft, ChevronRight } from 'lucide-react'
 import { trpc } from '@/lib/trpc-client'
-import { COLOR, horasCortas } from './panel-identidad'
 import { DayRankings, DayApps } from './DayOverviewLists'
+import { Kpi, BarraApilada, LeyendaClases, type Tramo } from '@/features/shared/panel-widgets'
 
 /**
  * Panel del día: la primera pantalla del administrador.
@@ -35,102 +35,6 @@ function etiquetaFecha(iso: string): string {
   })
 }
 
-/** Área suavizada de 7 puntos, sin ejes: solo dice si la semana sube o baja. */
-function Sparkline({ values, fill }: { values: (number | null)[]; fill: string }) {
-  if (values.length < 2) return <div className="h-10" />
-  const nums = values.map((v) => v ?? 0)
-  const max = Math.max(...nums, 1)
-  const W = 100
-  const H = 36
-  const paso = nums.length > 1 ? W / (nums.length - 1) : W
-  const pts = nums.map((v, i) => [i * paso, H - (v / max) * (H - 4) - 2] as const)
-  const linea = pts
-    .map(([x, y], i) => `${i === 0 ? 'M' : 'L'}${x.toFixed(1)},${y.toFixed(1)}`)
-    .join(' ')
-  return (
-    <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" className="h-10 w-full">
-      <path d={`${linea} L${W},${H} L0,${H} Z`} fill={fill} />
-    </svg>
-  )
-}
-
-function Kpi({
-  titulo,
-  valor,
-  tono,
-  spark,
-  ayuda,
-}: {
-  titulo: string
-  valor: string
-  tono: 'ok' | 'mal' | 'neutro'
-  spark: (number | null)[]
-  ayuda: string
-}) {
-  const color = tono === 'ok' ? 'text-green-600' : tono === 'mal' ? 'text-red-600' : 'text-gray-400'
-  const relleno =
-    tono === 'ok' ? COLOR.sparkOk : tono === 'mal' ? COLOR.sparkMal : COLOR.sparkNeutro
-  return (
-    <div
-      className="flex flex-col justify-between overflow-hidden rounded-xl border border-gray-200 bg-white"
-      title={ayuda}
-    >
-      <div className="px-4 pt-4">
-        <p className="text-[10px] font-semibold uppercase tracking-widest text-gray-400">
-          {titulo}
-        </p>
-        <p className={`mt-1 text-3xl font-bold tabular-nums ${color}`}>{valor}</p>
-      </div>
-      <Sparkline values={spark} fill={relleno} />
-    </div>
-  )
-}
-
-function BarraHoraria({
-  filas,
-}: {
-  filas: { hour: number; productive: number; nonProductive: number; neutral: number }[]
-}) {
-  // Solo el tramo con actividad, con una hora de margen a cada lado.
-  const conDatos = filas.filter((f) => f.productive + f.nonProductive + f.neutral > 0)
-  if (conDatos.length === 0) {
-    return (
-      <p className="py-14 text-center text-xs text-gray-400">Sin actividad registrada ese día.</p>
-    )
-  }
-  const desde = Math.max(0, conDatos[0]!.hour - 1)
-  const hasta = Math.min(23, conDatos[conDatos.length - 1]!.hour + 1)
-  const tramo = filas.slice(desde, hasta + 1)
-  const max = Math.max(...tramo.map((f) => f.productive + f.nonProductive + f.neutral), 1)
-
-  return (
-    <div className="flex min-h-[224px] flex-1 items-stretch gap-1 px-1">
-      {tramo.map((f) => {
-        const total = f.productive + f.nonProductive + f.neutral
-        const alto = (total / max) * 100
-        const pct = (v: number) => (total > 0 ? (v / total) * 100 : 0)
-        return (
-          <div key={f.hour} className="flex h-full flex-1 flex-col items-center justify-end gap-1">
-            <div
-              className="flex w-full flex-col-reverse overflow-hidden rounded-sm"
-              style={{ height: `${Math.max(alto, total > 0 ? 3 : 0)}%` }}
-              title={`${String(f.hour).padStart(2, '0')}:00 · productivo ${horasCortas(f.productive)} · improductivo ${horasCortas(f.nonProductive)} · neutral ${horasCortas(f.neutral)}`}
-            >
-              <div style={{ height: `${pct(f.productive)}%`, background: COLOR.productivo }} />
-              <div style={{ height: `${pct(f.neutral)}%`, background: COLOR.neutral }} />
-              <div style={{ height: `${pct(f.nonProductive)}%`, background: COLOR.improductivo }} />
-            </div>
-            {total === 0 && <div className="h-px w-full bg-gray-200" />}
-            <span className="text-[10px] tabular-nums text-gray-400">
-              {f.hour % 3 === 0 ? `${String(f.hour).padStart(2, '0')}:00` : ''}
-            </span>
-          </div>
-        )
-      })}
-    </div>
-  )
-}
-
 export function DayOverview() {
   const [fecha, setFecha] = useState(hoyLocal())
   const [depto, setDepto] = useState('')
@@ -140,6 +44,18 @@ export function DayOverview() {
     { date: fecha, ...(depto ? { department: depto } : {}) },
     { refetchInterval: fecha === hoy ? 60_000 : false, staleTime: 30_000 },
   )
+
+  // Solo el tramo con actividad, con una hora de margen a cada lado.
+  const tramos: Tramo[] = (() => {
+    const filas = data?.hourly ?? []
+    const con = filas.filter((h) => h.productive + h.nonProductive + h.neutral > 0)
+    if (!con.length) return []
+    const a = Math.max(0, con[0]!.hour - 1)
+    const b = Math.min(23, con[con.length - 1]!.hour + 1)
+    return filas
+      .slice(a, b + 1)
+      .map((h) => ({ ...h, etiqueta: `${String(h.hour).padStart(2, '0')}:00` }))
+  })()
 
   const tabs = [
     { v: '', l: 'Toda la empresa' },
@@ -215,31 +131,9 @@ export function DayOverview() {
             <div className="flex flex-col rounded-xl border border-gray-200 bg-white p-4">
               <div className="mb-2 flex items-center justify-between">
                 <h3 className="text-sm font-semibold text-gray-700">Barra de productividad</h3>
-                <div className="flex gap-3 text-[11px] text-gray-500">
-                  <span className="flex items-center gap-1">
-                    <i
-                      className="inline-block h-2.5 w-2.5 rounded-sm"
-                      style={{ background: COLOR.productivo }}
-                    />
-                    Productivo
-                  </span>
-                  <span className="flex items-center gap-1">
-                    <i
-                      className="inline-block h-2.5 w-2.5 rounded-sm"
-                      style={{ background: COLOR.neutral }}
-                    />
-                    Neutral
-                  </span>
-                  <span className="flex items-center gap-1">
-                    <i
-                      className="inline-block h-2.5 w-2.5 rounded-sm"
-                      style={{ background: COLOR.improductivo }}
-                    />
-                    Improductivo
-                  </span>
-                </div>
+                <LeyendaClases />
               </div>
-              <BarraHoraria filas={data.hourly} />
+              <BarraApilada tramos={tramos} />
             </div>
 
             <div className="grid grid-cols-2 gap-3">

@@ -2,6 +2,7 @@ import { z } from 'zod'
 import { createHash } from 'crypto'
 import { TRPCError } from '@trpc/server'
 import { router, protectedProcedure } from '../trpc'
+import { buildMyDay } from '../my-day'
 import { hashPassword, verifyPassword, validatePasswordPolicy } from '@/lib/auth/password'
 import { broadcastNotificationToMany } from '@/lib/realtime-broadcast'
 import { sendAbsenceRequestEmail } from '@/lib/email'
@@ -11,6 +12,35 @@ const CONSENT_TYPE = 'monitoring_basic'
 
 export const employeeRouter = router({
   // ─── Mi perfil ────────────────────────────────────────────────────────────
+
+  /**
+   * "Mi dia": llegada, salida, tiempo productivo, eficacia, barra horaria,
+   * apps por clase y categorias. El calculo vive en server/my-day.ts.
+   */
+  getMyDay: protectedProcedure
+    .input(
+      z.object({
+        date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+        modo: z.enum(['dia', 'semana', 'mes']).default('dia'),
+      }),
+    )
+    .query(async ({ ctx, input }) => {
+      const tid = ctx.user!.tid
+      const { data: t } = await ctx.db
+        .from('tenants')
+        .select('timezone')
+        .eq('id', tid)
+        .maybeSingle()
+      const tz = (t?.timezone as string | null) || 'America/Bogota'
+      try {
+        return await buildMyDay(ctx.db, tid, ctx.user!.sub, tz, input)
+      } catch (e) {
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: e instanceof Error ? e.message : 'Error calculando tu dia',
+        })
+      }
+    }),
 
   getMyProfile: protectedProcedure.query(async ({ ctx }) => {
     const { data, error } = await ctx.db

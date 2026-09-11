@@ -2,14 +2,9 @@
 
 import { trpc } from '@/lib/trpc-client'
 import { MyDayPanel } from '@/features/employee/components/MyDayPanel'
-import {
-  AlertTriangle,
-  TrendingUp,
-  TrendingDown,
-  Minus,
-  MonitorDown,
-  CheckCircle2,
-} from 'lucide-react'
+import { MyDayOverview } from '@/features/employee/components/MyDayOverview'
+import { MyScheduleNotice } from '@/features/employee/components/MyScheduleNotice'
+import { AlertTriangle, MonitorDown, CheckCircle2 } from 'lucide-react'
 import Link from 'next/link'
 
 function greeting(name: string | null | undefined) {
@@ -29,34 +24,7 @@ const LEGAL_LIMIT_SECS = 50 * 3600
 export default function EmployeeDashboard() {
   const { data: profile } = trpc.employee.getMyProfile.useQuery()
   const { data: devices } = trpc.employee.getMyDevices.useQuery()
-  const { data: metrics14 } = trpc.employee.getMyMetrics.useQuery({ days: 14 })
   const { data: metrics30 } = trpc.employee.getMyMetrics.useQuery({ days: 30 })
-
-  // Dividir las últimas 2 semanas: esta semana vs semana anterior
-  type RawRow = {
-    metric_date: string | null
-    active_seconds: number | null
-    productive_seconds: number | null
-    productivity_ratio: number
-  }
-  const allRows = (metrics14?.series ?? []) as RawRow[]
-  const cutoff = new Date(Date.now() - 7 * 86400000).toISOString().slice(0, 10)
-  const thisWeek = allRows.filter((r) => (r.metric_date ?? '') >= cutoff)
-  const lastWeek = allRows.filter((r) => (r.metric_date ?? '') < cutoff)
-
-  const thisActive = thisWeek.reduce((s, r) => s + (r.active_seconds ?? 0), 0)
-  const lastActive = lastWeek.reduce((s, r) => s + (r.active_seconds ?? 0), 0)
-  const thisProductivity =
-    thisWeek.length > 0
-      ? thisWeek.reduce((s, r) => s + r.productivity_ratio, 0) / thisWeek.length
-      : 0
-  const lastProductivity =
-    lastWeek.length > 0
-      ? lastWeek.reduce((s, r) => s + r.productivity_ratio, 0) / lastWeek.length
-      : 0
-
-  const activeDiff = lastActive > 0 ? Math.round(((thisActive - lastActive) / lastActive) * 100) : 0
-  const productDiff = Math.round((thisProductivity - lastProductivity) * 100)
 
   // Horas extra mensuales
   const monthOvertime = metrics30?.summary.total_overtime_seconds ?? 0
@@ -132,52 +100,13 @@ export default function EmployeeDashboard() {
         </div>
       )}
 
-      {/* Panel del día */}
+      {/* Sesión activa y check-in manual */}
       <MyDayPanel />
 
-      {/* Comparación semanal */}
-      {(thisActive > 0 || lastActive > 0) && (
-        <div className="rounded-2xl border border-gray-200 bg-white p-5">
-          <h2 className="mb-4 text-sm font-semibold text-gray-900">
-            Esta semana vs semana anterior
-          </h2>
-          <div className="grid grid-cols-2 gap-4">
-            {[
-              {
-                label: 'Tiempo activo',
-                current: fmtHours(thisActive),
-                diff: activeDiff,
-              },
-              {
-                label: 'Productividad',
-                current: `${Math.round(thisProductivity * 100)}%`,
-                diff: productDiff,
-              },
-            ].map((k) => {
-              const up = k.diff > 0
-              const neutral = k.diff === 0
-              return (
-                <div key={k.label} className="rounded-xl bg-gray-50 p-4">
-                  <p className="text-xs text-gray-500">{k.label}</p>
-                  <p className="mt-1 text-2xl font-bold tabular-nums text-gray-900">{k.current}</p>
-                  <div
-                    className={`mt-1 flex items-center gap-1 text-xs font-medium ${neutral ? 'text-gray-400' : up ? 'text-green-600' : 'text-red-500'}`}
-                  >
-                    {neutral ? (
-                      <Minus className="h-3 w-3" />
-                    ) : up ? (
-                      <TrendingUp className="h-3 w-3" />
-                    ) : (
-                      <TrendingDown className="h-3 w-3" />
-                    )}
-                    {neutral ? 'Sin cambio' : `${up ? '+' : ''}${k.diff}% vs semana anterior`}
-                  </div>
-                </div>
-              )
-            })}
-          </div>
-        </div>
-      )}
+      {/* Mi día: llegada, salida, productividad, apps y categorías */}
+      <MyDayOverview />
+
+      <MyScheduleNotice />
     </div>
   )
 }

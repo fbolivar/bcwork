@@ -4,6 +4,7 @@ import { useState } from 'react'
 import Link from 'next/link'
 import { UserRound } from 'lucide-react'
 import { COLOR, horasCortas, iniciales } from './panel-identidad'
+import { ColumnaApps } from '@/features/shared/panel-widgets'
 import type { Persona, App } from '@/server/day-overview'
 
 /** Rankings del día y columnas de aplicaciones. */
@@ -139,52 +140,6 @@ export function DayRankings({
   )
 }
 
-function ColumnaApps({
-  titulo,
-  color,
-  total,
-  count,
-  top,
-}: {
-  titulo: string
-  color: string
-  total: number
-  count: number
-  top: App[]
-}) {
-  return (
-    <div className="overflow-hidden rounded-xl border border-gray-200 bg-white">
-      <div className="h-1" style={{ background: color }} />
-      <div className="flex items-baseline justify-between px-4 pb-1 pt-3">
-        <p className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-widest text-gray-400">
-          <span className="inline-block h-2 w-2 rounded-sm" style={{ background: color }} />
-          {titulo}
-        </p>
-        <span className="text-lg font-bold tabular-nums text-gray-900">{horasCortas(total)}</span>
-      </div>
-      {top.length === 0 ? (
-        <p className="px-4 py-8 text-center text-xs text-gray-400">Sin uso registrado</p>
-      ) : (
-        <ul className="px-4 py-1">
-          {top.map((a) => (
-            <li key={a.name} className="flex items-center justify-between py-1.5 text-sm">
-              <span className="truncate pr-3 text-gray-800" title={a.name}>
-                {a.name}
-              </span>
-              <span className="shrink-0 tabular-nums text-gray-500">{horasCortas(a.seconds)}</span>
-            </li>
-          ))}
-        </ul>
-      )}
-      <div className="border-t border-gray-100 px-4 py-2.5">
-        <Link href="/admin/apps" className="text-xs text-blue-600 hover:underline">
-          Ver todo ({count})
-        </Link>
-      </div>
-    </div>
-  )
-}
-
 export function DayApps({
   a,
 }: {
@@ -196,9 +151,19 @@ export function DayApps({
 }) {
   return (
     <div className="grid gap-3 lg:grid-cols-3">
-      <ColumnaApps titulo="Productivas" color={COLOR.productivo} {...a.productive} />
-      <ColumnaApps titulo="Improductivas" color={COLOR.improductivo} {...a.nonProductive} />
-      <ColumnaApps titulo="Neutrales" color={COLOR.inactivo} {...a.neutral} />
+      <ColumnaApps
+        titulo="Productivas"
+        color={COLOR.productivo}
+        href="/admin/apps"
+        {...a.productive}
+      />
+      <ColumnaApps
+        titulo="Improductivas"
+        color={COLOR.improductivo}
+        href="/admin/apps"
+        {...a.nonProductive}
+      />
+      <ColumnaApps titulo="Neutrales" color={COLOR.inactivo} href="/admin/apps" {...a.neutral} />
     </div>
   )
 }

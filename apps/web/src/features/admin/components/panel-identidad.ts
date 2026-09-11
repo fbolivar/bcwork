@@ -21,8 +21,10 @@ export const COLOR = {
 
 export function horasCortas(secs: number): string {
   if (secs <= 0) return '0m'
-  const h = Math.floor(secs / 3600)
-  const m = Math.round((secs % 3600) / 60)
+  // Redondear primero a minutos: si no, 2h 59m 40s se convierte en "2h 60m".
+  const minutos = Math.round(secs / 60)
+  const h = Math.floor(minutos / 60)
+  const m = minutos % 60
   if (h === 0) return `${m}m`
   return m === 0 ? `${h}h` : `${h}h ${m}m`
 }
