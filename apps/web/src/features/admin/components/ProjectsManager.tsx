@@ -231,7 +231,7 @@ export function ProjectsManager() {
             <Plug className="h-4 w-4" /> Integraciones
           </Link>
           <Link
-            href="/admin/report-builder"
+            href="/admin/reports"
             className="flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-600 hover:bg-gray-50"
           >
             <FileBarChart className="h-4 w-4" /> Informes

@@ -14,6 +14,7 @@ import {
 } from '@/lib/email'
 import { runReport, REPORT_TYPES, ReportInputError } from '../reports'
 import { buildDayOverview } from '../day-overview'
+import { buildReportsOverview } from '../reports-overview'
 import { toCron, proximaEjecucion } from '../report-schedule'
 import { enviarInformeProgramado } from '../report-mailer'
 import { offsetMinutes } from '@/lib/tz'
@@ -1452,6 +1453,29 @@ export const adminRouter = router({
         throw new TRPCError({
           code: 'INTERNAL_SERVER_ERROR',
           message: e instanceof Error ? e.message : 'Error calculando el panel del dia',
+        })
+      }
+    }),
+
+  /** Informes > Resumen. Ver server/reports-overview.ts. */
+  getReportsOverview: adminProcedure
+    .input(
+      z.object({
+        from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+        to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+        team_ids: z.array(z.string().uuid()).optional(),
+        user_ids: z.array(z.string().uuid()).optional(),
+      }),
+    )
+    .query(async ({ ctx, input }) => {
+      const tid = ctx.user!.tid
+      const tz = await getTenantTimezone(ctx.db, tid)
+      try {
+        return await buildReportsOverview(ctx.db, tid, tz, input)
+      } catch (e) {
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: e instanceof Error ? e.message : 'Error calculando el informe',
         })
       }
     }),

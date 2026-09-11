@@ -126,7 +126,7 @@ const GROUPS: NavGroup[] = [
     items: [
       { href: '/admin/projects', label: 'Proyectos', icon: Briefcase },
       { href: '/admin/training', label: 'Capacitación', icon: GraduationCap },
-      { href: '/admin/report-builder', label: 'Informes', icon: FileBarChart },
+      { href: '/admin/reports', label: 'Informes', icon: FileBarChart },
     ],
   },
   {
