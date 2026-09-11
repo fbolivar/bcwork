@@ -13,6 +13,7 @@ import {
   sendPayslipIssuedEmail,
 } from '@/lib/email'
 import { runReport, REPORT_TYPES, ReportInputError } from '../reports'
+import { buildDayOverview } from '../day-overview'
 import { toCron, proximaEjecucion } from '../report-schedule'
 import { enviarInformeProgramado } from '../report-mailer'
 import { offsetMinutes } from '@/lib/tz'
@@ -1141,6 +1142,30 @@ export const adminRouter = router({
    * aparecian en ninguna pantalla. Esto no agrega captura: muestra lo que ya
    * habia.
    */
+  /**
+   * Panel del dia: barra horaria, KPIs, rankings y aplicaciones por clase.
+   * El calculo vive en server/day-overview.ts.
+   */
+  getDayOverview: adminProcedure
+    .input(
+      z.object({
+        date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+        department: z.string().max(100).optional(),
+      }),
+    )
+    .query(async ({ ctx, input }) => {
+      const tid = ctx.user!.tid
+      const tz = await getTenantTimezone(ctx.db, tid)
+      try {
+        return await buildDayOverview(ctx.db, tid, tz, input)
+      } catch (e) {
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: e instanceof Error ? e.message : 'Error calculando el panel del dia',
+        })
+      }
+    }),
+
   getCompanyInsights: adminProcedure
     .input(z.object({ weeks: z.number().int().min(2).max(12).default(4) }))
     .query(async ({ ctx, input }) => {

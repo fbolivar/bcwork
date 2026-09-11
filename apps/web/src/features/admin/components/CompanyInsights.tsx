@@ -12,23 +12,25 @@ import {
 } from 'recharts'
 import { MapPin, Building2 } from 'lucide-react'
 import { trpc } from '@/lib/trpc-client'
+import { COLOR } from './panel-identidad'
 
 /**
- * Tendencia, reparto del tiempo, top de aplicaciones y presencial/remoto.
+ * Tendencia, reparto del tiempo y presencial/remoto. (Las aplicaciones
+ * más usadas viven en el panel del día, por clase.)
  *
  * El Resumen no tenía una sola línea de tiempo: solo números sueltos. Y tres
  * dimensiones que ya se calculaban a diario —apps_top, location_type y el
  * reparto productivo/no productivo— no aparecían en ninguna pantalla.
  */
 
-// Paleta estable: el mismo significado conserva el mismo color en todo el panel.
+// Misma paleta que el resto del panel: verde productivo, naranja improductivo.
 const C = {
-  cumplimiento: '#0891b2',
-  productividad: '#7c3aed',
-  productivo: '#0891b2',
-  noProductivo: '#f97316',
-  neutral: '#cbd5e1',
-  inactivo: '#94a3b8',
+  cumplimiento: COLOR.cumplimiento,
+  productividad: COLOR.productivo,
+  productivo: COLOR.productivo,
+  noProductivo: COLOR.improductivo,
+  neutral: COLOR.neutral,
+  inactivo: COLOR.inactivo,
 }
 
 function horas(secs: number) {
@@ -92,7 +94,6 @@ export function CompanyInsights() {
     { k: 'Neutral / sin clasificar', v: d.neutral, c: C.neutral },
   ].filter((p) => p.v > 0)
 
-  const maxApp = data.topApps[0]?.seconds ?? 1
   const totalDias = data.locations.reduce((s, l) => s + l.days, 0)
 
   return (
@@ -196,62 +197,40 @@ export function CompanyInsights() {
           )}
         </Caja>
 
-        {/* Top de apps: ya estaba calculado en apps_top y no se mostraba. */}
-        <Caja titulo="Aplicaciones más usadas" sub="suma de toda la empresa en el período">
-          <ul className="space-y-1.5">
-            {data.topApps.map((a) => (
-              <li key={a.name} className="flex items-center gap-2">
-                <span className="w-32 shrink-0 truncate text-xs text-gray-700" title={a.name}>
-                  {a.name}
-                </span>
-                <span className="h-2 flex-1 overflow-hidden rounded-full bg-gray-100">
-                  <span
-                    className="block h-2 rounded-full bg-cyan-500"
-                    style={{ width: `${Math.max((a.seconds / maxApp) * 100, 2)}%` }}
-                  />
-                </span>
-                <span className="w-14 text-right text-[11px] text-gray-500">
-                  {horas(a.seconds)}
-                </span>
-              </li>
-            ))}
-          </ul>
-        </Caja>
+        {/* Presencial vs remoto: poblado al 100% y sin mostrar, en un producto de
+            teletrabajo. */}
+        {totalDias > 0 && (
+          <Caja titulo="Dónde se trabaja" sub="días-persona registrados en el período">
+            <div className="flex flex-wrap gap-4">
+              {data.locations.map((l) => {
+                const remoto = l.type === 'remote'
+                const nombre =
+                  l.type === 'remote'
+                    ? 'Remoto'
+                    : l.type === 'office'
+                      ? 'Oficina'
+                      : l.type === 'sin_dato'
+                        ? 'Sin dato'
+                        : l.type
+                return (
+                  <div key={l.type} className="flex items-center gap-2">
+                    {remoto ? (
+                      <MapPin className="h-4 w-4 text-cyan-600" />
+                    ) : (
+                      <Building2 className="h-4 w-4 text-gray-400" />
+                    )}
+                    <span className="text-sm text-gray-700">{nombre}</span>
+                    <span className="text-sm font-bold text-gray-900">
+                      {Math.round((l.days / totalDias) * 100)}%
+                    </span>
+                    <span className="text-[11px] text-gray-400">({l.days} días)</span>
+                  </div>
+                )
+              })}
+            </div>
+          </Caja>
+        )}
       </div>
-
-      {/* Presencial vs remoto: poblado al 100% y sin mostrar, en un producto de
-          teletrabajo. */}
-      {totalDias > 0 && (
-        <Caja titulo="Dónde se trabaja" sub="días-persona registrados en el período">
-          <div className="flex flex-wrap gap-4">
-            {data.locations.map((l) => {
-              const remoto = l.type === 'remote'
-              const nombre =
-                l.type === 'remote'
-                  ? 'Remoto'
-                  : l.type === 'office'
-                    ? 'Oficina'
-                    : l.type === 'sin_dato'
-                      ? 'Sin dato'
-                      : l.type
-              return (
-                <div key={l.type} className="flex items-center gap-2">
-                  {remoto ? (
-                    <MapPin className="h-4 w-4 text-cyan-600" />
-                  ) : (
-                    <Building2 className="h-4 w-4 text-gray-400" />
-                  )}
-                  <span className="text-sm text-gray-700">{nombre}</span>
-                  <span className="text-sm font-bold text-gray-900">
-                    {Math.round((l.days / totalDias) * 100)}%
-                  </span>
-                  <span className="text-[11px] text-gray-400">({l.days} días)</span>
-                </div>
-              )
-            })}
-          </div>
-        </Caja>
-      )}
     </div>
   )
 }
