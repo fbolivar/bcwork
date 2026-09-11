@@ -626,6 +626,13 @@ export type Database = {
         }
         Relationships: [
           {
+            foreignKeyName: "agent_devices_provisioning_token_fkey"
+            columns: ["provisioning_token"]
+            isOneToOne: false
+            referencedRelation: "agent_provisioning_tokens"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "agent_devices_tenant_id_fkey"
             columns: ["tenant_id"]
             isOneToOne: false
@@ -639,19 +646,13 @@ export type Database = {
             referencedRelation: "users"
             referencedColumns: ["id"]
           },
-          {
-            foreignKeyName: "agent_devices_provisioning_token_fkey"
-            columns: ["provisioning_token"]
-            isOneToOne: false
-            referencedRelation: "agent_provisioning_tokens"
-            referencedColumns: ["id"]
-          },
         ]
       }
       agent_provisioning_tokens: {
         Row: {
           created_at: string | null
           created_by: string
+          expires_at: string | null
           id: string
           label: string | null
           last_used_at: string | null
@@ -660,11 +661,11 @@ export type Database = {
           tenant_id: string
           token_hash: string
           token_prefix: string
-          expires_at: string | null
         }
         Insert: {
           created_at?: string | null
           created_by: string
+          expires_at?: string | null
           id?: string
           label?: string | null
           last_used_at?: string | null
@@ -673,11 +674,11 @@ export type Database = {
           tenant_id: string
           token_hash: string
           token_prefix: string
-          expires_at?: string | null
         }
         Update: {
           created_at?: string | null
           created_by?: string
+          expires_at?: string | null
           id?: string
           label?: string | null
           last_used_at?: string | null
@@ -686,16 +687,8 @@ export type Database = {
           tenant_id?: string
           token_hash?: string
           token_prefix?: string
-          expires_at?: string | null
         }
         Relationships: [
-          {
-            foreignKeyName: "agent_provisioning_tokens_tenant_id_fkey"
-            columns: ["tenant_id"]
-            isOneToOne: false
-            referencedRelation: "tenants"
-            referencedColumns: ["id"]
-          },
           {
             foreignKeyName: "agent_provisioning_tokens_created_by_fkey"
             columns: ["created_by"]
@@ -703,85 +696,46 @@ export type Database = {
             referencedRelation: "users"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "agent_provisioning_tokens_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
         ]
       }
       agent_release: {
         Row: {
           id: string
-          version: string
-          sha256: string
           notes: string | null
           published_at: string | null
           published_by: string | null
-        }
-        Insert: {
-          id?: string
-          version: string
           sha256: string
-          notes?: string | null
-          published_at?: string | null
-          published_by?: string | null
-        }
-        Update: {
-          id?: string
-          version?: string
-          sha256?: string
-          notes?: string | null
-          published_at?: string | null
-          published_by?: string | null
-        }
-        Relationships: []
-      }
-      installed_apps: {
-        Row: {
-          device_id: string
-          first_seen: string | null
-          id: string
-          install_date: string | null
-          last_seen: string | null
-          name: string
-          publisher: string | null
-          source: string | null
-          tenant_id: string
-          version: string | null
+          version: string
         }
         Insert: {
-          device_id: string
-          first_seen?: string | null
           id?: string
-          install_date?: string | null
-          last_seen?: string | null
-          name: string
-          publisher?: string | null
-          source?: string | null
-          tenant_id: string
-          version?: string | null
+          notes?: string | null
+          published_at?: string | null
+          published_by?: string | null
+          sha256: string
+          version: string
         }
         Update: {
-          device_id?: string
-          first_seen?: string | null
           id?: string
-          install_date?: string | null
-          last_seen?: string | null
-          name?: string
-          publisher?: string | null
-          source?: string | null
-          tenant_id?: string
-          version?: string | null
+          notes?: string | null
+          published_at?: string | null
+          published_by?: string | null
+          sha256?: string
+          version?: string
         }
         Relationships: [
           {
-            foreignKeyName: "installed_apps_device_id_fkey"
-            columns: ["device_id"]
+            foreignKeyName: "agent_release_published_by_fkey"
+            columns: ["published_by"]
             isOneToOne: false
-            referencedRelation: "agent_devices"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "installed_apps_tenant_id_fkey"
-            columns: ["tenant_id"]
-            isOneToOne: false
-            referencedRelation: "tenants"
+            referencedRelation: "users"
             referencedColumns: ["id"]
           },
         ]
@@ -1337,124 +1291,6 @@ export type Database = {
           },
         ]
       }
-      billing_invoices: {
-        Row: {
-          id: string
-          tenant_id: string
-          invoice_number: string
-          period_start: string
-          period_end: string
-          plan_code: string
-          plan_name: string
-          seats: number
-          unit_price_cop: number
-          subtotal_cop: number
-          tax_cop: number
-          total_cop: number
-          status: string
-          payment_method: string | null
-          payment_reference: string | null
-          due_date: string
-          paid_at: string | null
-          paid_by: string | null
-          notes: string | null
-          license_id: string | null
-          created_at: string
-          updated_at: string
-        }
-        Insert: {
-          id?: string
-          tenant_id: string
-          invoice_number: string
-          period_start: string
-          period_end: string
-          plan_code: string
-          plan_name: string
-          seats: number
-          unit_price_cop: number
-          subtotal_cop: number
-          tax_cop?: number
-          total_cop: number
-          status?: string
-          payment_method?: string | null
-          payment_reference?: string | null
-          due_date: string
-          paid_at?: string | null
-          paid_by?: string | null
-          notes?: string | null
-          license_id?: string | null
-          created_at?: string
-          updated_at?: string
-        }
-        Update: {
-          id?: string
-          tenant_id?: string
-          invoice_number?: string
-          period_start?: string
-          period_end?: string
-          plan_code?: string
-          plan_name?: string
-          seats?: number
-          unit_price_cop?: number
-          subtotal_cop?: number
-          tax_cop?: number
-          total_cop?: number
-          status?: string
-          payment_method?: string | null
-          payment_reference?: string | null
-          due_date?: string
-          paid_at?: string | null
-          paid_by?: string | null
-          notes?: string | null
-          license_id?: string | null
-          updated_at?: string
-        }
-        Relationships: [
-          { foreignKeyName: 'billing_invoices_tenant_id_fkey'; columns: ['tenant_id']; referencedRelation: 'tenants'; referencedColumns: ['id'] }
-        ]
-      }
-      wompi_transactions: {
-        Row: {
-          id: string
-          tenant_id: string
-          billing_invoice_id: string | null
-          reference: string
-          wompi_id: string | null
-          amount_cop: number
-          status: string
-          currency: string
-          payment_method_type: string | null
-          redirect_url: string | null
-          webhook_payload: Record<string, unknown> | null
-          created_at: string
-          updated_at: string
-        }
-        Insert: {
-          id?: string
-          tenant_id: string
-          billing_invoice_id?: string | null
-          reference: string
-          wompi_id?: string | null
-          amount_cop: number
-          status?: string
-          currency?: string
-          payment_method_type?: string | null
-          redirect_url?: string | null
-          webhook_payload?: Record<string, unknown> | null
-          created_at?: string
-          updated_at?: string
-        }
-        Update: {
-          wompi_id?: string | null
-          status?: string
-          payment_method_type?: string | null
-          webhook_payload?: Record<string, unknown> | null
-          updated_at?: string
-        }
-        Relationships: [
-          { foreignKeyName: 'wompi_transactions_tenant_id_fkey'; columns: ['tenant_id']; referencedRelation: 'tenants'; referencedColumns: ['id'] }
-        ]
-      }
       billing_events: {
         Row: {
           amount_cop: number | null
@@ -1493,6 +1329,103 @@ export type Database = {
           },
           {
             foreignKeyName: "billing_events_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      billing_invoices: {
+        Row: {
+          created_at: string
+          due_date: string
+          id: string
+          invoice_number: string
+          license_id: string | null
+          notes: string | null
+          paid_at: string | null
+          paid_by: string | null
+          payment_method: string | null
+          payment_reference: string | null
+          period_end: string
+          period_start: string
+          plan_code: string
+          plan_name: string
+          seats: number
+          status: string
+          subtotal_cop: number
+          tax_cop: number
+          tenant_id: string
+          total_cop: number
+          unit_price_cop: number
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          due_date: string
+          id?: string
+          invoice_number: string
+          license_id?: string | null
+          notes?: string | null
+          paid_at?: string | null
+          paid_by?: string | null
+          payment_method?: string | null
+          payment_reference?: string | null
+          period_end: string
+          period_start: string
+          plan_code: string
+          plan_name: string
+          seats?: number
+          status?: string
+          subtotal_cop: number
+          tax_cop?: number
+          tenant_id: string
+          total_cop: number
+          unit_price_cop: number
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          due_date?: string
+          id?: string
+          invoice_number?: string
+          license_id?: string | null
+          notes?: string | null
+          paid_at?: string | null
+          paid_by?: string | null
+          payment_method?: string | null
+          payment_reference?: string | null
+          period_end?: string
+          period_start?: string
+          plan_code?: string
+          plan_name?: string
+          seats?: number
+          status?: string
+          subtotal_cop?: number
+          tax_cop?: number
+          tenant_id?: string
+          total_cop?: number
+          unit_price_cop?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "billing_invoices_license_id_fkey"
+            columns: ["license_id"]
+            isOneToOne: false
+            referencedRelation: "licenses"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "billing_invoices_paid_by_fkey"
+            columns: ["paid_by"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "billing_invoices_tenant_id_fkey"
             columns: ["tenant_id"]
             isOneToOne: false
             referencedRelation: "tenants"
@@ -2734,6 +2667,60 @@ export type Database = {
           },
           {
             foreignKeyName: "hr_documents_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      installed_apps: {
+        Row: {
+          device_id: string
+          first_seen: string | null
+          id: string
+          install_date: string | null
+          last_seen: string | null
+          name: string
+          publisher: string | null
+          source: string | null
+          tenant_id: string
+          version: string | null
+        }
+        Insert: {
+          device_id: string
+          first_seen?: string | null
+          id?: string
+          install_date?: string | null
+          last_seen?: string | null
+          name: string
+          publisher?: string | null
+          source?: string | null
+          tenant_id: string
+          version?: string | null
+        }
+        Update: {
+          device_id?: string
+          first_seen?: string | null
+          id?: string
+          install_date?: string | null
+          last_seen?: string | null
+          name?: string
+          publisher?: string | null
+          source?: string | null
+          tenant_id?: string
+          version?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "installed_apps_device_id_fkey"
+            columns: ["device_id"]
+            isOneToOne: false
+            referencedRelation: "agent_devices"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "installed_apps_tenant_id_fkey"
             columns: ["tenant_id"]
             isOneToOne: false
             referencedRelation: "tenants"
@@ -4032,35 +4019,170 @@ export type Database = {
         }
         Relationships: []
       }
+      platform_announcements: {
+        Row: {
+          body: string
+          created_at: string
+          created_by: string | null
+          cta_label: string | null
+          cta_url: string | null
+          expires_at: string | null
+          id: string
+          is_published: boolean
+          pinned: boolean
+          published_at: string | null
+          target_all: boolean
+          target_plans: string[] | null
+          target_tags: string[] | null
+          title: string
+          type: string
+          updated_at: string
+        }
+        Insert: {
+          body: string
+          created_at?: string
+          created_by?: string | null
+          cta_label?: string | null
+          cta_url?: string | null
+          expires_at?: string | null
+          id?: string
+          is_published?: boolean
+          pinned?: boolean
+          published_at?: string | null
+          target_all?: boolean
+          target_plans?: string[] | null
+          target_tags?: string[] | null
+          title: string
+          type?: string
+          updated_at?: string
+        }
+        Update: {
+          body?: string
+          created_at?: string
+          created_by?: string | null
+          cta_label?: string | null
+          cta_url?: string | null
+          expires_at?: string | null
+          id?: string
+          is_published?: boolean
+          pinned?: boolean
+          published_at?: string | null
+          target_all?: boolean
+          target_plans?: string[] | null
+          target_tags?: string[] | null
+          title?: string
+          type?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      project_members: {
+        Row: {
+          added_at: string
+          project_id: string
+          tenant_id: string
+          user_id: string
+        }
+        Insert: {
+          added_at?: string
+          project_id: string
+          tenant_id: string
+          user_id: string
+        }
+        Update: {
+          added_at?: string
+          project_id?: string
+          tenant_id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "project_members_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "project_members_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "project_members_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       project_tasks: {
         Row: {
+          archived_at: string | null
+          assignee_id: string | null
           created_at: string | null
+          created_by: string | null
           description: string | null
+          due_date: string | null
           id: string
           is_active: boolean | null
           name: string
+          priority: string
           project_id: string
+          status: string
+          tag: string | null
           tenant_id: string
         }
         Insert: {
+          archived_at?: string | null
+          assignee_id?: string | null
           created_at?: string | null
+          created_by?: string | null
           description?: string | null
+          due_date?: string | null
           id?: string
           is_active?: boolean | null
           name: string
+          priority?: string
           project_id: string
+          status?: string
+          tag?: string | null
           tenant_id: string
         }
         Update: {
+          archived_at?: string | null
+          assignee_id?: string | null
           created_at?: string | null
+          created_by?: string | null
           description?: string | null
+          due_date?: string | null
           id?: string
           is_active?: boolean | null
           name?: string
+          priority?: string
           project_id?: string
+          status?: string
+          tag?: string | null
           tenant_id?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "project_tasks_assignee_id_fkey"
+            columns: ["assignee_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "project_tasks_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "project_tasks_project_id_fkey"
             columns: ["project_id"]
@@ -4140,37 +4262,46 @@ export type Database = {
       }
       projects: {
         Row: {
+          archived_at: string | null
           color: string | null
           created_at: string | null
           created_by: string | null
           description: string | null
           id: string
+          integration: string | null
           is_active: boolean | null
           name: string
           tenant_id: string
           updated_at: string | null
+          visibility: string
         }
         Insert: {
+          archived_at?: string | null
           color?: string | null
           created_at?: string | null
           created_by?: string | null
           description?: string | null
           id?: string
+          integration?: string | null
           is_active?: boolean | null
           name: string
           tenant_id: string
           updated_at?: string | null
+          visibility?: string
         }
         Update: {
+          archived_at?: string | null
           color?: string | null
           created_at?: string | null
           created_by?: string | null
           description?: string | null
           id?: string
+          integration?: string | null
           is_active?: boolean | null
           name?: string
           tenant_id?: string
           updated_at?: string | null
+          visibility?: string
         }
         Relationships: [
           {
@@ -4284,6 +4415,7 @@ export type Database = {
       }
       scheduled_reports: {
         Row: {
+          created_at: string
           created_by: string
           cron_expression: string
           filters: Json | null
@@ -4298,6 +4430,7 @@ export type Database = {
           tenant_id: string
         }
         Insert: {
+          created_at?: string
           created_by: string
           cron_expression: string
           filters?: Json | null
@@ -4312,6 +4445,7 @@ export type Database = {
           tenant_id: string
         }
         Update: {
+          created_at?: string
           created_by?: string
           cron_expression?: string
           filters?: Json | null
@@ -4628,102 +4762,6 @@ export type Database = {
           },
         ]
       }
-      tenant_notes: {
-        Row: {
-          author_id: string | null
-          content: string
-          created_at: string
-          id: string
-          tenant_id: string
-        }
-        Insert: {
-          author_id?: string | null
-          content: string
-          created_at?: string
-          id?: string
-          tenant_id: string
-        }
-        Update: {
-          author_id?: string | null
-          content?: string
-          created_at?: string
-          id?: string
-          tenant_id?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "tenant_notes_author_id_fkey"
-            columns: ["author_id"]
-            isOneToOne: false
-            referencedRelation: "users"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "tenant_notes_tenant_id_fkey"
-            columns: ["tenant_id"]
-            isOneToOne: false
-            referencedRelation: "tenants"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      platform_announcements: {
-        Row: {
-          id: string
-          created_by: string | null
-          title: string
-          body: string
-          type: string
-          cta_label: string | null
-          cta_url: string | null
-          target_all: boolean
-          target_plans: string[]
-          target_tags: string[]
-          is_published: boolean
-          pinned: boolean
-          published_at: string | null
-          expires_at: string | null
-          created_at: string
-          updated_at: string
-        }
-        Insert: {
-          id?: string
-          created_by?: string | null
-          title: string
-          body: string
-          type?: string
-          cta_label?: string | null
-          cta_url?: string | null
-          target_all?: boolean
-          target_plans?: string[]
-          target_tags?: string[]
-          is_published?: boolean
-          pinned?: boolean
-          published_at?: string | null
-          expires_at?: string | null
-          created_at?: string
-          updated_at?: string
-        }
-        Update: {
-          id?: string
-          created_by?: string | null
-          title?: string
-          body?: string
-          type?: string
-          cta_label?: string | null
-          cta_url?: string | null
-          target_all?: boolean
-          target_plans?: string[]
-          target_tags?: string[]
-          is_published?: boolean
-          pinned?: boolean
-          published_at?: string | null
-          expires_at?: string | null
-          created_at?: string
-          updated_at?: string
-        }
-        Relationships: []
-      }
       tenant_communications: {
         Row: {
           body: string
@@ -4765,15 +4803,54 @@ export type Database = {
           },
         ]
       }
+      tenant_notes: {
+        Row: {
+          author_id: string | null
+          content: string
+          created_at: string
+          id: string
+          tenant_id: string
+        }
+        Insert: {
+          author_id?: string | null
+          content: string
+          created_at?: string
+          id?: string
+          tenant_id: string
+        }
+        Update: {
+          author_id?: string | null
+          content?: string
+          created_at?: string
+          id?: string
+          tenant_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "tenant_notes_author_id_fkey"
+            columns: ["author_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tenant_notes_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       tenants: {
         Row: {
+          capture_window_titles: boolean
           contact_email: string
           contact_phone: string | null
           country_code: string | null
           created_at: string | null
           data_protection_officer: string | null
           data_retention_months: number | null
-          capture_window_titles: boolean
           id: string
           legal_name: string
           logo_url: string | null
@@ -4789,13 +4866,13 @@ export type Database = {
           updated_at: string | null
         }
         Insert: {
+          capture_window_titles?: boolean
           contact_email: string
           contact_phone?: string | null
           country_code?: string | null
           created_at?: string | null
           data_protection_officer?: string | null
           data_retention_months?: number | null
-          capture_window_titles?: boolean
           id?: string
           legal_name: string
           logo_url?: string | null
@@ -4811,13 +4888,13 @@ export type Database = {
           updated_at?: string | null
         }
         Update: {
+          capture_window_titles?: boolean
           contact_email?: string
           contact_phone?: string | null
           country_code?: string | null
           created_at?: string | null
           data_protection_officer?: string | null
           data_retention_months?: number | null
-          capture_window_titles?: boolean
           id?: string
           legal_name?: string
           logo_url?: string | null
@@ -5063,10 +5140,10 @@ export type Database = {
           failed_login_attempts: number | null
           full_name: string
           geo_city: string | null
-          geo_manual: boolean
           geo_country: string | null
           geo_lat: number | null
           geo_lon: number | null
+          geo_manual: boolean
           hire_date: string | null
           id: string
           last_login_at: string | null
@@ -5092,10 +5169,10 @@ export type Database = {
           failed_login_attempts?: number | null
           full_name: string
           geo_city?: string | null
-          geo_manual?: boolean
           geo_country?: string | null
           geo_lat?: number | null
           geo_lon?: number | null
+          geo_manual?: boolean
           hire_date?: string | null
           id?: string
           last_login_at?: string | null
@@ -5121,10 +5198,10 @@ export type Database = {
           failed_login_attempts?: number | null
           full_name?: string
           geo_city?: string | null
-          geo_manual?: boolean
           geo_country?: string | null
           geo_lat?: number | null
           geo_lon?: number | null
+          geo_manual?: boolean
           hire_date?: string | null
           id?: string
           last_login_at?: string | null
@@ -5249,6 +5326,69 @@ export type Database = {
           },
           {
             foreignKeyName: "webhooks_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      wompi_transactions: {
+        Row: {
+          amount_cop: number
+          billing_invoice_id: string | null
+          created_at: string
+          currency: string
+          id: string
+          payment_method_type: string | null
+          redirect_url: string | null
+          reference: string
+          status: string
+          tenant_id: string
+          updated_at: string
+          webhook_payload: Json | null
+          wompi_id: string | null
+        }
+        Insert: {
+          amount_cop: number
+          billing_invoice_id?: string | null
+          created_at?: string
+          currency?: string
+          id?: string
+          payment_method_type?: string | null
+          redirect_url?: string | null
+          reference: string
+          status?: string
+          tenant_id: string
+          updated_at?: string
+          webhook_payload?: Json | null
+          wompi_id?: string | null
+        }
+        Update: {
+          amount_cop?: number
+          billing_invoice_id?: string | null
+          created_at?: string
+          currency?: string
+          id?: string
+          payment_method_type?: string | null
+          redirect_url?: string | null
+          reference?: string
+          status?: string
+          tenant_id?: string
+          updated_at?: string
+          webhook_payload?: Json | null
+          wompi_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "wompi_transactions_billing_invoice_id_fkey"
+            columns: ["billing_invoice_id"]
+            isOneToOne: false
+            referencedRelation: "billing_invoices"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "wompi_transactions_tenant_id_fkey"
             columns: ["tenant_id"]
             isOneToOne: false
             referencedRelation: "tenants"
@@ -5516,6 +5656,8 @@ export type Database = {
         Args: { p_days?: number; p_tenant_id?: string }
         Returns: number
       }
+      current_actor_role: { Args: never; Returns: string }
+      current_tenant_id: { Args: never; Returns: string }
       delete_tenant_data: { Args: { p_tenant_id: string }; Returns: undefined }
       evaluate_alerts: {
         Args: { p_date: string; p_tenant_id?: string }
@@ -5534,12 +5676,12 @@ export type Database = {
           user_id: string
         }[]
       }
+      is_platform_admin: { Args: never; Returns: boolean }
+      jwt_claims: { Args: never; Returns: Json }
       set_tenant_context: {
         Args: { p_role: string; p_tenant: string }
         Returns: undefined
       }
-      show_limit: { Args: never; Returns: number }
-      show_trgm: { Args: { "": string }; Returns: string[] }
     }
     Enums: {
       [_ in never]: never
@@ -5558,12 +5700,12 @@ export type Tables<
   DefaultSchemaTableNameOrOptions extends
     | keyof (DefaultSchema["Tables"] & DefaultSchema["Views"])
     | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
+  TableName extends (DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof (DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"] &
         DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Views"])
-    : never = never,
+    : never) = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -5587,11 +5729,11 @@ export type TablesInsert<
   DefaultSchemaTableNameOrOptions extends
     | keyof DefaultSchema["Tables"]
     | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
+  TableName extends (DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
-    : never = never,
+    : never) = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -5612,11 +5754,11 @@ export type TablesUpdate<
   DefaultSchemaTableNameOrOptions extends
     | keyof DefaultSchema["Tables"]
     | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
+  TableName extends (DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
-    : never = never,
+    : never) = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -5637,11 +5779,11 @@ export type Enums<
   DefaultSchemaEnumNameOrOptions extends
     | keyof DefaultSchema["Enums"]
     | { schema: keyof DatabaseWithoutInternals },
-  EnumName extends DefaultSchemaEnumNameOrOptions extends {
+  EnumName extends (DefaultSchemaEnumNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaEnumNameOrOptions["schema"]]["Enums"]
-    : never = never,
+    : never) = never,
 > = DefaultSchemaEnumNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -5654,11 +5796,11 @@ export type CompositeTypes<
   PublicCompositeTypeNameOrOptions extends
     | keyof DefaultSchema["CompositeTypes"]
     | { schema: keyof DatabaseWithoutInternals },
-  CompositeTypeName extends PublicCompositeTypeNameOrOptions extends {
+  CompositeTypeName extends (PublicCompositeTypeNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[PublicCompositeTypeNameOrOptions["schema"]]["CompositeTypes"]
-    : never = never,
+    : never) = never,
 > = PublicCompositeTypeNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }

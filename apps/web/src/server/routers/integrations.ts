@@ -221,6 +221,35 @@ export const integrationsRouter = router({
             body: JSON.stringify({ text: 'BCWork: Notificación de prueba ✓' }),
           })
           if (!res.ok) throw new Error(`Slack webhook failed: ${res.status}`)
+        } else if (integration.type === 'zapier' || integration.type === 'webhook') {
+          // Zapier recibe por un "Catch Hook"; un POST de prueba es la forma
+          // de que el Zap aprenda la forma del evento.
+          const res = await fetch(config.webhook_url!, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              event: 'test',
+              source: 'bcwork',
+              sent_at: new Date().toISOString(),
+            }),
+          })
+          if (!res.ok) throw new Error(`Webhook respondió ${res.status}`)
+        } else if (integration.type === 'outlook_calendar') {
+          const res = await fetch(config.ics_url!, { headers: { Accept: 'text/calendar' } })
+          if (!res.ok) throw new Error(`El calendario respondió ${res.status}`)
+          const texto = await res.text()
+          if (!texto.includes('BEGIN:VCALENDAR'))
+            throw new Error('La URL no devuelve un calendario ICS')
+          const eventos = (texto.match(/BEGIN:VEVENT/g) ?? []).length
+          return { ok: true, detail: `Calendario accesible · ${eventos} eventos` }
+        } else if (integration.type === 'gitlab') {
+          const base = (config.base_url || 'https://gitlab.com').replace(/\/$/, '')
+          const res = await fetch(`${base}/api/v4/user`, {
+            headers: { 'PRIVATE-TOKEN': config.token! },
+          })
+          if (!res.ok) throw new Error(`GitLab respondió ${res.status}`)
+          const u = (await res.json()) as { username?: string }
+          return { ok: true, detail: `Conectado como ${u.username ?? 'usuario'}` }
         }
       } catch (e) {
         throw new TRPCError({

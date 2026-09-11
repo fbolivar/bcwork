@@ -2280,16 +2280,66 @@ export const adminRouter = router({
 
   // ─── Proyectos ────────────────────────────────────────────────────────────
 
-  listProjects: adminProcedure.query(async ({ ctx }) => {
-    const { data, error } = await ctx.db
-      .from('projects')
-      .select('id, name, description, color, is_active, created_at, created_by')
-      .eq('tenant_id', ctx.user!.tid)
-      .order('name')
+  // ─── PROYECTOS Y TAREAS ──────────────────────────────────────────────────
+  // Lista con progreso (tareas hechas / total), creador, integracion de
+  // origen, visibilidad y miembros. Los archivados se piden aparte: la vista
+  // por defecto no debe mezclar lo vivo con lo cerrado.
+  listProjects: adminProcedure
+    .input(
+      z
+        .object({
+          archived: z.boolean().default(false),
+          search: z.string().max(100).optional(),
+        })
+        .optional(),
+    )
+    .query(async ({ ctx, input }) => {
+      const tid = ctx.user!.tid
+      const archived = input?.archived ?? false
+      let q = ctx.db
+        .from('projects')
+        .select(
+          'id, name, description, color, is_active, visibility, integration, archived_at, created_at, created_by',
+        )
+        .eq('tenant_id', tid)
+        .order('created_at', { ascending: false })
+      q = archived ? q.not('archived_at', 'is', null) : q.is('archived_at', null)
+      if (input?.search) q = q.ilike('name', `%${input.search}%`)
+      const { data: proyectos, error } = await q
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      const ids = (proyectos ?? []).map((p) => p.id)
+      if (!ids.length) return []
 
-    if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
-    return data ?? []
-  }),
+      const [{ data: tareas }, { data: miembros }, { data: usuarios }] = await Promise.all([
+        ctx.db
+          .from('project_tasks')
+          .select('project_id, status')
+          .eq('tenant_id', tid)
+          .in('project_id', ids)
+          .is('archived_at', null),
+        ctx.db.from('project_members').select('project_id, user_id').in('project_id', ids),
+        ctx.db.from('users').select('id, full_name, email').eq('tenant_id', tid),
+      ])
+      const nombre = new Map((usuarios ?? []).map((u) => [u.id, u.full_name || u.email]))
+      const progreso = new Map<string, { done: number; total: number }>()
+      for (const t of tareas ?? []) {
+        const p = progreso.get(t.project_id) ?? { done: 0, total: 0 }
+        p.total++
+        if (t.status === 'done') p.done++
+        progreso.set(t.project_id, p)
+      }
+      const miembrosDe = new Map<string, string[]>()
+      for (const m of miembros ?? []) {
+        miembrosDe.set(m.project_id, [...(miembrosDe.get(m.project_id) ?? []), m.user_id])
+      }
+      return (proyectos ?? []).map((p) => ({
+        ...p,
+        created_by_name: p.created_by ? (nombre.get(p.created_by) ?? null) : null,
+        tasks_done: progreso.get(p.id)?.done ?? 0,
+        tasks_total: progreso.get(p.id)?.total ?? 0,
+        member_ids: miembrosDe.get(p.id) ?? [],
+      }))
+    }),
 
   createProject: adminProcedure
     .input(
@@ -2299,23 +2349,36 @@ export const adminRouter = router({
         color: z
           .string()
           .regex(/^#[0-9a-fA-F]{6}$/)
-          .default('#3b82f6'),
+          .default('#2563eb'),
+        is_active: z.boolean().default(true),
+        visibility: z.enum(['all', 'limited']).default('all'),
+        member_ids: z.array(z.string().uuid()).default([]),
       }),
     )
     .mutation(async ({ ctx, input }) => {
+      const tid = ctx.user!.tid
       const { data, error } = await ctx.db
         .from('projects')
         .insert({
-          tenant_id: ctx.user!.tid,
+          tenant_id: tid,
           name: input.name,
           description: input.description ?? null,
           color: input.color,
+          is_active: input.is_active,
+          visibility: input.visibility,
           created_by: ctx.user!.sub,
         })
         .select('id')
         .single()
-
       if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+
+      if (input.visibility === 'limited' && input.member_ids.length) {
+        await ctx.db
+          .from('project_members')
+          .insert(
+            input.member_ids.map((user_id) => ({ tenant_id: tid, project_id: data.id, user_id })),
+          )
+      }
       return { ok: true, id: data.id }
     }),
 
@@ -2330,45 +2393,100 @@ export const adminRouter = router({
           .regex(/^#[0-9a-fA-F]{6}$/)
           .optional(),
         is_active: z.boolean().optional(),
+        visibility: z.enum(['all', 'limited']).optional(),
+        member_ids: z.array(z.string().uuid()).optional(),
       }),
     )
     .mutation(async ({ ctx, input }) => {
-      const { id, ...fields } = input
+      const tid = ctx.user!.tid
+      const { id, member_ids, ...fields } = input
       const { error } = await ctx.db
         .from('projects')
         .update({ ...fields, updated_at: new Date().toISOString() })
         .eq('id', id)
-        .eq('tenant_id', ctx.user!.tid)
-
+        .eq('tenant_id', tid)
       if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+
+      if (member_ids) {
+        await ctx.db.from('project_members').delete().eq('project_id', id).eq('tenant_id', tid)
+        if (member_ids.length) {
+          await ctx.db
+            .from('project_members')
+            .insert(member_ids.map((user_id) => ({ tenant_id: tid, project_id: id, user_id })))
+        }
+      }
       return { ok: true }
     }),
 
-  deleteProject: adminProcedure
-    .input(z.object({ id: z.string().uuid() }))
+  /** Archivar o restaurar en bloque. Archivar no borra: el tiempo registrado sigue ahi. */
+  setProjectsArchived: adminProcedure
+    .input(z.object({ ids: z.array(z.string().uuid()).min(1).max(200), archived: z.boolean() }))
     .mutation(async ({ ctx, input }) => {
       const { error } = await ctx.db
         .from('projects')
-        .delete()
-        .eq('id', input.id)
+        .update({
+          archived_at: input.archived ? new Date().toISOString() : null,
+          updated_at: new Date().toISOString(),
+        })
+        .in('id', input.ids)
         .eq('tenant_id', ctx.user!.tid)
-
       if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
-      return { ok: true }
+      return { ok: true, count: input.ids.length }
+    }),
+
+  deleteProjects: adminProcedure
+    .input(z.object({ ids: z.array(z.string().uuid()).min(1).max(200) }))
+    .mutation(async ({ ctx, input }) => {
+      const tid = ctx.user!.tid
+      // Las tareas y los registros de tiempo cuelgan del proyecto: se avisa
+      // en la interfaz y aqui se borra en orden para no dejar huerfanos.
+      await ctx.db.from('project_tasks').delete().in('project_id', input.ids).eq('tenant_id', tid)
+      const { error } = await ctx.db
+        .from('projects')
+        .delete()
+        .in('id', input.ids)
+        .eq('tenant_id', tid)
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      return { ok: true, count: input.ids.length }
     }),
 
   listProjectTasks: adminProcedure
-    .input(z.object({ project_id: z.string().uuid() }))
+    .input(
+      z
+        .object({
+          project_id: z.string().uuid().optional(),
+          archived: z.boolean().default(false),
+          search: z.string().max(100).optional(),
+        })
+        .optional(),
+    )
     .query(async ({ ctx, input }) => {
-      const { data, error } = await ctx.db
+      const tid = ctx.user!.tid
+      let q = ctx.db
         .from('project_tasks')
-        .select('id, name, description, is_active, created_at')
-        .eq('project_id', input.project_id)
-        .eq('tenant_id', ctx.user!.tid)
-        .order('name')
-
+        .select(
+          'id, name, description, is_active, project_id, created_by, assignee_id, tag, priority, status, due_date, archived_at, created_at',
+        )
+        .eq('tenant_id', tid)
+        .order('created_at', { ascending: false })
+      q = input?.archived ? q.not('archived_at', 'is', null) : q.is('archived_at', null)
+      if (input?.project_id) q = q.eq('project_id', input.project_id)
+      if (input?.search) q = q.ilike('name', `%${input.search}%`)
+      const { data: tareas, error } = await q
       if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
-      return data ?? []
+
+      const [{ data: proyectos }, { data: usuarios }] = await Promise.all([
+        ctx.db.from('projects').select('id, name').eq('tenant_id', tid),
+        ctx.db.from('users').select('id, full_name, email').eq('tenant_id', tid),
+      ])
+      const proyecto = new Map((proyectos ?? []).map((p) => [p.id, p.name]))
+      const nombre = new Map((usuarios ?? []).map((u) => [u.id, u.full_name || u.email]))
+      return (tareas ?? []).map((t) => ({
+        ...t,
+        project_name: proyecto.get(t.project_id) ?? '—',
+        created_by_name: t.created_by ? (nombre.get(t.created_by) ?? null) : null,
+        assignee_name: t.assignee_id ? (nombre.get(t.assignee_id) ?? null) : null,
+      }))
     }),
 
   createProjectTask: adminProcedure
@@ -2377,20 +2495,36 @@ export const adminRouter = router({
         project_id: z.string().uuid(),
         name: z.string().min(1).max(100),
         description: z.string().max(500).optional(),
+        assignee_id: z.string().uuid().nullable().optional(),
+        tag: z.string().max(40).nullable().optional(),
+        priority: z.enum(['low', 'medium', 'high', 'urgent']).default('medium'),
+        status: z.enum(['todo', 'in_progress', 'done']).default('todo'),
+        due_date: z
+          .string()
+          .regex(/^\d{4}-\d{2}-\d{2}$/)
+          .nullable()
+          .optional(),
       }),
     )
     .mutation(async ({ ctx, input }) => {
+      const tid = ctx.user!.tid
+      if (input.assignee_id) await assertUserInTenant(ctx.db, input.assignee_id, tid)
       const { data, error } = await ctx.db
         .from('project_tasks')
         .insert({
-          tenant_id: ctx.user!.tid,
+          tenant_id: tid,
           project_id: input.project_id,
           name: input.name,
           description: input.description ?? null,
+          assignee_id: input.assignee_id ?? null,
+          tag: input.tag ?? null,
+          priority: input.priority,
+          status: input.status,
+          due_date: input.due_date ?? null,
+          created_by: ctx.user!.sub,
         })
         .select('id')
         .single()
-
       if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
       return { ok: true, id: data.id }
     }),
@@ -2401,19 +2535,54 @@ export const adminRouter = router({
         id: z.string().uuid(),
         name: z.string().min(1).max(100).optional(),
         description: z.string().max(500).optional(),
+        project_id: z.string().uuid().optional(),
+        assignee_id: z.string().uuid().nullable().optional(),
+        tag: z.string().max(40).nullable().optional(),
+        priority: z.enum(['low', 'medium', 'high', 'urgent']).optional(),
+        status: z.enum(['todo', 'in_progress', 'done']).optional(),
+        due_date: z
+          .string()
+          .regex(/^\d{4}-\d{2}-\d{2}$/)
+          .nullable()
+          .optional(),
         is_active: z.boolean().optional(),
       }),
     )
     .mutation(async ({ ctx, input }) => {
+      const tid = ctx.user!.tid
       const { id, ...fields } = input
+      if (fields.assignee_id) await assertUserInTenant(ctx.db, fields.assignee_id, tid)
       const { error } = await ctx.db
         .from('project_tasks')
         .update(fields)
         .eq('id', id)
-        .eq('tenant_id', ctx.user!.tid)
-
+        .eq('tenant_id', tid)
       if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
       return { ok: true }
+    }),
+
+  setTasksArchived: adminProcedure
+    .input(z.object({ ids: z.array(z.string().uuid()).min(1).max(500), archived: z.boolean() }))
+    .mutation(async ({ ctx, input }) => {
+      const { error } = await ctx.db
+        .from('project_tasks')
+        .update({ archived_at: input.archived ? new Date().toISOString() : null })
+        .in('id', input.ids)
+        .eq('tenant_id', ctx.user!.tid)
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      return { ok: true, count: input.ids.length }
+    }),
+
+  deleteTasks: adminProcedure
+    .input(z.object({ ids: z.array(z.string().uuid()).min(1).max(500) }))
+    .mutation(async ({ ctx, input }) => {
+      const { error } = await ctx.db
+        .from('project_tasks')
+        .delete()
+        .in('id', input.ids)
+        .eq('tenant_id', ctx.user!.tid)
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      return { ok: true, count: input.ids.length }
     }),
 
   // ─── Solicitudes de horas extra (admin) ─────────────────────────────────
@@ -2942,6 +3111,9 @@ export const adminRouter = router({
           'teams',
           'whatsapp',
           'google_calendar',
+          'outlook_calendar',
+          'gitlab',
+          'zapier',
         ]),
         label: z.string().max(100).optional(),
         config: z.record(z.string()),

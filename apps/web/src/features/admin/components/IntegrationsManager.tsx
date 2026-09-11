@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { trpc } from '@/lib/trpc-client'
-import { X, Save, Trash2, Plus, ExternalLink, CheckCircle, XCircle, Zap } from 'lucide-react'
+import { X, Save, Trash2, ExternalLink, CheckCircle, Zap } from 'lucide-react'
 
 const INTEGRATION_DEFS = {
   slack: {
@@ -23,7 +23,8 @@ const INTEGRATION_DEFS = {
   },
   jira: {
     label: 'Jira',
-    description: 'Sincroniza proyectos y tareas de Jira como proyectos en BCWork.',
+    description:
+      'Seguimiento de incidencias y gestión de proyectos de Atlassian. Guardá las credenciales para vincular tus proyectos de Jira.',
     color: 'bg-blue-100',
     textColor: 'text-blue-700',
     fields: [
@@ -41,7 +42,8 @@ const INTEGRATION_DEFS = {
   },
   asana: {
     label: 'Asana',
-    description: 'Importa proyectos y tareas de Asana automáticamente.',
+    description:
+      'Aplicación web y móvil para organizar, seguir y gestionar el trabajo en equipo. Guardá el token para vincular tus proyectos de Asana.',
     color: 'bg-pink-100',
     textColor: 'text-pink-700',
     fields: [
@@ -73,7 +75,8 @@ const INTEGRATION_DEFS = {
   },
   trello: {
     label: 'Trello',
-    description: 'Sincroniza tableros y tarjetas de Trello como tareas.',
+    description:
+      'Tableros visuales para gestionar proyectos y organizar cualquier cosa. Guardá la clave para vincular tus tableros de Trello.',
     color: 'bg-cyan-100',
     textColor: 'text-cyan-700',
     fields: [
@@ -166,6 +169,51 @@ const INTEGRATION_DEFS = {
       },
     ],
     docsUrl: 'https://developers.google.com/calendar/api/guides/auth',
+  },
+  outlook_calendar: {
+    label: 'Calendario de Outlook',
+    description:
+      'Conectá tu calendario para sincronizar reuniones, ausencias y otros eventos entre Outlook y BCWork.',
+    color: 'bg-sky-100',
+    textColor: 'text-sky-700',
+    fields: [
+      {
+        key: 'ics_url',
+        label: 'URL ICS publicada',
+        type: 'url',
+        placeholder: 'https://outlook.office365.com/owa/calendar/.../calendar.ics',
+      },
+    ],
+    docsUrl:
+      'https://support.microsoft.com/office/share-your-calendar-in-outlook-on-the-web-7ecef8ae-139c-40d9-bae2-a23977ee58d5',
+  },
+  gitlab: {
+    label: 'GitLab',
+    description:
+      'Gestor de repositorios Git con wiki, seguimiento de incidencias y CI/CD. Vincula issues y merge requests como tareas.',
+    color: 'bg-orange-100',
+    textColor: 'text-orange-700',
+    fields: [
+      { key: 'base_url', label: 'URL de GitLab', type: 'url', placeholder: 'https://gitlab.com' },
+      { key: 'token', label: 'Personal Access Token', type: 'password', placeholder: 'glpat-…' },
+    ],
+    docsUrl: 'https://docs.gitlab.com/user/profile/personal_access_tokens/',
+  },
+  zapier: {
+    label: 'Zapier',
+    description:
+      'Automatización web: con un Zap conectás BCWork a cientos de aplicaciones sin programar. Cada evento se envía a tu Catch Hook.',
+    color: 'bg-amber-100',
+    textColor: 'text-amber-700',
+    fields: [
+      {
+        key: 'webhook_url',
+        label: 'URL del Catch Hook de Zapier',
+        type: 'url',
+        placeholder: 'https://hooks.zapier.com/hooks/catch/…',
+      },
+    ],
+    docsUrl: 'https://zapier.com/apps/webhook/integrations',
   },
 } as const
 
@@ -317,7 +365,35 @@ function IntegrationForm({
   )
 }
 
+/**
+ * Dos grupos, como las herramientas del mercado: lo que conecta cada persona
+ * (sus calendarios) y lo que conecta la empresa (gestores de proyectos,
+ * mensajería, automatización). Misma tarjeta para todos: logo, nombre,
+ * descripción, "Configurar" y un solo botón de Activar / Desactivar.
+ */
+const GRUPOS: { titulo: string; tipos: IntegrationType[] }[] = [
+  { titulo: 'Integraciones de usuarios', tipos: ['google_calendar', 'outlook_calendar'] },
+  {
+    titulo: 'Integraciones de la empresa',
+    tipos: [
+      'asana',
+      'jira',
+      'trello',
+      'gitlab',
+      'zapier',
+      'slack',
+      'teams',
+      'whatsapp',
+      'github',
+      'webhook',
+    ],
+  },
+]
+
+const SIN_PRUEBA: IntegrationType[] = ['jira', 'asana', 'github', 'trello']
+
 export function IntegrationsManager() {
+  const utils = trpc.useUtils()
   const [configuring, setConfiguring] = useState<IntegrationType | null>(null)
   const [testingId, setTestingId] = useState<string | null>(null)
   const [testResult, setTestResult] = useState<{ id: string; ok: boolean; detail?: string } | null>(
@@ -327,16 +403,20 @@ export function IntegrationsManager() {
   const [syncResult, setSyncResult] = useState<{ id: string; detail: string } | null>(null)
   const { data: integrations, isLoading } = trpc.admin.getIntegrations.useQuery()
 
+  const guardar = trpc.admin.saveIntegration.useMutation({
+    onSuccess: () => void utils.admin.getIntegrations.invalidate(),
+  })
+
   const testIntegration = trpc.integrations.testIntegration.useMutation({
     onSuccess: (data, variables) => {
       setTestingId(null)
       setTestResult({ id: variables.id, ok: true, detail: data.detail })
-      setTimeout(() => setTestResult(null), 4000)
+      setTimeout(() => setTestResult(null), 5000)
     },
-    onError: (_err, variables) => {
+    onError: (err, variables) => {
       setTestingId(null)
-      setTestResult({ id: variables.id, ok: false })
-      setTimeout(() => setTestResult(null), 4000)
+      setTestResult({ id: variables.id, ok: false, detail: err.message })
+      setTimeout(() => setTestResult(null), 6000)
     },
   })
 
@@ -344,12 +424,12 @@ export function IntegrationsManager() {
     onSuccess: (data, variables) => {
       setSyncingId(null)
       setSyncResult({ id: variables.id, detail: `${data.absences_created} ausencias creadas` })
-      setTimeout(() => setSyncResult(null), 4000)
+      setTimeout(() => setSyncResult(null), 5000)
     },
     onError: (err, variables) => {
       setSyncingId(null)
       setSyncResult({ id: variables.id, detail: err.message })
-      setTimeout(() => setSyncResult(null), 4000)
+      setTimeout(() => setSyncResult(null), 6000)
     },
   })
 
@@ -367,136 +447,138 @@ export function IntegrationsManager() {
     intMap.set(i.type, i)
   }
 
+  function alternar(type: IntegrationType, existing: SavedInt | undefined) {
+    if (!existing) {
+      setConfiguring(type) // sin credenciales no hay nada que activar
+      return
+    }
+    guardar.mutate({
+      type,
+      label: existing.label ?? undefined,
+      config: existing.config,
+      active: !existing.active,
+    })
+  }
+
   return (
-    <div className="space-y-5">
+    <div className="space-y-6">
       <div>
         <h1 className="text-xl font-semibold text-gray-900">Integraciones</h1>
         <p className="mt-0.5 text-sm text-gray-500">
-          Conecta BCWork con tus herramientas de trabajo
+          Conectá BCWork con las herramientas que ya usa tu empresa
         </p>
       </div>
 
       {isLoading ? (
-        <div className="animate-pulse space-y-3">
+        <div className="grid animate-pulse gap-4 sm:grid-cols-2 lg:grid-cols-4">
           {Array.from({ length: 4 }).map((_, i) => (
-            <div key={i} className="h-20 rounded-xl bg-gray-100" />
+            <div key={i} className="h-72 rounded-xl bg-gray-100" />
           ))}
         </div>
       ) : (
-        <div className="grid gap-4 sm:grid-cols-2">
-          {(
-            Object.entries(INTEGRATION_DEFS) as [
-              IntegrationType,
-              (typeof INTEGRATION_DEFS)[IntegrationType],
-            ][]
-          ).map(([type, def]) => {
-            const existing = intMap.get(type)
-            const isActive = !!existing?.active
-            const isConfigured = !!existing
-
-            return (
-              <div
-                key={type}
-                className={`rounded-xl border bg-white p-5 transition-shadow hover:shadow-sm ${isConfigured ? 'border-blue-200' : 'border-gray-200'}`}
-              >
-                <div className="flex items-start justify-between gap-3">
+        GRUPOS.map((g) => (
+          <section key={g.titulo} className="space-y-3">
+            <h2 className="text-sm font-semibold text-gray-700">{g.titulo}</h2>
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+              {g.tipos.map((type) => {
+                const def = INTEGRATION_DEFS[type]
+                const existing = intMap.get(type)
+                const activa = !!existing?.active
+                const esZapier = type === 'zapier'
+                return (
                   <div
-                    className={`flex h-10 w-10 items-center justify-center rounded-xl ${def.color}`}
+                    key={type}
+                    className={`flex flex-col rounded-xl border bg-white p-5 ${activa ? 'border-blue-200' : 'border-gray-200'}`}
                   >
-                    <span className={`text-sm font-bold ${def.textColor}`}>{def.label[0]}</span>
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2">
-                      <p className="font-semibold text-gray-900">{def.label}</p>
-                      {isConfigured &&
-                        (isActive ? (
-                          <CheckCircle className="h-4 w-4 text-green-500" />
-                        ) : (
-                          <XCircle className="h-4 w-4 text-gray-400" />
-                        ))}
+                    <div className="flex items-center gap-3">
+                      <div
+                        className={`flex h-12 w-12 items-center justify-center rounded-xl ${def.color}`}
+                      >
+                        <span className={`text-lg font-bold ${def.textColor}`}>{def.label[0]}</span>
+                      </div>
+                      {activa && (
+                        <CheckCircle className="h-4 w-4 text-green-500" aria-label="Activa" />
+                      )}
                     </div>
-                    <p className="mt-0.5 line-clamp-2 text-xs text-gray-500">{def.description}</p>
-                  </div>
-                </div>
-                <div className="mt-3 flex gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setConfiguring(type)}
-                    className={`flex flex-1 items-center justify-center gap-1.5 rounded-lg border py-2 text-sm font-medium transition-colors ${isConfigured ? 'border-blue-200 text-blue-700 hover:bg-blue-50' : 'border-gray-200 text-gray-600 hover:bg-gray-50'}`}
-                  >
-                    {isConfigured ? (
-                      <>
-                        <Save className="h-3.5 w-3.5" /> Configurar
-                      </>
-                    ) : (
-                      <>
-                        <Plus className="h-3.5 w-3.5" /> Conectar
-                      </>
-                    )}
-                  </button>
+                    <p className="mt-4 text-base font-semibold text-gray-900">{def.label}</p>
+                    <p className="mt-1 flex-1 text-sm leading-relaxed text-gray-600">
+                      {def.description}
+                    </p>
 
-                  {isConfigured && existing && type === 'google_calendar' && (
-                    <button
-                      type="button"
-                      title="Sincronizar calendario"
-                      disabled={syncingId === existing.id}
-                      onClick={() => {
-                        setSyncingId(existing.id)
-                        syncCalendar.mutate({ id: existing.id })
-                      }}
-                      className={`flex items-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-medium transition-colors ${
-                        syncResult?.id === existing.id
-                          ? 'border-green-200 bg-green-50 text-green-700'
-                          : 'border-gray-200 text-gray-500 hover:bg-gray-50'
-                      }`}
-                    >
-                      <Zap className="h-3.5 w-3.5" />
-                      {syncingId === existing.id
-                        ? 'Sincronizando…'
-                        : syncResult?.id === existing.id
-                          ? syncResult.detail
-                          : 'Sync'}
-                    </button>
-                  )}
-
-                  {isConfigured &&
-                    existing &&
-                    type !== 'google_calendar' &&
-                    type !== 'jira' &&
-                    type !== 'asana' &&
-                    type !== 'github' &&
-                    type !== 'trello' && (
+                    <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
                       <button
                         type="button"
-                        title="Probar integración"
-                        disabled={testingId === existing.id}
-                        onClick={() => {
-                          setTestingId(existing.id)
-                          testIntegration.mutate({ id: existing.id })
-                        }}
-                        className={`flex items-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-medium transition-colors ${
-                          testResult?.id === existing.id
-                            ? testResult.ok
-                              ? 'border-green-200 bg-green-50 text-green-700'
-                              : 'border-red-200 bg-red-50 text-red-700'
-                            : 'border-gray-200 text-gray-500 hover:bg-gray-50'
-                        }`}
+                        onClick={() => setConfiguring(type)}
+                        className="flex items-center gap-1 text-blue-600 hover:underline"
                       >
-                        <Zap className="h-3.5 w-3.5" />
-                        {testingId === existing.id
-                          ? 'Probando…'
-                          : testResult?.id === existing.id
-                            ? testResult.ok
-                              ? 'OK'
-                              : 'Error'
-                            : 'Test'}
+                        Configurar <ExternalLink className="h-3.5 w-3.5" />
                       </button>
-                    )}
-                </div>
-              </div>
-            )
-          })}
-        </div>
+                      {existing && !SIN_PRUEBA.includes(type) && (
+                        <button
+                          type="button"
+                          disabled={testingId === existing.id}
+                          onClick={() => {
+                            setTestingId(existing.id)
+                            testIntegration.mutate({ id: existing.id })
+                          }}
+                          className={`flex items-center gap-1 ${
+                            testResult?.id === existing.id
+                              ? testResult.ok
+                                ? 'text-green-600'
+                                : 'text-red-600'
+                              : 'text-gray-500 hover:underline'
+                          }`}
+                          title={
+                            testResult?.id === existing.id ? testResult.detail : 'Probar conexión'
+                          }
+                        >
+                          <Zap className="h-3.5 w-3.5" />
+                          {testingId === existing.id
+                            ? 'Probando…'
+                            : testResult?.id === existing.id
+                              ? testResult.ok
+                                ? (testResult.detail ?? 'OK')
+                                : 'Error'
+                              : 'Probar'}
+                        </button>
+                      )}
+                      {existing && type === 'google_calendar' && (
+                        <button
+                          type="button"
+                          disabled={syncingId === existing.id}
+                          onClick={() => {
+                            setSyncingId(existing.id)
+                            syncCalendar.mutate({ id: existing.id })
+                          }}
+                          className="text-gray-500 hover:underline"
+                        >
+                          {syncingId === existing.id
+                            ? 'Sincronizando…'
+                            : syncResult?.id === existing.id
+                              ? syncResult.detail
+                              : 'Sincronizar'}
+                        </button>
+                      )}
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => alternar(type, existing)}
+                      disabled={guardar.isPending}
+                      className={`mt-4 w-full rounded-lg py-2.5 text-sm font-semibold transition disabled:opacity-50 ${
+                        activa
+                          ? 'border border-red-200 text-red-600 hover:bg-red-50'
+                          : 'bg-blue-600 text-white hover:bg-blue-700'
+                      }`}
+                    >
+                      {activa ? 'Desactivar' : esZapier && !existing ? 'Hacer un Zap' : 'Activar'}
+                    </button>
+                  </div>
+                )
+              })}
+            </div>
+          </section>
+        ))
       )}
 
       {configuring && (

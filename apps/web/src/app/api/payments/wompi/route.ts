@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from 'next/server'
 import crypto from 'crypto'
 import { getDb } from '@/lib/db'
+import type { Json } from '@bcwork/db'
 
 // Wompi signature: SHA256(concat values of signature.properties from data.transaction + eventsSecret)
 function verifyWompiSignature(body: WompiEvent, eventsSecret: string): boolean {
@@ -82,7 +83,7 @@ export async function POST(req: NextRequest) {
       wompi_id: txn.id,
       status: wompiStatus,
       payment_method_type: txn.payment_method_type,
-      webhook_payload: body as unknown as Record<string, unknown>,
+      webhook_payload: body as unknown as Json,
     })
     .eq('reference', txn.reference)
     .select('id, tenant_id, billing_invoice_id')
