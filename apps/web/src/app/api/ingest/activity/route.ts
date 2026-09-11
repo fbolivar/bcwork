@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { getDb } from '@/lib/db'
 import { resolveAgentKey, getBearer } from '@/lib/agent-auth'
+import { resolverUbicacion } from '@/lib/ubicacion-ip'
 
 const AgentEventSchema = z.object({
   event_type: z.string().min(1).max(50),
@@ -106,6 +107,10 @@ export async function POST(req: NextRequest) {
         session_state.ip ??
         null
 
+      // La IP se guardaba y nadie la cruzaba con los rangos corporativos de
+      // TI & Seguridad > IPs, asi que ninguna sesion sabia si era oficina.
+      const locationType = await resolverUbicacion(db, tenantId, publicIp)
+
       const { data: newSession } = await db
         .from('work_sessions')
         .insert({
@@ -116,6 +121,7 @@ export async function POST(req: NextRequest) {
           active_seconds: session_state.active_seconds,
           idle_seconds: session_state.idle_seconds,
           ip_inet: publicIp,
+          location_type: locationType,
         })
         .select('id')
         .single()

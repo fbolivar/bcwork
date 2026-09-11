@@ -1248,7 +1248,7 @@ export const adminRouter = router({
       // ── Presencial vs remoto (dias-persona, no segundos) ───────────────────
       const ubic = new Map<string, number>()
       for (const r of filas) {
-        const k = r.location_type ?? 'sin_dato'
+        const k = !r.location_type || r.location_type === 'unknown' ? 'sin_dato' : r.location_type
         ubic.set(k, (ubic.get(k) ?? 0) + 1)
       }
       const locations = [...ubic.entries()]
