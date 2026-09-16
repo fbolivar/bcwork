@@ -73,23 +73,10 @@ importers:
         version: 6.4.2(@types/node@22.19.17)(jiti@2.6.1)(lightningcss@1.32.0)(terser@5.46.2)(yaml@2.8.3)
 
   apps/extension:
-    dependencies:
-      '@bcwork/shared':
-        specifier: workspace:*
-        version: link:../../packages/shared
-      react:
-        specifier: ^19.0.0
-        version: 19.2.5
-      react-dom:
-        specifier: ^19.0.0
-        version: 19.2.5(react@19.2.5)
     devDependencies:
-      '@types/react':
-        specifier: ^19.0.0
-        version: 19.2.14
-      '@types/react-dom':
-        specifier: ^19.0.0
-        version: 19.2.3(@types/react@19.2.14)
+      '@types/chrome':
+        specifier: ^0.0.287
+        version: 0.0.287
       typescript:
         specifier: ^5.8.0
         version: 5.9.3
@@ -3213,6 +3200,12 @@ packages:
     resolution:
       {
         integrity: sha512-9xlo6R2qDs5uixm0bcIqCeMCE6HiQsIyel9KQySStiyqNl2tnj2mP3DX1Nf56MD6KMenNNlBBsy3LJ7gUEQPXQ==,
+      }
+
+  '@types/chrome@0.0.287':
+    resolution:
+      {
+        integrity: sha512-wWhBNPNXZHwycHKNYnexUcpSbrihVZu++0rdp6GEk5ZgAglenLx+RwdEouh6FrHS0XQiOxSd62yaujM1OoQlZQ==,
       }
 
   '@types/connect@3.4.36':
@@ -11785,6 +11778,11 @@ snapshots:
       '@babel/types': 7.29.0
 
   '@types/bcryptjs@2.4.6': {}
+
+  '@types/chrome@0.0.287':
+    dependencies:
+      '@types/filesystem': 0.0.36
+      '@types/har-format': 1.2.16
 
   '@types/connect@3.4.36':
     dependencies:

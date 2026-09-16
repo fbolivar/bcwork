@@ -165,6 +165,27 @@ export async function POST(req: NextRequest) {
       .maybeSingle()
     const guardarTitulos = tenantCfg?.capture_window_titles === true
 
+    // Reglas de dominio: cuando el evento trae el sitio (lo aporta la extensión
+    // del navegador), manda la regla del dominio y no la del proceso. Si no,
+    // todo lo que pase en Chrome heredaría la clase de Chrome.
+    const dominios = [...new Set(events.map((e) => e.domain).filter(Boolean))] as string[]
+    const reglasDominio: { identifier: string; productivity: string }[] = []
+    if (dominios.length > 0) {
+      const { data } = await db
+        .from('app_catalog')
+        .select('identifier, productivity')
+        .eq('tenant_id', tenantId)
+        .eq('identifier_type', 'domain')
+      for (const r of data ?? []) if (r.productivity) reglasDominio.push(r)
+      // Las más específicas primero: "mail.google.com" gana a "google.com".
+      reglasDominio.sort((a, b) => b.identifier.length - a.identifier.length)
+    }
+    const clasePorDominio = (d: string | null | undefined): string | null => {
+      if (!d) return null
+      const regla = reglasDominio.find((r) => d === r.identifier || d.endsWith(`.${r.identifier}`))
+      return regla?.productivity ?? null
+    }
+
     const rows = events.map((e) => ({
       tenant_id: tenantId,
       user_id: userId,
@@ -175,7 +196,10 @@ export async function POST(req: NextRequest) {
       domain: e.domain ?? null,
       window_title: guardarTitulos ? (e.window_title ?? null) : null,
       productivity:
-        (e.app_identifier && catalogMap.get(e.app_identifier)) ?? e.productivity ?? null,
+        clasePorDominio(e.domain) ??
+        (e.app_identifier && catalogMap.get(e.app_identifier)) ??
+        e.productivity ??
+        null,
       started_at: e.started_at,
       duration_seconds: e.duration_seconds,
       metadata: (e.metadata ??

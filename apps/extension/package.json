@@ -10,15 +10,10 @@
     "zip": "wxt zip",
     "typecheck": "wxt prepare && tsc --noEmit"
   },
-  "dependencies": {
-    "react": "^19.0.0",
-    "react-dom": "^19.0.0",
-    "@bcwork/shared": "workspace:*"
-  },
+  "dependencies": {},
   "devDependencies": {
     "wxt": "^0.20.0",
-    "@types/react": "^19.0.0",
-    "@types/react-dom": "^19.0.0",
-    "typescript": "^5.8.0"
+    "typescript": "^5.8.0",
+    "@types/chrome": "^0.0.287"
   }
 }

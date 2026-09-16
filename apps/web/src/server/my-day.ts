@@ -175,6 +175,7 @@ export async function buildMyDay(
       duration_seconds: number | null
       productivity: string | null
       app_identifier: string | null
+      domain: string | null
     }>(
       () =>
         db
@@ -187,7 +188,7 @@ export async function buildMyDay(
       (a, b) =>
         db
           .from('activity_events')
-          .select('started_at, duration_seconds, productivity, app_identifier')
+          .select('started_at, duration_seconds, productivity, app_identifier, domain')
           .eq('tenant_id', tenantId)
           .eq('user_id', userId)
           .gte('started_at', from)
@@ -204,10 +205,12 @@ export async function buildMyDay(
       else ((h.neutral += secs), (neutro += secs))
       if (!llegada || e.started_at < llegada) llegada = e.started_at
       if (!salida || e.started_at > salida) salida = e.started_at
-      if (e.app_identifier) {
-        const a = porApp.get(e.app_identifier) ?? { clase: c, secs: 0 }
+      // Con dominio (lo aporta la extensión), la "app" es el sitio, no el navegador.
+      const nombreApp = e.domain || e.app_identifier
+      if (nombreApp) {
+        const a = porApp.get(nombreApp) ?? { clase: c, secs: 0 }
         a.secs += secs
-        porApp.set(e.app_identifier, a)
+        porApp.set(nombreApp, a)
       }
     }
   } else {

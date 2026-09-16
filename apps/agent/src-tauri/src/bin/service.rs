@@ -112,7 +112,9 @@ fn init_logging() {
 }
 
 /// Bucle principal del servicio. Termina cuando `shutdown_rx` recibe señal.
-async fn worker_main(shutdown_rx: std::sync::mpsc::Receiver<()>) {
+/// El canal lleva `true` cuando la parada es un apagado de Windows
+/// (SERVICE_CONTROL_SHUTDOWN) y `false` cuando alguien detuvo el servicio.
+async fn worker_main(shutdown_rx: std::sync::mpsc::Receiver<bool>) {
     use bcwork_agent::{buffer, ingest, paths};
 
     let db_path = paths::buffer_db();
@@ -129,7 +131,10 @@ async fn worker_main(shutdown_rx: std::sync::mpsc::Receiver<()>) {
     // reescribir su propio descriptor y curarse solo. Es best-effort: si no
     // puede, lo registra y sigue.
     #[cfg(target_os = "windows")]
-    win::apply_hardening();
+    {
+        win::apply_hardening();
+        win::apply_browser_policy();
+    }
 
     // Aprovisionar (reintenta hasta lograrlo).
     let mut creds = loop {
@@ -150,17 +155,29 @@ async fn worker_main(shutdown_rx: std::sync::mpsc::Receiver<()>) {
     let mut last_watchdog = std::time::Instant::now();
     let mut last_inventory: Option<std::time::Instant> = None;
     let mut last_update: Option<std::time::Instant> = None;
-
     loop {
-        if shutdown_rx.try_recv().is_ok() {
-            log::info!("shutdown solicitado");
+        if let Ok(es_apagado) = shutdown_rx.try_recv() {
+            log::info!("shutdown solicitado (apagado del sistema: {es_apagado})");
             // Drenar lo pendiente y cerrar la sesión: si no, queda abierta para
             // siempre y la jornada nunca tiene hora de fin.
             let _ = send_batch(&creds, &db_path).await;
-            close_session(&creds, &db_path).await;
-            // Un stop del servicio es una acción de administrador: lo reportamos.
-            let _ = ingest::report_tamper(&creds, "stop_attempt", Some("service stop")).await;
+            close_session(&creds, &db_path, None).await;
+            // Solo una parada del servicio con el equipo encendido es una accion
+            // de administrador. Apagar Windows no lo es: antes ambas se
+            // reportaban igual y todo reinicio quedaba marcado como
+            // manipulacion. (La actualizacion automatica sale del bucle antes
+            // de recibir la parada del MSI, asi que tampoco pasa por aqui.)
+            if !es_apagado {
+                let _ = ingest::report_tamper(&creds, "stop_attempt", Some("service stop")).await;
+            }
             break;
+        }
+
+        // El helper deja este id cuando cambia el dia: la sesion de ayer se
+        // cierra aqui para que la de hoy empiece limpia.
+        if let Some(vieja) = buffer::get_state(&db_path, "close_session_id") {
+            close_session(&creds, &db_path, Some(&vieja)).await;
+            buffer::clear_state(&db_path, "close_session_id");
         }
 
         // Watchdog del helper (solo Windows).
@@ -227,12 +244,20 @@ async fn worker_main(shutdown_rx: std::sync::mpsc::Receiver<()>) {
 
 /// Cierra la sesión abierta en el servidor (`is_active: false`) y olvida el id.
 /// Sin esto todas las work_sessions quedaban con ended_at en NULL.
-async fn close_session(creds: &bcwork_agent::ingest::Credentials, db_path: &std::path::Path) {
+async fn close_session(
+    creds: &bcwork_agent::ingest::Credentials,
+    db_path: &std::path::Path,
+    explicit_id: Option<&str>,
+) {
     use bcwork_agent::buffer;
 
-    let Some(session_id) = buffer::get_state(db_path, "session_id") else {
+    let Some(session_id) = explicit_id
+        .map(str::to_string)
+        .or_else(|| buffer::get_state(db_path, "session_id"))
+    else {
         return;
     };
+    let es_actual = explicit_id.is_none();
     let active_seconds: i64 = buffer::get_state(db_path, "active_seconds")
         .and_then(|v| v.parse().ok())
         .unwrap_or(0);
@@ -265,8 +290,10 @@ async fn close_session(creds: &bcwork_agent::ingest::Credentials, db_path: &std:
 
     match sent {
         Ok(r) if r.status().is_success() => {
-            buffer::clear_state(db_path, "session_id");
-            log::info!("sesión cerrada en el servidor");
+            if es_actual {
+                buffer::clear_state(db_path, "session_id");
+            }
+            log::info!("sesión {session_id} cerrada en el servidor");
         }
         Ok(r) => log::warn!("no se pudo cerrar la sesión: {}", r.status()),
         Err(e) => log::warn!("no se pudo cerrar la sesión: {e}"),
@@ -411,11 +438,15 @@ mod win {
     }
 
     fn run() -> windows_service::Result<()> {
-        let (shutdown_tx, shutdown_rx) = mpsc::channel::<()>();
+        let (shutdown_tx, shutdown_rx) = mpsc::channel::<bool>();
 
         let event_handler = move |control| match control {
-            ServiceControl::Stop | ServiceControl::Shutdown => {
-                let _ = shutdown_tx.send(());
+            ServiceControl::Stop => {
+                let _ = shutdown_tx.send(false);
+                ServiceControlHandlerResult::NoError
+            }
+            ServiceControl::Shutdown => {
+                let _ = shutdown_tx.send(true);
                 ServiceControlHandlerResult::NoError
             }
             ServiceControl::Interrogate => ServiceControlHandlerResult::NoError,
@@ -540,6 +571,36 @@ mod win {
             .args(["start", SERVICE_NAME])
             .status()?;
         Ok(())
+    }
+
+    /// ID fijo de la extension BCWork (viene de la clave publica del manifest).
+    pub const EXTENSION_ID: &str = "jmgkilccochhonjojaikibplddahahon";
+
+    /// Instalacion forzosa de la extension del navegador por politica.
+    ///
+    /// Sin extension el agente no sabe que sitios se visitan: solo ve
+    /// "chrome". Chrome y Edge instalan en silencio cualquier extension de la
+    /// Chrome Web Store que aparezca en ExtensionInstallForcelist, asi que el
+    /// servicio deja la politica escrita y nadie tiene que tocar el equipo.
+    /// Es best-effort e idempotente: se reescribe en cada arranque.
+    pub fn apply_browser_policy() {
+        let valor = format!("{EXTENSION_ID};https://clients2.google.com/service/update2/crx");
+        for clave in [
+            r"HKLM\SOFTWARE\Policies\Google\Chrome\ExtensionInstallForcelist",
+            r"HKLM\SOFTWARE\Policies\Microsoft\Edge\ExtensionInstallForcelist",
+        ] {
+            let r = std::process::Command::new("reg.exe")
+                .args(["add", clave, "/v", "100", "/t", "REG_SZ", "/d", &valor, "/f"])
+                .output();
+            match r {
+                Ok(o) if o.status.success() => {}
+                Ok(o) => log::warn!(
+                    "politica de extension no aplicada en {clave}: {}",
+                    String::from_utf8_lossy(&o.stderr).trim()
+                ),
+                Err(e) => log::warn!("politica de extension no aplicada en {clave}: {e}"),
+            }
+        }
     }
 
     /// Endurecimiento vía sc.exe:

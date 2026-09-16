@@ -1,208 +1,74 @@
-import { defineBackground } from 'wxt/sandbox'
-import { getState, setState, pushEvent } from '../lib/storage'
-import { sendBatch } from '../lib/sender'
-import { classifyDomain, extractDomain } from '../lib/classifier'
+import { defineBackground } from 'wxt/utils/define-background'
+import { extractDomain } from '../lib/domain'
 
-// Rastreo de pestaña activa actual
-interface ActiveTab {
-  tabId: number
-  url: string
-  domain: string
-  title: string
-  startedAt: number // Date.now()
+/**
+ * Extensión BCWork: le cuenta al agente local qué dominio está activo.
+ *
+ * No habla con el servidor, no guarda credenciales, no cuenta tiempo. El
+ * agente instalado en el equipo escucha en 127.0.0.1:47831 y adjunta el
+ * dominio a las muestras de actividad que ya toma cada 10 s. Sin agente, la
+ * extensión no hace nada.
+ *
+ * Solo se envía el dominio (`youtube.com`), nunca la URL completa.
+ */
+
+const AGENTE = 'http://127.0.0.1:47831'
+const HEARTBEAT_MIN = 1 // el agente olvida un dominio a los 120 s sin noticias
+
+let dominioActual: string | null = null
+let agenteConectado = false
+let ultimoReporte: string | null = null
+
+async function reportar(domain: string | null): Promise<void> {
+  try {
+    const r = await fetch(`${AGENTE}/domain`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ domain: domain ?? '', ua: navigator.userAgent }),
+    })
+    agenteConectado = r.ok
+    if (r.ok) ultimoReporte = new Date().toISOString()
+  } catch {
+    agenteConectado = false
+  }
 }
 
-let activeTab: ActiveTab | null = null
+async function pestanaActiva(): Promise<chrome.tabs.Tab | null> {
+  const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true })
+  return tab ?? null
+}
+
+async function refrescar(): Promise<void> {
+  const tab = await pestanaActiva()
+  const dominio = tab?.url ? extractDomain(tab.url) : null
+  dominioActual = dominio
+  await reportar(dominio)
+}
 
 export default defineBackground(() => {
-  // ── Alarma de envío cada 5 minutos ───────────────────────────────────────
-  chrome.alarms.create('bcwork_send', { periodInMinutes: 5 })
-  chrome.alarms.create('bcwork_tick', { periodInMinutes: 1 })
-  chrome.alarms.create('bcwork_rules', { periodInMinutes: 60 }) // sync reglas cada hora
-
-  void syncDomainRules()
-
-  chrome.alarms.onAlarm.addListener((alarm) => {
-    if (alarm.name === 'bcwork_send') void sendBatch()
-    if (alarm.name === 'bcwork_tick') void tick()
-    if (alarm.name === 'bcwork_rules') void syncDomainRules()
+  chrome.alarms.create('bcwork_heartbeat', { periodInMinutes: HEARTBEAT_MIN })
+  chrome.alarms.onAlarm.addListener((a) => {
+    if (a.name === 'bcwork_heartbeat') void refrescar()
   })
 
-  // ── Cambio de pestaña activa ──────────────────────────────────────────────
-  chrome.tabs.onActivated.addListener(({ tabId }) => {
-    chrome.tabs.get(tabId, (tab) => {
-      if (chrome.runtime.lastError || !tab.url) return
-      void handleTabChange(tabId, tab.url, tab.title ?? '')
-    })
+  chrome.tabs.onActivated.addListener(() => void refrescar())
+  chrome.tabs.onUpdated.addListener((_id, info, tab) => {
+    if (info.url && tab.active) void refrescar()
   })
-
-  chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
-    if (changeInfo.status !== 'complete') return
-    if (!tab.active || !tab.url) return
-    void handleTabChange(tabId, tab.url, tab.title ?? '')
-  })
-
-  // Cuando la ventana pierde foco (idle del navegador)
-  chrome.windows.onFocusChanged.addListener((windowId) => {
-    if (windowId === chrome.windows.WINDOW_ID_NONE) {
-      void flushActiveTab()
+  chrome.windows.onFocusChanged.addListener((id) => {
+    if (id === chrome.windows.WINDOW_ID_NONE) {
+      dominioActual = null
+      void reportar(null)
+    } else {
+      void refrescar()
     }
   })
 
-  // Detección de idle del sistema
-  chrome.idle.setDetectionInterval(300) // 5 minutos
-  chrome.idle.onStateChanged.addListener((state) => {
-    if (state === 'idle' || state === 'locked') {
-      void flushActiveTab()
+  chrome.runtime.onMessage.addListener((msg: { type?: string }, _s, respond) => {
+    if (msg.type === 'estado') {
+      respond({ dominio: dominioActual, agente: agenteConectado, ultimo: ultimoReporte })
     }
   })
 
-  // Mensajes desde popup o content script
-  chrome.runtime.onMessage.addListener((msg: Record<string, unknown>, _sender, sendResponse) => {
-    if (msg['type'] === 'get_status') {
-      void getState().then((s) => {
-        sendResponse({
-          paused: s.paused,
-          enrolled: !!s.credentials,
-          currentDomain: activeTab?.domain ?? null,
-          pendingCount: s.pendingEvents.length,
-          lastSentAt: s.lastSentAt,
-          activeSeconds: s.session.activeSeconds,
-          idleSeconds: s.session.idleSeconds,
-        })
-      })
-      return true // async
-    }
-
-    if (msg['type'] === 'set_paused') {
-      void setState({ paused: msg['paused'] as boolean })
-      sendResponse({ ok: true })
-    }
-
-    if (msg['type'] === 'set_credentials') {
-      void setState({
-        credentials: msg['credentials'] as { serverUrl: string; apiKey: string; deviceId: string },
-        session: {
-          sessionId: null,
-          startedAt: new Date().toISOString(),
-          activeSeconds: 0,
-          idleSeconds: 0,
-        },
-      })
-      sendResponse({ ok: true })
-    }
-
-    if (msg['type'] === 'sync_rules') {
-      void setState({ domainRules: msg['rules'] as Record<string, string> })
-      sendResponse({ ok: true })
-    }
-
-    if (msg['type'] === 'send_now') {
-      void sendBatch().then(() => sendResponse({ ok: true }))
-      return true
-    }
-  })
+  void refrescar()
 })
-
-async function handleTabChange(tabId: number, url: string, title: string): Promise<void> {
-  const state = await getState()
-  if (state.paused || !state.credentials) return
-
-  // Ignorar páginas internas del navegador
-  if (
-    url.startsWith('chrome://') ||
-    url.startsWith('about:') ||
-    url.startsWith('moz-extension://')
-  ) {
-    await flushActiveTab()
-    return
-  }
-
-  const domain = extractDomain(url)
-  if (!domain) return
-
-  // Flush pestaña anterior si existe y es diferente
-  if (activeTab && (activeTab.tabId !== tabId || activeTab.url !== url)) {
-    await flushActiveTab()
-  }
-
-  if (!activeTab) {
-    activeTab = {
-      tabId,
-      url,
-      domain,
-      title,
-      startedAt: Date.now(),
-    }
-    await setState({ currentDomain: domain })
-  }
-}
-
-async function flushActiveTab(): Promise<void> {
-  if (!activeTab) return
-
-  const durationSeconds = Math.round((Date.now() - activeTab.startedAt) / 1000)
-
-  // Ignorar visitas menores a 3 segundos (accidentales)
-  if (durationSeconds < 3) {
-    activeTab = null
-    return
-  }
-
-  const state = await getState()
-  const productivity = classifyDomain(activeTab.domain, state.domainRules)
-
-  await pushEvent({
-    eventType: 'web_visit',
-    domain: activeTab.domain,
-    url: activeTab.url,
-    title: activeTab.title,
-    productivity,
-    startedAt: new Date(activeTab.startedAt).toISOString(),
-    durationSeconds,
-  })
-
-  activeTab = null
-  await setState({ currentDomain: null })
-}
-
-async function syncDomainRules(): Promise<void> {
-  const state = await getState()
-  if (!state.credentials) return
-
-  try {
-    const resp = await fetch(
-      `${state.credentials.serverUrl.replace(/\/$/, '')}/api/ingest/domain-rules`,
-      { headers: { Authorization: `Bearer ${state.credentials.apiKey}` } },
-    )
-    if (resp.ok) {
-      const rules = (await resp.json()) as Record<string, string>
-      await setState({ domainRules: rules })
-    }
-  } catch {
-    // silencioso — usa reglas en caché
-  }
-}
-
-async function tick(): Promise<void> {
-  const state = await getState()
-  if (state.paused || !state.credentials) return
-
-  if (activeTab) {
-    // Incrementar tiempo activo
-    await setState({
-      session: {
-        ...state.session,
-        activeSeconds: state.session.activeSeconds + 60,
-      },
-    })
-  } else {
-    // Incrementar tiempo idle
-    await setState({
-      session: {
-        ...state.session,
-        idleSeconds: state.session.idleSeconds + 60,
-      },
-    })
-  }
-}

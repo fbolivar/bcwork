@@ -14,7 +14,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use tauri::{Emitter, Manager};
 
-use bcwork_agent::{buffer, capture_core, ingest, paths};
+use bcwork_agent::{browser_bridge, buffer, capture_core, ingest, paths};
 
 // Se pone en true cuando el device ya está asignado a una persona.
 static ASSIGNED: AtomicBool = AtomicBool::new(false);
@@ -37,8 +37,11 @@ fn main() {
                 }
             }
 
-            // Bucle de captura (solo cuando está asignado; si no, no atribuye a nadie).
-            tauri::async_runtime::spawn(capture_loop());
+            // Puente con la extensión del navegador + bucle de captura (solo
+            // cuando está asignado; si no, no atribuye a nadie).
+            let browser = browser_bridge::new_shared();
+            tauri::async_runtime::spawn(browser_bridge::serve(browser.clone()));
+            tauri::async_runtime::spawn(capture_loop(browser));
 
             // Si ya está asignado, mantener la ventana oculta (solo transparencia por bandeja).
             if ASSIGNED.load(Ordering::Relaxed) {
@@ -76,7 +79,7 @@ fn init_helper_logging() {
     log::info!("--- helper iniciado ---");
 }
 
-async fn capture_loop() {
+async fn capture_loop(browser: browser_bridge::Shared) {
     let db_path = paths::buffer_db();
     let mut counters = capture_core::SessionCounters::default();
     loop {
@@ -84,7 +87,7 @@ async fn capture_loop() {
         if !ASSIGNED.load(Ordering::Relaxed) {
             continue;
         }
-        counters = capture_core::capture_step(&db_path, counters);
+        counters = capture_core::capture_step(&db_path, counters, &browser);
     }
 }
 

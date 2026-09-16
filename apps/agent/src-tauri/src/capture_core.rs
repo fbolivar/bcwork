@@ -2,8 +2,9 @@
 //! Tauri: escribe directamente al buffer compartido. Corre en el helper (sesión
 //! interactiva), porque el foreground window no es accesible desde el Session 0.
 
+use crate::browser_bridge;
 use crate::buffer::{self, BufferedEvent};
-use chrono::Utc;
+use chrono::{Local, Utc};
 use std::path::Path;
 
 pub const POLL_INTERVAL_SECS: u64 = 10;
@@ -22,12 +23,40 @@ pub struct SessionCounters {
 
 /// Un tick de captura: mide idle + ventana activa, actualiza contadores y (si hay
 /// actividad) inserta un evento en el buffer. Devuelve los contadores actualizados.
-pub fn capture_step(db_path: &Path, mut counters: SessionCounters) -> SessionCounters {
+///
+/// `browser` es el estado que alimenta la extensión del navegador: si el
+/// proceso activo es un navegador, la muestra lleva el dominio de la pestaña.
+pub fn capture_step(
+    db_path: &Path,
+    mut counters: SessionCounters,
+    browser: &browser_bridge::Shared,
+) -> SessionCounters {
     counters.started = true;
     let idle_secs = get_idle_seconds();
     let is_idle = idle_secs >= IDLE_THRESHOLD_SECS;
     let (app_name, window_title) = get_active_window();
     let now = Utc::now();
+
+    // Cierre de jornada a medianoche local. Sin esto, un equipo que nunca se
+    // apaga arrastra una sola sesión durante días (Elkin llegó a 47 h de
+    // inactividad acumulada) y el informe de asistencia deja de significar
+    // algo. El id viejo se deja al servicio para que cierre esa sesión.
+    if let Some(ref started) = counters.session_started_at {
+        let hoy = Local::now().format("%Y-%m-%d").to_string();
+        let dia_inicio = chrono::DateTime::parse_from_rfc3339(started)
+            .map(|d| d.with_timezone(&Local).format("%Y-%m-%d").to_string())
+            .unwrap_or_else(|_| hoy.clone());
+        if dia_inicio != hoy {
+            if let Some(viejo) = buffer::get_state(db_path, "session_id") {
+                let _ = buffer::set_state(db_path, "close_session_id", &viejo);
+            }
+            buffer::clear_state(db_path, "session_id");
+            counters.session_started_at = Some(now.to_rfc3339());
+            counters.active_seconds = 0;
+            counters.idle_seconds = 0;
+            log::info!("nueva jornada: sesión reiniciada a medianoche local");
+        }
+    }
 
     if is_idle {
         counters.idle_seconds += POLL_INTERVAL_SECS;
@@ -36,11 +65,12 @@ pub fn capture_step(db_path: &Path, mut counters: SessionCounters) -> SessionCou
         counters.active_seconds += POLL_INTERVAL_SECS;
         counters.current_app = app_name.clone();
 
+        let domain = browser_bridge::domain_for(browser, app_name.as_deref());
         let event = BufferedEvent {
             id: None,
             event_type: "app_focus".to_string(),
             app_identifier: app_name,
-            domain: None,
+            domain,
             window_title,
             productivity: None,
             started_at: now.to_rfc3339(),

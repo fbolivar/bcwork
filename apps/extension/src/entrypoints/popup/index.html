@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <title>BCWork</title>
+    <style>
+      body { margin: 0; width: 260px; font: 13px system-ui, sans-serif; color: #1f2937; }
+      .cab { display: flex; align-items: center; gap: 8px; padding: 12px 14px; border-bottom: 1px solid #e5e7eb; }
+      .logo { width: 22px; height: 22px; border-radius: 6px; background: #2563eb; color: #fff; font-weight: 700; font-size: 12px; display: grid; place-items: center; }
+      .cuerpo { padding: 12px 14px; }
+      .fila { display: flex; justify-content: space-between; margin: 6px 0; }
+      .eti { color: #6b7280; }
+      .ok { color: #16a34a; font-weight: 600; }
+      .mal { color: #dc2626; font-weight: 600; }
+      .nota { margin-top: 10px; color: #9ca3af; font-size: 11px; line-height: 1.4; }
+    </style>
+  </head>
+  <body>
+    <div class="cab"><span class="logo">B</span><strong>BCWork</strong></div>
+    <div class="cuerpo">
+      <div class="fila"><span class="eti">Agente en este equipo</span><span id="agente">…</span></div>
+      <div class="fila"><span class="eti">Sitio activo</span><span id="dominio">—</span></div>
+      <div class="fila"><span class="eti">Último reporte</span><span id="ultimo">—</span></div>
+      <p class="nota">Solo se registra el dominio del sitio (por ejemplo, <em>youtube.com</em>), nunca la dirección completa ni el contenido.</p>
+    </div>
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>

@@ -1,6 +1,6 @@
 [package]
 name = "bcwork-agent"
-version = "0.1.8"
+version = "0.1.9"
 description = "BCWork Activity Monitor Agent"
 authors = ["BC Fabric SAS"]
 edition = "2021"

@@ -5,6 +5,7 @@
 //! - `bcwork-agent` (helper, sesión del usuario): captura la ventana activa + picker "elige 1 vez".
 //! - Ambos comparten el buffer SQLite y las credenciales en `C:\ProgramData\BCWork`.
 
+pub mod browser_bridge;
 pub mod buffer;
 pub mod capture_core;
 pub mod ingest;
