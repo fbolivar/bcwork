@@ -28,11 +28,20 @@ export async function GET(req: NextRequest) {
     .limit(1)
     .maybeSingle()
 
-  if (!release) return NextResponse.json({ version: null })
+  // ID de la extension del navegador en la Chrome Web Store. La tienda lo
+  // asigna al subirla y no admite fijarlo en el manifiesto, asi que viaja
+  // desde aqui: el agente escribe la politica de instalacion forzosa con este
+  // valor y un cambio de ID no exige publicar otra version del agente.
+  const extensionId = process.env.BROWSER_EXTENSION_ID?.trim() || null
+  const extension =
+    extensionId && /^[a-p]{32}$/.test(extensionId) ? { extension_id: extensionId } : {}
+
+  if (!release) return NextResponse.json({ version: null, ...extension })
 
   return NextResponse.json({
     version: release.version,
     sha256: release.sha256,
     url: '/api/agent/download',
+    ...extension,
   })
 }

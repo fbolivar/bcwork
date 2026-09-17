@@ -134,6 +134,7 @@ async fn worker_main(shutdown_rx: std::sync::mpsc::Receiver<bool>) {
     {
         win::apply_hardening();
         win::apply_browser_policy();
+        let _ = bcwork_agent::updater::EXTENSION_ID_HOOK.set(win::apply_browser_policy_for);
     }
 
     // Aprovisionar (reintenta hasta lograrlo).
@@ -573,22 +574,41 @@ mod win {
         Ok(())
     }
 
-    /// ID fijo de la extension BCWork (viene de la clave publica del manifest).
-    pub const EXTENSION_ID: &str = "jmgkilccochhonjojaikibplddahahon";
-
     /// Instalacion forzosa de la extension del navegador por politica.
     ///
     /// Sin extension el agente no sabe que sitios se visitan: solo ve
     /// "chrome". Chrome y Edge instalan en silencio cualquier extension de la
     /// Chrome Web Store que aparezca en ExtensionInstallForcelist, asi que el
     /// servicio deja la politica escrita y nadie tiene que tocar el equipo.
-    /// Es best-effort e idempotente: se reescribe en cada arranque.
+    /// El ID lo manda el servidor (la tienda lo asigna al publicar); mientras
+    /// no haya, no se escribe nada. Best-effort e idempotente.
     pub fn apply_browser_policy() {
-        let valor = format!("{EXTENSION_ID};https://clients2.google.com/service/update2/crx");
-        for clave in [
-            r"HKLM\SOFTWARE\Policies\Google\Chrome\ExtensionInstallForcelist",
-            r"HKLM\SOFTWARE\Policies\Microsoft\Edge\ExtensionInstallForcelist",
-        ] {
+        let Some(id) = bcwork_agent::buffer::get_state(&bcwork_agent::paths::buffer_db(), "extension_id")
+        else {
+            // Sin ID conocido se retira lo que haya: la 0.1.9 dejo escrito un
+            // ID que la tienda nunca asigno.
+            for clave in CLAVES_POLITICA {
+                let _ = std::process::Command::new("reg.exe")
+                    .args(["delete", clave, "/v", "100", "/f"])
+                    .output();
+            }
+            return;
+        };
+        apply_browser_policy_for(&id);
+    }
+
+    const CLAVES_POLITICA: [&str; 2] = [
+        r"HKLM\SOFTWARE\Policies\Google\Chrome\ExtensionInstallForcelist",
+        r"HKLM\SOFTWARE\Policies\Microsoft\Edge\ExtensionInstallForcelist",
+    ];
+
+    pub fn apply_browser_policy_for(id: &str) {
+        if id.len() != 32 || !id.bytes().all(|b| (b'a'..=b'p').contains(&b)) {
+            log::warn!("id de extension invalido, no se escribe politica: {id}");
+            return;
+        }
+        let valor = format!("{id};https://clients2.google.com/service/update2/crx");
+        for clave in CLAVES_POLITICA {
             let r = std::process::Command::new("reg.exe")
                 .args(["add", clave, "/v", "100", "/t", "REG_SZ", "/d", &valor, "/f"])
                 .output();

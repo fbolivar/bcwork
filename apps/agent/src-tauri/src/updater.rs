@@ -6,6 +6,12 @@
 use crate::ingest::Credentials;
 use anyhow::{anyhow, Result};
 use sha2::{Digest, Sha256};
+use std::sync::OnceLock;
+
+/// Quien quiera enterarse del ID de la extension que manda el servidor (el
+/// servicio, para escribir la politica del navegador) registra aqui su
+/// funcion. Evita que este modulo dependa de codigo solo-Windows.
+pub static EXTENSION_ID_HOOK: OnceLock<fn(&str)> = OnceLock::new();
 
 /// Devuelve true si lanzó una actualización.
 pub async fn check_and_update(creds: &Credentials, current: &str) -> Result<bool> {
@@ -21,6 +27,13 @@ pub async fn check_and_update(creds: &Credentials, current: &str) -> Result<bool
         return Ok(false);
     }
     let body: serde_json::Value = resp.json().await?;
+    // El ID de la extension del navegador viene del servidor (la tienda lo
+    // asigna y no se puede fijar en el manifiesto). Se aplica en cada
+    // chequeo: es idempotente y asi un cambio de ID no exige otra version.
+    if let Some(id) = body["extension_id"].as_str() {
+        crate::buffer::set_state(&crate::paths::buffer_db(), "extension_id", id).ok();
+        EXTENSION_ID_HOOK.get().map(|f| f(id));
+    }
     let latest = body["version"].as_str().unwrap_or("");
     let sha = body["sha256"].as_str().unwrap_or("").to_lowercase();
     if latest.is_empty() || !is_newer(latest, current) {
