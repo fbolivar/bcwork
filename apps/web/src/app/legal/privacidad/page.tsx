@@ -20,7 +20,7 @@ export default function PrivacidadPage() {
               Aviso de Privacidad y Política de Tratamiento de Datos Personales
             </h1>
             <p className="mt-0.5 text-sm text-gray-500">
-              BCWork · Versión 1.0 · Vigente desde 2025-01-01
+              BCWork · Versión 1.1 · Vigente desde 2026-09-16
             </p>
           </div>
         </div>
@@ -81,8 +81,13 @@ export default function PrivacidadPage() {
                 />
                 <Tr
                   a="Actividad laboral"
-                  b="Nombre de aplicaciones/sitios usados, duración, clasificación de productividad"
+                  b="Nombre de las aplicaciones usadas, duración, clasificación de productividad"
                   c="Agente de escritorio BCWork"
+                />
+                <Tr
+                  a="Navegación web"
+                  b="Dominio del sitio activo en el navegador (p. ej. docs.google.com) y tiempo en él. No se registra la dirección completa, el título ni el contenido de la página"
+                  c="Extensión BCWork para Chrome/Edge, instalada por el empleador; se comunica solo con el agente del mismo equipo"
                 />
                 <Tr
                   a="Sesiones de trabajo"
@@ -104,7 +109,8 @@ export default function PrivacidadPage() {
             </table>
             <p className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-2 text-amber-800">
               <strong>BCWork NO recopila:</strong> capturas de pantalla, grabaciones de video, audio
-              del micrófono, pulsaciones de teclado (keylogger), contenido de archivos personales ni
+              del micrófono, pulsaciones de teclado (keylogger), direcciones web completas, títulos
+              o contenido de páginas, formularios o contraseñas, contenido de archivos personales ni
               ningún dato fuera de la jornada laboral configurada.
             </p>
           </Section>

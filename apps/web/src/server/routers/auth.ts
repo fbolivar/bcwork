@@ -131,7 +131,7 @@ export const authRouter = router({
     await db.from('consents').insert({
       tenant_id: tenant.id,
       user_id: user.id,
-      policy_version: '1.0',
+      policy_version: '1.1',
       consent_type: 'data_processing',
       granted: true,
       ip_inet: ctx.ip,

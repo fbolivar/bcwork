@@ -7,7 +7,7 @@ import { hashPassword, verifyPassword, validatePasswordPolicy } from '@/lib/auth
 import { broadcastNotificationToMany } from '@/lib/realtime-broadcast'
 import { sendAbsenceRequestEmail } from '@/lib/email'
 
-const POLICY_VERSION = '1.0'
+const POLICY_VERSION = '1.1'
 const CONSENT_TYPE = 'monitoring_basic'
 
 export const employeeRouter = router({

@@ -19,7 +19,7 @@ const DATA_COLLECTED = [
   {
     icon: Globe,
     title: 'Sitios web visitados',
-    desc: 'Dominios de las páginas web que visitas desde tu dispositivo de trabajo (sin contenido ni URLs completas).',
+    desc: 'Solo el dominio del sitio activo en Chrome o Edge (por ejemplo, docs.google.com), a través de la extensión BCWork que instala tu empresa. Nunca la dirección completa, el título ni el contenido de la página, ni lo que escribes.',
   },
   {
     icon: Eye,
@@ -84,9 +84,10 @@ export function MyPrivacyPanel() {
           ))}
         </div>
         <p className="mt-4 text-xs text-gray-400">
-          Los datos son de uso exclusivo de tu empleador para gestión del teletrabajo. No se venden
-          ni comparten con terceros. Bases legales: Ley 2121/2021 (teletrabajo) y Ley 1581/2012
-          (habeas data).
+          Todo se recopila únicamente dentro de tu jornada laboral configurada. Los datos son de uso
+          exclusivo de tu empleador para gestión del teletrabajo; no se venden ni comparten con
+          terceros. Bases legales: Ley 2121/2021 (teletrabajo), Ley 2191/2022 (desconexión digital)
+          y Ley 1581/2012 (habeas data).
         </p>
       </div>
 

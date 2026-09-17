@@ -46,7 +46,7 @@ export default function ConsentPage() {
           </div>
           <div>
             <h1 className="text-lg font-bold text-gray-900">Autorización de monitoreo</h1>
-            <p className="text-xs text-gray-500">BCWork · Aviso de privacidad v1.0</p>
+            <p className="text-xs text-gray-500">BCWork · Aviso de privacidad v1.1</p>
           </div>
         </div>
 
@@ -59,7 +59,12 @@ export default function ConsentPage() {
             los siguientes datos durante tu jornada laboral:
           </p>
           <ul className="list-disc space-y-1 pl-5 text-gray-600">
-            <li>Tiempo de actividad en aplicaciones y sitios web (sin capturas de pantalla)</li>
+            <li>Nombre de las aplicaciones que usas y el tiempo en cada una</li>
+            <li>
+              Dominio del sitio web activo en el navegador (por ejemplo, docs.google.com), mediante
+              la extensión BCWork instalada por tu empresa en Chrome o Edge. No se registra la
+              dirección completa, el título ni el contenido de las páginas
+            </li>
             <li>Clasificación de productividad de aplicaciones usadas</li>
             <li>Información del dispositivo de trabajo (nombre, plataforma, hostname)</li>
             <li>Duración y estado de sesiones de trabajo</li>
@@ -67,7 +72,11 @@ export default function ConsentPage() {
           </ul>
           <p>
             Estos datos se usan <strong>únicamente</strong> para gestión del desempeño, nómina y
-            cumplimiento legal. <strong>No se graba audio, video ni capturas de pantalla.</strong>
+            cumplimiento legal.{' '}
+            <strong>
+              No se graba audio, video, capturas de pantalla, pulsaciones de teclado ni el contenido
+              de lo que lees o escribes.
+            </strong>
           </p>
           <p>
             El monitoreo opera <strong>solo dentro de tu jornada laboral</strong> configurada. Fuera
