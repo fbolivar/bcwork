@@ -28,30 +28,6 @@ function clase(p: string | null): Clase {
   return p === 'productive' || p === 'non_productive' ? p : 'neutral'
 }
 
-/**
- * PostgREST corta en 1000 filas y un día de ocho personas ya pasa de eso. Se
- * pide el total primero y las páginas van en paralelo: en serie, seis páginas
- * eran tres segundos de espera para abrir el panel.
- */
-async function todas<T>(
-  total: () => PromiseLike<{ count: number | null; error: unknown }>,
-  consulta: (desde: number, hasta: number) => PromiseLike<{ data: T[] | null; error: unknown }>,
-): Promise<T[]> {
-  const PAGINA = 1000
-  const { count, error } = await total()
-  if (error) throw new Error(String((error as { message?: string }).message ?? error))
-  const paginas = Math.ceil((count ?? 0) / PAGINA)
-  const partes = await Promise.all(
-    Array.from({ length: paginas }, (_, i) => consulta(i * PAGINA, (i + 1) * PAGINA - 1)),
-  )
-  const out: T[] = []
-  for (const p of partes) {
-    if (p.error) throw new Error(String((p.error as { message?: string }).message ?? p.error))
-    out.push(...(p.data ?? []))
-  }
-  return out
-}
-
 function minutosDeHora(hhmm: string | null): number | null {
   if (!hhmm) return null
   const [h, m] = hhmm.split(':').map(Number)
@@ -177,33 +153,24 @@ export async function buildDayOverview(
 
   // ── Consultas independientes, todas a la vez ──
   const desdeSpark = fechaMasDias(date, -(DIAS_SPARKLINE - 1))
-  const pEventos = todas<{
-    user_id: string
-    started_at: string
-    duration_seconds: number | null
-    productivity: string | null
-    app_identifier: string | null
-    domain: string | null
-  }>(
-    () =>
-      db
-        .from('activity_events')
-        .select('id', { count: 'exact', head: true })
-        .eq('tenant_id', tenantId)
-        .in('user_id', ids)
-        .gte('started_at', from)
-        .lt('started_at', to),
-    (a, b) =>
-      db
-        .from('activity_events')
-        .select('user_id, started_at, duration_seconds, productivity, app_identifier, domain')
-        .eq('tenant_id', tenantId)
-        .in('user_id', ids)
-        .gte('started_at', from)
-        .lt('started_at', to)
-        .order('started_at', { ascending: true })
-        .range(a, b),
-  )
+  // Los eventos del dia se suman en Postgres (35.000+ filas por empresa):
+  // una fila por persona, una por hora y una por aplicacion. RLS sigue
+  // aplicando porque las funciones son SECURITY INVOKER.
+  const rpc = db as unknown as {
+    rpc: (
+      fn: string,
+      args: Record<string, unknown>,
+    ) => PromiseLike<{ data: unknown; error: { message: string } | null }>
+  }
+  const pPersonas = rpc.rpc('day_user_totals', { p_from: from, p_to: to, p_user_ids: ids })
+  const pPerfil = rpc.rpc('report_time_profile', {
+    p_from: from,
+    p_to: to,
+    p_user_ids: ids,
+    p_bucket_minutes: 60,
+    p_tz: timeZone,
+  })
+  const pApps = rpc.rpc('report_app_totals', { p_from: from, p_to: to, p_user_ids: ids })
   const pSesiones = db
     .from('work_sessions')
     .select('user_id, idle_seconds')
@@ -227,12 +194,9 @@ export async function buildDayOverview(
     .lt('started_at', to)
     .order('started_at', { ascending: true })
 
-  const [eventos, { data: sesiones }, { data: metricas }, { data: sesiones7 }] = await Promise.all([
-    pEventos,
-    pSesiones,
-    pMetricas,
-    pSesiones7,
-  ])
+  const [rPersonas, rPerfil, rApps, { data: sesiones }, { data: metricas }, { data: sesiones7 }] =
+    await Promise.all([pPersonas, pPerfil, pApps, pSesiones, pMetricas, pSesiones7])
+  for (const r of [rPersonas, rPerfil, rApps]) if (r.error) throw new Error(r.error.message)
 
   // ── Agregados ──
   const porHora = Array.from({ length: 24 }, (_, hour) => ({
@@ -241,6 +205,19 @@ export async function buildDayOverview(
     nonProductive: 0,
     neutral: 0,
   }))
+  for (const f of (rPerfil.data ?? []) as {
+    bucket: number
+    productive: number
+    non_productive: number
+    neutral: number
+  }[]) {
+    const fila = porHora[f.bucket]
+    if (!fila) continue
+    fila.productive += Number(f.productive)
+    fila.nonProductive += Number(f.non_productive)
+    fila.neutral += Number(f.neutral)
+  }
+
   const porPersona = new Map<
     string,
     {
@@ -252,42 +229,41 @@ export async function buildDayOverview(
       ultimaClase: Clase
     }
   >()
-  const porApp = new Map<string, { clase: Clase; secs: number }>()
+  for (const f of (rPersonas.data ?? []) as {
+    user_id: string
+    productive: number
+    non_productive: number
+    neutral: number
+    first_at: string
+    last_at: string
+    last_class: string | null
+  }[]) {
+    porPersona.set(f.user_id, {
+      prod: Number(f.productive),
+      noProd: Number(f.non_productive),
+      neutro: Number(f.neutral),
+      llegada: f.first_at,
+      ultimo: f.last_at,
+      ultimaClase: clase(f.last_class),
+    })
+  }
 
-  for (const e of eventos) {
-    const secs = e.duration_seconds ?? 0
-    const c = clase(e.productivity)
-    const h = localHourAndDow(e.started_at, timeZone).hour
-    const fila = porHora[h]!
-    if (c === 'productive') fila.productive += secs
-    else if (c === 'non_productive') fila.nonProductive += secs
-    else fila.neutral += secs
-
-    const p = porPersona.get(e.user_id) ?? {
-      prod: 0,
-      noProd: 0,
-      neutro: 0,
-      llegada: e.started_at,
-      ultimo: e.started_at,
-      ultimaClase: c,
-    }
-    if (c === 'productive') p.prod += secs
-    else if (c === 'non_productive') p.noProd += secs
-    else p.neutro += secs
-    if (e.started_at < p.llegada) p.llegada = e.started_at
-    if (e.started_at >= p.ultimo) {
-      p.ultimo = e.started_at
-      p.ultimaClase = c
-    }
-    porPersona.set(e.user_id, p)
-
-    // Con dominio (lo aporta la extensión), la "app" es el sitio, no el navegador.
-    const nombreApp = e.domain || e.app_identifier
-    if (nombreApp) {
-      const a = porApp.get(nombreApp) ?? { clase: c, secs: 0 }
-      a.secs += secs
-      porApp.set(nombreApp, a)
-    }
+  // Con dominio (lo aporta la extensión), la "app" es el sitio, no el navegador;
+  // eso ya lo resuelve report_app_totals. Si un mismo nombre aparece con dos
+  // clases (regla cambiada a mitad de dia), manda la que acumula mas tiempo.
+  const porApp = new Map<string, { clase: Clase; secs: number; porClase: Map<Clase, number> }>()
+  for (const f of (rApps.data ?? []) as {
+    app_identifier: string
+    productivity: string | null
+    seconds: number
+  }[]) {
+    const c = clase(f.productivity)
+    const secs = Number(f.seconds)
+    const a = porApp.get(f.app_identifier) ?? { clase: c, secs: 0, porClase: new Map() }
+    a.secs += secs
+    a.porClase.set(c, (a.porClase.get(c) ?? 0) + secs)
+    if ((a.porClase.get(c) ?? 0) > (a.porClase.get(a.clase) ?? 0)) a.clase = c
+    porApp.set(f.app_identifier, a)
   }
 
   // ── Inactividad: sesiones que empezaron hoy ──
