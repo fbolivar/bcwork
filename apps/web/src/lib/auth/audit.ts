@@ -50,6 +50,7 @@ type AuditAction =
   | 'tenant.subscription_cancelled'
   | 'tenant.account_deleted'
   | 'tenant.impersonated'
+  | 'ai_analysis.run'
 
 interface AuditEntry {
   tenantId?: string

@@ -15,6 +15,8 @@ import {
 import { runReport, REPORT_TYPES, ReportInputError } from '../reports'
 import { buildDayOverview } from '../day-overview'
 import { buildReportsOverview } from '../reports-overview'
+import { buildAnalystFacts, type Hechos } from '../analyst'
+import { generarInforme, responderPregunta, MODELO_ANALISTA, type Informe } from '../analyst-ai'
 import { toCron, proximaEjecucion } from '../report-schedule'
 import { enviarInformeProgramado } from '../report-mailer'
 import { offsetMinutes } from '@/lib/tz'
@@ -1454,6 +1456,127 @@ export const adminRouter = router({
           code: 'INTERNAL_SERVER_ERROR',
           message: e instanceof Error ? e.message : 'Error calculando el panel del dia',
         })
+      }
+    }),
+
+  // ─── Analista IA ───────────────────────────────────────────────────────
+  // Los hechos los calcula BCWork (server/analyst.ts); el modelo los
+  // interpreta (server/analyst-ai.ts). Cada analisis queda guardado para
+  // poder volver a el y reportar a gerencia.
+
+  analystStatus: adminProcedure.query(() => ({
+    aiConfigured:
+      !!process.env.OPENROUTER_API_KEY && process.env.OPENROUTER_API_KEY !== 'sk-or-v1-placeholder',
+    model: MODELO_ANALISTA,
+  })),
+
+  runAnalysis: adminProcedure
+    .input(z.object({ weeks: z.number().int().min(2).max(12).default(4) }))
+    .mutation(async ({ ctx, input }) => {
+      const tid = ctx.user!.tid
+      const tz = await getTenantTimezone(ctx.db, tid)
+      let facts: Hechos
+      try {
+        facts = await buildAnalystFacts(ctx.db, tid, tz, input)
+      } catch (e) {
+        throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: (e as Error).message })
+      }
+      let report: Informe | null = null
+      let error: string | null = null
+      const iaLista =
+        !!process.env.OPENROUTER_API_KEY &&
+        process.env.OPENROUTER_API_KEY !== 'sk-or-v1-placeholder'
+      if (iaLista && facts.people > 0) {
+        try {
+          report = await generarInforme(facts)
+        } catch (e) {
+          error = (e as Error).message
+        }
+      } else if (!iaLista) {
+        error =
+          'Sin clave de IA configurada: se muestran los hechos y las señales, sin interpretación.'
+      }
+      const { data, error: dbErr } = await ctx.db
+        .from('ai_analyses')
+        .insert({
+          tenant_id: tid,
+          created_by: ctx.user!.sub,
+          period_from: facts.period.from,
+          period_to: facts.period.to,
+          weeks: input.weeks,
+          facts: facts as unknown as import('@bcwork/db').Json,
+          report: report as unknown as import('@bcwork/db').Json,
+          model: report ? MODELO_ANALISTA : null,
+          error,
+        })
+        .select('id, created_at')
+        .single()
+      if (dbErr) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: dbErr.message })
+      await logAudit(ctx.db, {
+        tenantId: tid,
+        actorUserId: ctx.user!.sub,
+        action: 'ai_analysis.run',
+        entityType: 'ai_analysis',
+        entityId: data.id,
+        ipInet: ctx.ip,
+        userAgent: ctx.userAgent,
+        after: { weeks: input.weeks, model: report ? MODELO_ANALISTA : null },
+      })
+      return { id: data.id, createdAt: data.created_at, facts, report, error }
+    }),
+
+  listAnalyses: adminProcedure.query(async ({ ctx }) => {
+    const { data, error } = await ctx.db
+      .from('ai_analyses')
+      .select('id, period_from, period_to, weeks, model, error, created_at, created_by')
+      .eq('tenant_id', ctx.user!.tid)
+      .order('created_at', { ascending: false })
+      .limit(24)
+    if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+    return data ?? []
+  }),
+
+  getAnalysis: adminProcedure
+    .input(z.object({ id: z.string().uuid() }))
+    .query(async ({ ctx, input }) => {
+      const { data, error } = await ctx.db
+        .from('ai_analyses')
+        .select('id, period_from, period_to, weeks, model, error, created_at, facts, report')
+        .eq('tenant_id', ctx.user!.tid)
+        .eq('id', input.id)
+        .maybeSingle()
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      if (!data) throw new TRPCError({ code: 'NOT_FOUND' })
+      return {
+        id: data.id,
+        createdAt: data.created_at,
+        weeks: data.weeks,
+        model: data.model,
+        error: data.error,
+        facts: data.facts as unknown as Hechos,
+        report: data.report as unknown as Informe | null,
+      }
+    }),
+
+  askAnalyst: adminProcedure
+    .input(z.object({ id: z.string().uuid(), question: z.string().min(3).max(1000) }))
+    .mutation(async ({ ctx, input }) => {
+      const { data } = await ctx.db
+        .from('ai_analyses')
+        .select('facts, report')
+        .eq('tenant_id', ctx.user!.tid)
+        .eq('id', input.id)
+        .maybeSingle()
+      if (!data) throw new TRPCError({ code: 'NOT_FOUND' })
+      try {
+        const answer = await responderPregunta(
+          data.facts as unknown as Hechos,
+          data.report as unknown as Informe | null,
+          input.question,
+        )
+        return { answer }
+      } catch (e) {
+        throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: (e as Error).message })
       }
     }),
 

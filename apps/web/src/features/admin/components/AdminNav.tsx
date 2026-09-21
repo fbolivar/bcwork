@@ -5,6 +5,7 @@ import Image from 'next/image'
 import { usePathname } from 'next/navigation'
 import {
   LayoutDashboard,
+  Sparkles,
   Users,
   Users2,
   Clock,
@@ -87,6 +88,7 @@ const GROUPS: NavGroup[] = [
       { href: '/admin/performance-reviews', label: 'Evaluaciones', icon: Star },
       { href: '/admin/1on1s', label: 'Reuniones 1:1', icon: Video },
       { href: '/admin/people-analytics', label: 'People Analytics', icon: TrendingUp },
+      { href: '/admin/analyst', label: 'Analista IA', icon: Sparkles },
     ],
   },
   {

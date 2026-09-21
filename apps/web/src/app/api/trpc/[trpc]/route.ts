@@ -2,6 +2,10 @@ import { fetchRequestHandler } from '@trpc/server/adapters/fetch'
 import { appRouter } from '@/server/routers'
 import { createContext } from '@/server/context'
 
+// El analista IA redacta un informe completo en una sola llamada: puede pasar
+// del minuto. El resto de procedimientos no se ven afectados por el tope.
+export const maxDuration = 120
+
 const handler = (req: Request) =>
   fetchRequestHandler({
     endpoint: '/api/trpc',

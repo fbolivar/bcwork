@@ -548,6 +548,63 @@ export type Database = {
         }
         Relationships: []
       }
+      ai_analyses: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          error: string | null
+          facts: Json
+          id: string
+          model: string | null
+          period_from: string
+          period_to: string
+          report: Json | null
+          tenant_id: string
+          weeks: number
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          error?: string | null
+          facts: Json
+          id?: string
+          model?: string | null
+          period_from: string
+          period_to: string
+          report?: Json | null
+          tenant_id: string
+          weeks: number
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          error?: string | null
+          facts?: Json
+          id?: string
+          model?: string | null
+          period_from?: string
+          period_to?: string
+          report?: Json | null
+          tenant_id?: string
+          weeks?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ai_analyses_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ai_analyses_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       agent_devices: {
         Row: {
           agent_version: string
