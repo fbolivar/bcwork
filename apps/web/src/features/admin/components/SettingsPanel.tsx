@@ -2,13 +2,14 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { trpc as api } from '@/lib/trpc-client'
-import { Check, Upload, X, Bell, Plug, AlertTriangle, Building2 } from 'lucide-react'
+import { Check, Upload, X, Bell, Plug, AlertTriangle, Building2, LayoutGrid } from 'lucide-react'
 import { IntegrationsManager } from './IntegrationsManager'
 
-type Tab = 'general' | 'notifications' | 'integrations' | 'danger'
+type Tab = 'general' | 'modules' | 'notifications' | 'integrations' | 'danger'
 
 const TABS: { id: Tab; label: string; icon: React.ElementType }[] = [
   { id: 'general', label: 'General', icon: Building2 },
+  { id: 'modules', label: 'Módulos', icon: LayoutGrid },
   { id: 'notifications', label: 'Notificaciones', icon: Bell },
   { id: 'integrations', label: 'Integraciones', icon: Plug },
   { id: 'danger', label: 'Zona de peligro', icon: AlertTriangle },
@@ -558,6 +559,68 @@ function DangerTab() {
   )
 }
 
+// ─── Módulos ──────────────────────────────────────────────────────────────────
+
+const MODULOS: { id: 'talento'; nombre: string; descripcion: string; incluye: string }[] = [
+  {
+    id: 'talento',
+    nombre: 'Talento humano',
+    descripcion:
+      'Gestión de personas más allá del tiempo: onboarding, reclutamiento, objetivos, evaluaciones, reuniones 1:1, encuestas, reconocimientos, anuncios, documentos, contratos, certificados, nómina, gastos y beneficios.',
+    incluye: 'Añade el grupo "Talento" al menú del administrador y "Mi empresa" al del empleado.',
+  },
+]
+
+function ModulesTab() {
+  const utils = api.useUtils()
+  const { data, isLoading } = api.admin.getModules.useQuery()
+  const update = api.admin.updateModules.useMutation({
+    onSuccess: () => {
+      void utils.admin.getModules.invalidate()
+      void utils.auth.me.invalidate()
+    },
+  })
+  if (isLoading) return <div className="h-40 animate-pulse rounded-xl bg-gray-100" />
+  return (
+    <div className="max-w-2xl space-y-4">
+      <div className="rounded-xl border border-gray-200 bg-white p-5">
+        <h2 className="mb-1 text-sm font-semibold text-gray-700">Módulos opcionales</h2>
+        <p className="mb-4 text-xs text-gray-400">
+          BCWork mide tiempo y productividad. Lo demás se activa solo si tu empresa lo va a usar;
+          así el menú no estorba.
+        </p>
+        <div className="divide-y divide-gray-50">
+          {MODULOS.map((m) => {
+            const activo = !!data?.[m.id]
+            return (
+              <div key={m.id} className="flex items-start justify-between gap-4 py-4">
+                <div>
+                  <p className="text-sm font-medium text-gray-900">{m.nombre}</p>
+                  <p className="mt-0.5 text-xs leading-relaxed text-gray-500">{m.descripcion}</p>
+                  <p className="mt-1 text-[11px] text-gray-400">{m.incluye}</p>
+                </div>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={activo}
+                  disabled={update.isPending}
+                  onClick={() => update.mutate({ [m.id]: !activo })}
+                  className={`relative mt-1 inline-flex h-5 w-9 shrink-0 rounded-full transition-colors ${activo ? 'bg-blue-600' : 'bg-gray-200'}`}
+                >
+                  <span
+                    className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform ${activo ? 'translate-x-4' : 'translate-x-0.5'}`}
+                  />
+                </button>
+              </div>
+            )
+          })}
+        </div>
+        {update.error && <p className="mt-2 text-xs text-red-600">{update.error.message}</p>}
+      </div>
+    </div>
+  )
+}
+
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 export function SettingsPanel() {
@@ -589,6 +652,7 @@ export function SettingsPanel() {
       {/* Content */}
       <div className="min-w-0 flex-1">
         {tab === 'general' && <GeneralTab />}
+        {tab === 'modules' && <ModulesTab />}
         {tab === 'notifications' && <NotificationsTab />}
         {tab === 'integrations' && <IntegrationsTab />}
         {tab === 'danger' && <DangerTab />}

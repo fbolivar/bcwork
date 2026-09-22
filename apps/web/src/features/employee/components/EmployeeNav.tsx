@@ -5,32 +5,24 @@ import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import {
   LayoutDashboard,
-  BarChart2,
   LogOut,
   User,
-  CalendarClock,
   ShieldCheck,
   Bell,
   X,
-  Camera,
   CalendarOff,
   Download,
   CalendarDays,
   ActivitySquare,
   PenLine,
   ClipboardList,
-  CalendarCheck,
   Heart,
   Briefcase,
   FileText,
   Clock4,
   Target,
   MessageSquare,
-  Coffee,
   Users,
-  Timer,
-  Receipt,
-  BarChart3,
   MapPin,
   ClipboardCheck,
   DollarSign,
@@ -62,79 +54,64 @@ type NavGroup = {
   label: string
   defaultOpen?: boolean
   items: NavItem[]
+  /** Solo se muestra si la empresa tiene activo ese módulo. */
+  module?: string
 }
 
+/**
+ * Menú del empleado: lo que le sirve para ver su propio tiempo, y nada más.
+ * Los módulos de talento humano viven en "Mi empresa" y aparecen solo cuando
+ * la empresa los activa (Configuración › Módulos del administrador).
+ */
 const NAV_GROUPS: NavGroup[] = [
   {
     label: 'Inicio',
     defaultOpen: true,
     items: [
       { href: '/me/dashboard', label: 'Mi día', icon: LayoutDashboard },
-      { href: '/me/messages', label: 'Mensajes', icon: MessageSquare },
       { href: '/me/notifications', label: 'Notificaciones', icon: Bell },
-      { href: '/me/announcements', label: 'Anuncios', icon: Megaphone },
     ],
   },
   {
-    label: 'Tiempo y trabajo',
-    defaultOpen: false,
+    label: 'Mi tiempo',
+    defaultOpen: true,
     items: [
-      { href: '/me/sessions', label: 'Mis sesiones', icon: CalendarClock },
       { href: '/me/activity', label: 'Mi actividad', icon: ActivitySquare },
       { href: '/me/timesheet', label: 'Asistencia', icon: ClipboardList },
-      { href: '/me/attendance', label: 'Calendario', icon: CalendarCheck },
       { href: '/me/schedule', label: 'Mi horario', icon: CalendarDays },
+      { href: '/me/absences', label: 'Mis ausencias', icon: CalendarOff },
+      { href: '/me/overtime-requests', label: 'Horas extra', icon: Clock4 },
+      { href: '/me/work-location', label: 'Mi ubicación', icon: MapPin },
       { href: '/me/manual-time', label: 'Tiempo manual', icon: PenLine },
-      { href: '/me/breaks', label: 'Mis pausas', icon: Coffee },
-      { href: '/me/pomodoro', label: 'Pomodoro', icon: Timer },
-      { href: '/me/projects', label: 'Proyectos', icon: Briefcase },
+      { href: '/me/reports', label: 'Mis informes', icon: FileText },
     ],
   },
   {
-    label: 'Rendimiento',
+    label: 'Proyectos',
     defaultOpen: false,
+    items: [{ href: '/me/projects', label: 'Proyectos', icon: Briefcase }],
+  },
+  {
+    label: 'Mi empresa',
+    defaultOpen: false,
+    module: 'talento',
     items: [
-      { href: '/me/metrics', label: 'Mi rendimiento', icon: BarChart2 },
+      { href: '/me/messages', label: 'Mensajes', icon: MessageSquare },
+      { href: '/me/announcements', label: 'Anuncios', icon: Megaphone },
       { href: '/me/goals', label: 'Mis objetivos', icon: Target },
       { href: '/me/performance-reviews', label: 'Evaluaciones', icon: Star },
-      { href: '/me/benchmark', label: 'Mi benchmark', icon: BarChart3 },
-      { href: '/me/reports', label: 'Mis informes', icon: FileText },
-      { href: '/me/screenshots', label: 'Mis capturas', icon: Camera },
-    ],
-  },
-  {
-    label: 'Equipo y empresa',
-    defaultOpen: false,
-    items: [
+      { href: '/me/1on1s', label: 'Reuniones 1:1', icon: Video },
       { href: '/me/org-chart', label: 'Directorio', icon: Users },
       { href: '/me/team-presence', label: 'Equipo en línea', icon: MapPin },
-      { href: '/me/1on1s', label: 'Reuniones 1:1', icon: Video },
       { href: '/me/company-calendar', label: 'Calendario empresa', icon: CalendarRange },
       { href: '/me/kudos', label: 'Reconocimientos', icon: Heart },
       { href: '/me/pulse-surveys', label: 'Encuestas', icon: ClipboardCheck },
-    ],
-  },
-  {
-    label: 'Laboral',
-    defaultOpen: false,
-    items: [
-      { href: '/me/absences', label: 'Mis ausencias', icon: CalendarOff },
-      { href: '/me/overtime-requests', label: 'Horas extra', icon: Clock4 },
       { href: '/me/payslips', label: 'Mis recibos', icon: DollarSign },
       { href: '/me/expenses', label: 'Mis gastos', icon: Wallet },
-      { href: '/me/invoices', label: 'Mis facturas', icon: Receipt },
       { href: '/me/benefits', label: 'Mis beneficios', icon: Gift },
       { href: '/me/hr-documents', label: 'Documentos HR', icon: FileCheck },
       { href: '/me/sign-documents', label: 'Firmar documentos', icon: FilePen },
       { href: '/me/certificates', label: 'Certificados', icon: FileText },
-      { href: '/me/compensation', label: 'Mi compensación', icon: DollarSign },
-      { href: '/me/work-location', label: 'Mi ubicación', icon: MapPin },
-    ],
-  },
-  {
-    label: 'Crecimiento',
-    defaultOpen: false,
-    items: [
       { href: '/me/onboarding', label: 'Onboarding', icon: Rocket },
       { href: '/me/training', label: 'Capacitación', icon: GraduationCap },
       { href: '/me/career', label: 'Mi plan de carrera', icon: TrendingUp },
@@ -226,6 +203,8 @@ export function EmployeeNav({ onClose }: { onClose?: () => void } = {}) {
   const pathname = usePathname()
   const router = useRouter()
   const logout = trpc.auth.logout.useMutation({ onSuccess: () => router.push('/login') })
+  const { data: me } = trpc.auth.me.useQuery(undefined, { staleTime: 5 * 60_000 })
+  const modules: Record<string, boolean> = (me?.modules as Record<string, boolean>) ?? {}
 
   const { data: countData } = trpc.notifications.getUnreadCount.useQuery(undefined, {
     refetchInterval: 30000,
@@ -269,7 +248,7 @@ export function EmployeeNav({ onClose }: { onClose?: () => void } = {}) {
 
       {/* Nav */}
       <nav className="flex-1 overflow-y-auto px-3 pb-4">
-        {NAV_GROUPS.map((group) => (
+        {NAV_GROUPS.filter((g) => !g.module || modules[g.module]).map((group) => (
           <NavGroupSection
             key={group.label}
             group={group}

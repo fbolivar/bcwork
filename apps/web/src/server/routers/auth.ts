@@ -436,7 +436,18 @@ export const authRouter = router({
 
     if (!user) throw new TRPCError({ code: 'NOT_FOUND' })
 
-    return user
+    // Modulos opcionales de la empresa (ver migracion modulos_por_empresa).
+    let modules: Record<string, boolean> = {}
+    if (user.tenant_id) {
+      const { data: t } = await db
+        .from('tenants')
+        .select('modules')
+        .eq('id', user.tenant_id)
+        .maybeSingle()
+      modules = ((t?.modules as Record<string, boolean> | null) ?? {}) as Record<string, boolean>
+    }
+
+    return { ...user, modules }
   }),
 
   // ─── CAMBIAR CONTRASEÑA ──────────────────────────────────────────────────────

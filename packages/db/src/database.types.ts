@@ -4913,6 +4913,7 @@ export type Database = {
           logo_url: string | null
           maintenance_message: string | null
           maintenance_mode: boolean
+          modules: Json
           nit: string
           notification_preferences: Json | null
           onboarding_complete: boolean
@@ -4935,6 +4936,7 @@ export type Database = {
           logo_url?: string | null
           maintenance_message?: string | null
           maintenance_mode?: boolean
+          modules?: Json
           nit: string
           notification_preferences?: Json | null
           onboarding_complete?: boolean
@@ -4957,6 +4959,7 @@ export type Database = {
           logo_url?: string | null
           maintenance_message?: string | null
           maintenance_mode?: boolean
+          modules?: Json
           nit?: string
           notification_preferences?: Json | null
           onboarding_complete?: boolean

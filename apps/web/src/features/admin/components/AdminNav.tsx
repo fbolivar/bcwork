@@ -16,7 +16,6 @@ import {
   RefreshCw,
   BarChart2,
   Bell,
-  Plug,
   Shield,
   Settings,
   LogOut,
@@ -54,8 +53,14 @@ import { useRouter } from 'next/navigation'
 import { useState, useEffect } from 'react'
 
 type NavItem = { href: string; label: string; icon: React.ElementType }
-type NavGroup = { label: string; icon: React.ElementType; items: NavItem[] }
+type NavGroup = { label: string; icon: React.ElementType; items: NavItem[]; module?: string }
 
+/**
+ * Menú del administrador: seis grupos que cuentan una sola historia —qué hace
+ * el equipo con su tiempo— y un séptimo, "Talento", con los módulos de RR. HH.
+ * que se activan por empresa en Configuración › Módulos. Sin esa marca, no se
+ * ven: las rutas siguen existiendo, solo dejan de estorbar.
+ */
 const GROUPS: NavGroup[] = [
   {
     label: 'Personas',
@@ -64,8 +69,6 @@ const GROUPS: NavGroup[] = [
       { href: '/admin/users', label: 'Usuarios', icon: Users },
       { href: '/admin/teams', label: 'Equipos', icon: Users2 },
       { href: '/admin/org-chart', label: 'Organigrama', icon: OrgIcon },
-      { href: '/admin/onboarding', label: 'Onboarding', icon: Rocket },
-      { href: '/admin/recruitment', label: 'Reclutamiento', icon: UserSearch },
     ],
   },
   {
@@ -73,91 +76,70 @@ const GROUPS: NavGroup[] = [
     icon: Clock,
     items: [
       { href: '/admin/workday-compliance', label: 'Cumplimiento de jornada', icon: Clock },
-      { href: '/admin/schedules', label: 'Horarios', icon: Clock },
+      { href: '/admin/schedules', label: 'Horarios', icon: CalendarDays },
       { href: '/admin/absences', label: 'Ausencias', icon: CalendarOff },
-      { href: '/admin/pto', label: 'Balance PTO', icon: CalendarDays },
       { href: '/admin/overtime', label: 'Horas extra', icon: Clock4 },
       { href: '/admin/work-locations', label: 'Ubicaciones', icon: MapPin },
     ],
   },
   {
-    label: 'Desempeño',
-    icon: Target,
+    label: 'Productividad',
+    icon: TrendingUp,
     items: [
-      { href: '/admin/goals', label: 'Objetivos', icon: Target },
-      { href: '/admin/performance-reviews', label: 'Evaluaciones', icon: Star },
-      { href: '/admin/1on1s', label: 'Reuniones 1:1', icon: Video },
-      { href: '/admin/people-analytics', label: 'People Analytics', icon: TrendingUp },
+      { href: '/admin/reports', label: 'Informes', icon: FileBarChart },
+      { href: '/admin/metrics', label: 'Métricas', icon: BarChart2 },
+      { href: '/admin/apps', label: 'Aplicaciones y sitios', icon: AppWindow },
       { href: '/admin/analyst', label: 'Analista IA', icon: Sparkles },
-    ],
-  },
-  {
-    label: 'Cultura',
-    icon: Heart,
-    items: [
-      { href: '/admin/messages', label: 'Mensajes', icon: MessageSquare },
-      { href: '/admin/pulse-surveys', label: 'Encuestas', icon: ClipboardCheck },
-      { href: '/admin/kudos', label: 'Reconocimiento', icon: Heart },
-      { href: '/admin/announcements', label: 'Anuncios', icon: Megaphone },
-      { href: '/admin/company-calendar', label: 'Calendario', icon: CalendarRange },
-    ],
-  },
-  {
-    label: 'Documentos',
-    icon: FileText,
-    items: [
-      { href: '/admin/hr-documents', label: 'Documentos HR', icon: FileText },
-      { href: '/admin/contracts', label: 'Contratos', icon: FileCheck },
-      { href: '/admin/certificates', label: 'Certificados', icon: FileCheck },
-      { href: '/admin/compliance', label: 'Cumplimiento', icon: ShieldCheck },
-    ],
-  },
-  {
-    label: 'Finanzas',
-    icon: DollarSign,
-    items: [
-      { href: '/admin/payroll', label: 'Nómina', icon: DollarSign },
-      { href: '/admin/expenses', label: 'Gastos', icon: Wallet },
-      { href: '/admin/benefits', label: 'Beneficios', icon: Gift },
-      { href: '/admin/billing', label: 'Facturación', icon: CreditCard },
+      { href: '/admin/alerts', label: 'Alertas', icon: Bell },
     ],
   },
   {
     label: 'Proyectos',
     icon: Briefcase,
+    items: [{ href: '/admin/projects', label: 'Proyectos', icon: Briefcase }],
+  },
+  {
+    label: 'Talento',
+    icon: Heart,
+    module: 'talento',
     items: [
-      { href: '/admin/projects', label: 'Proyectos', icon: Briefcase },
+      { href: '/admin/onboarding', label: 'Onboarding', icon: Rocket },
+      { href: '/admin/recruitment', label: 'Reclutamiento', icon: UserSearch },
+      { href: '/admin/goals', label: 'Objetivos', icon: Target },
+      { href: '/admin/performance-reviews', label: 'Evaluaciones', icon: Star },
+      { href: '/admin/1on1s', label: 'Reuniones 1:1', icon: Video },
+      { href: '/admin/people-analytics', label: 'People Analytics', icon: TrendingUp },
+      { href: '/admin/pto', label: 'Balance PTO', icon: CalendarDays },
       { href: '/admin/training', label: 'Capacitación', icon: GraduationCap },
-      { href: '/admin/reports', label: 'Informes', icon: FileBarChart },
+      { href: '/admin/messages', label: 'Mensajes', icon: MessageSquare },
+      { href: '/admin/pulse-surveys', label: 'Encuestas', icon: ClipboardCheck },
+      { href: '/admin/kudos', label: 'Reconocimiento', icon: Heart },
+      { href: '/admin/announcements', label: 'Anuncios', icon: Megaphone },
+      { href: '/admin/company-calendar', label: 'Calendario', icon: CalendarRange },
+      { href: '/admin/hr-documents', label: 'Documentos HR', icon: FileText },
+      { href: '/admin/contracts', label: 'Contratos', icon: FileCheck },
+      { href: '/admin/certificates', label: 'Certificados', icon: FileCheck },
+      { href: '/admin/compliance', label: 'Cumplimiento', icon: ShieldCheck },
+      { href: '/admin/payroll', label: 'Nómina', icon: DollarSign },
+      { href: '/admin/expenses', label: 'Gastos', icon: Wallet },
+      { href: '/admin/benefits', label: 'Beneficios', icon: Gift },
     ],
   },
   {
-    label: 'TI & Seguridad',
-    icon: Shield,
+    label: 'Configuración',
+    icon: Settings,
     items: [
-      { href: '/admin/apps', label: 'Catálogo de aplicaciones', icon: AppWindow },
-      { href: '/admin/app-inventory', label: 'Inventario de aplicaciones', icon: Package },
+      { href: '/admin/settings', label: 'Empresa y módulos', icon: Settings },
       { href: '/admin/devices', label: 'Dispositivos', icon: Monitor },
       { href: '/admin/data-quality', label: 'Calidad de datos', icon: ShieldCheck },
-      { href: '/admin/agent-updates', label: 'Actualizaciones del agente', icon: RefreshCw },
-      { href: '/admin/ips', label: 'IPs Corporativas', icon: Network },
-      { href: '/admin/metrics', label: 'Métricas', icon: BarChart2 },
-      { href: '/admin/alerts', label: 'Alertas', icon: Bell },
+      { href: '/admin/agent-updates', label: 'Agente', icon: RefreshCw },
+      { href: '/admin/app-inventory', label: 'Inventario de software', icon: Package },
+      { href: '/admin/ips', label: 'IPs corporativas', icon: Network },
       { href: '/admin/audit', label: 'Auditoría', icon: Shield },
+      { href: '/admin/billing', label: 'Facturación', icon: CreditCard },
     ],
   },
-  {
-    label: 'Sistema',
-    icon: Settings,
-    items: [{ href: '/admin/settings', label: 'Configuración', icon: Settings }],
-  },
 ]
-
-// Ocultos durante el piloto: el cliente gestiona finanzas y documentos en otro
-// aplicativo, asi que estas secciones no aportan valor. Se conservan las rutas
-// y los datos; solo se quitan del menu.
-const HIDDEN_GROUPS = new Set(['Documentos', 'Finanzas'])
-const VISIBLE_GROUPS = GROUPS.filter((g) => !HIDDEN_GROUPS.has(g.label))
 
 function NavGroup({ group, pathname }: { group: NavGroup; pathname: string }) {
   const isActiveGroup = group.items.some((i) => pathname.startsWith(i.href))
@@ -210,6 +192,9 @@ export function AdminNav() {
   const logout = trpc.auth.logout.useMutation({
     onSuccess: () => router.push('/login'),
   })
+  const { data: modules = {} } = trpc.admin.getModules.useQuery(undefined, {
+    staleTime: 5 * 60_000,
+  })
 
   return (
     <aside className="flex w-56 flex-col border-r border-gray-200 bg-white">
@@ -235,7 +220,7 @@ export function AdminNav() {
         </Link>
 
         <div className="space-y-1">
-          {VISIBLE_GROUPS.map((group) => (
+          {GROUPS.filter((g) => !g.module || modules[g.module]).map((group) => (
             <NavGroup key={group.label} group={group} pathname={pathname} />
           ))}
         </div>

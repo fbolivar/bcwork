@@ -1669,6 +1669,44 @@ export const adminRouter = router({
       return { date: input.date, latestVersion: ultima, devices: rows }
     }),
 
+  /** Modulos opcionales de la empresa (Configuracion > Modulos). */
+  getModules: adminProcedure.query(async ({ ctx }) => {
+    const { data } = await ctx.db
+      .from('tenants')
+      .select('modules')
+      .eq('id', ctx.user!.tid)
+      .maybeSingle()
+    return ((data?.modules as Record<string, boolean> | null) ?? {}) as Record<string, boolean>
+  }),
+
+  updateModules: tenantAdminProcedure
+    .input(z.object({ talento: z.boolean().optional() }))
+    .mutation(async ({ ctx, input }) => {
+      const tid = ctx.user!.tid
+      const { data } = await ctx.db.from('tenants').select('modules').eq('id', tid).maybeSingle()
+      const actual = ((data?.modules as Record<string, boolean> | null) ?? {}) as Record<
+        string,
+        boolean
+      >
+      const modules = { ...actual, ...input }
+      const { error } = await ctx.db
+        .from('tenants')
+        .update({ modules, updated_at: new Date().toISOString() })
+        .eq('id', tid)
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      await logAudit(ctx.db, {
+        tenantId: tid,
+        actorUserId: ctx.user!.sub,
+        action: 'tenant.settings_updated',
+        entityType: 'tenant',
+        entityId: tid,
+        ipInet: ctx.ip,
+        userAgent: ctx.userAgent,
+        after: { modules },
+      })
+      return modules
+    }),
+
   /** Informes > Resumen. Ver server/reports-overview.ts. */
   getReportsOverview: adminProcedure
     .input(
