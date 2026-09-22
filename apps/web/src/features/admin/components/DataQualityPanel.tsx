@@ -172,9 +172,7 @@ export function DataQualityPanel() {
                       ? `${d.openSessions} abierta${d.openSessions > 1 ? 's' : ''}`
                       : '—'}
                   </td>
-                  <td
-                    className={`px-3 py-2.5 text-right tabular-nums ${d.idleHours > 12 ? 'text-red-600' : 'text-gray-700'}`}
-                  >
+                  <td className={`px-3 py-2.5 text-right tabular-nums text-gray-700`}>
                     {d.idleHours > 0 ? `${d.idleHours} h` : '—'}
                   </td>
                   <td className="px-3 py-2.5">
@@ -220,8 +218,9 @@ export function DataQualityPanel() {
             dominio. Bajo 50 % la extensión no está activa en ese navegador.
           </li>
           <li>
-            <strong>Sesiones</strong> e <strong>inactivo</strong>: más de una sesión abierta o más
-            de 12 h inactivas en un día son datos rotos, no comportamiento.
+            <strong>Sesiones</strong>: más de una abierta el mismo día es dato roto.{' '}
+            <strong>Inactivo</strong>: equipo encendido sin uso o con la pantalla bloqueada; si es
+            alto, la persona deja el equipo prendido, no es un error.
           </li>
         </ul>
       </div>

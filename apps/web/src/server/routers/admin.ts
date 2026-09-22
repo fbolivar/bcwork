@@ -1634,7 +1634,9 @@ export const adminRouter = router({
           ? Math.round((ahora - Date.parse(d.last_seen_at)) / 60_000)
           : null
         const problemas: string[] = []
-        if (latidoMin === null || latidoMin > 60) problemas.push('sin latido')
+        // Un equipo apagado por la noche no es un problema; uno que lleva un dia sin
+        // dar señales, si.
+        if (latidoMin === null || latidoMin > 24 * 60) problemas.push('sin latido')
         if (ultima && version && version !== ultima)
           problemas.push(`agente ${version} (última ${ultima})`)
         if (muestras > 0 && dup / muestras > 0.02)
@@ -1642,7 +1644,6 @@ export const adminRouter = router({
         if (nav >= 60 && conDominio / nav < 0.5)
           problemas.push('extensión del navegador no reporta')
         if (Number(q?.open_sessions ?? 0) > 1) problemas.push('sesiones duplicadas')
-        if (Number(q?.idle_seconds ?? 0) > 12 * 3600) problemas.push('inactividad imposible')
         if (d.tamper_status && d.tamper_status !== 'ok')
           problemas.push(`manipulación: ${d.tamper_status}`)
         return {
