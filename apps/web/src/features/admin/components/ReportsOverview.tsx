@@ -48,17 +48,26 @@ function Tarjeta({
   titulo,
   valor,
   tono = 'ok',
+  ayuda,
 }: {
   titulo: string
   valor: string
   tono?: 'ok' | 'mal' | 'neutro'
+  ayuda?: string
 }) {
   const color = tono === 'ok' ? 'text-green-600' : tono === 'mal' ? 'text-red-500' : 'text-gray-400'
   return (
-    <div className="flex gap-5 rounded-2xl bg-white p-7 shadow-sm">
+    <div className="flex gap-5 rounded-2xl bg-white p-7 shadow-sm" title={ayuda}>
       <div className="w-1.5 shrink-0 rounded-full bg-gray-400" />
       <div>
-        <p className="text-sm font-medium uppercase tracking-wide text-gray-700">{titulo}</p>
+        <p className="text-sm font-medium uppercase tracking-wide text-gray-700">
+          {titulo}
+          {ayuda && (
+            <span className="ml-1.5 inline-flex h-4 w-4 cursor-help items-center justify-center rounded-full border border-gray-300 text-[10px] normal-case text-gray-400">
+              ?
+            </span>
+          )}
+        </p>
         <p className={`mt-2 text-4xl font-medium tabular-nums ${color}`}>{valor}</p>
       </div>
     </div>
@@ -317,9 +326,22 @@ export function ReportsOverview({ from, to }: { from: string; to: string }) {
         <>
           {/* Seis tarjetas */}
           <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
-            <Tarjeta titulo="Tiempo de BCWork" valor={hm(k.trackedSecs)} />
-            <Tarjeta titulo="Tiempo en el trabajo" valor={hm(k.atWorkSecs)} />
-            <Tarjeta titulo="Tiempo sin conexión" valor={hm(k.idleSecs)} tono="mal" />
+            <Tarjeta
+              titulo="Tiempo de BCWork"
+              valor={hm(k.trackedSecs)}
+              ayuda="Tiempo con actividad registrada por el agente (teclado o ratón en los últimos 5 minutos)."
+            />
+            <Tarjeta
+              titulo="Tiempo en el trabajo"
+              valor={hm(k.atWorkSecs)}
+              ayuda="De la primera a la última actividad de cada día, pausas incluidas."
+            />
+            <Tarjeta
+              titulo="Tiempo sin conexión"
+              valor={hm(k.idleSecs)}
+              tono="mal"
+              ayuda="Equipo encendido sin teclado ni ratón durante más de 5 minutos, o pantalla bloqueada."
+            />
             <Tarjeta
               titulo="Duración de los proyectos"
               valor={k.projectSecs > 0 ? hm(k.projectSecs) : '–'}
@@ -329,11 +351,13 @@ export function ReportsOverview({ from, to }: { from: string; to: string }) {
               titulo="Eficacia"
               valor={k.effectivenessPct === null ? '–' : `${k.effectivenessPct}%`}
               tono={k.effectivenessPct === null ? 'neutro' : 'ok'}
+              ayuda="Productivo ÷ (productivo + improductivo). El tiempo neutral no cuenta: si casi nada está clasificado como improductivo, será cercano a 100 %."
             />
             <Tarjeta
               titulo="Productividad"
               valor={k.productivityPct === null ? '–' : `${k.productivityPct}%`}
               tono={k.productivityPct === null ? 'neutro' : 'ok'}
+              ayuda="Productivo ÷ todo el tiempo con actividad, según la clasificación de aplicaciones y sitios de la empresa."
             />
           </div>
 

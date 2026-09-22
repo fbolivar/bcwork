@@ -33,8 +33,15 @@ pub fn capture_step(
 ) -> SessionCounters {
     counters.started = true;
     let idle_secs = get_idle_seconds();
-    let is_idle = idle_secs >= IDLE_THRESHOLD_SECS;
     let (app_name, window_title) = get_active_window();
+    // Pantalla bloqueada o de inicio de sesión: nadie está trabajando aunque
+    // el último clic haya sido hace un minuto. Antes contaba como "LockApp"
+    // neutral hasta cumplir los cinco minutos de inactividad.
+    let bloqueada = app_name
+        .as_deref()
+        .map(|a| matches!(a.to_ascii_lowercase().trim_end_matches(".exe"), "lockapp" | "logonui"))
+        .unwrap_or(false);
+    let is_idle = bloqueada || idle_secs >= IDLE_THRESHOLD_SECS;
     let now = Utc::now();
 
     // Cierre de jornada a medianoche local. Sin esto, un equipo que nunca se

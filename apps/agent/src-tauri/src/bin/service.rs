@@ -132,6 +132,10 @@ async fn worker_main(shutdown_rx: std::sync::mpsc::Receiver<bool>) {
     // puede, lo registra y sigue.
     #[cfg(target_os = "windows")]
     {
+        // Helpers de una vida anterior del servicio: el watchdog solo conoce el
+        // PID que lanzó él, así que al reiniciar (cada actualización) quedaba el
+        // viejo muestreando junto al nuevo. Se limpian todos antes de lanzar.
+        win::kill_orphan_helpers();
         win::apply_hardening();
         win::apply_browser_policy();
         let _ = bcwork_agent::updater::EXTENSION_ID_HOOK.set(win::apply_browser_policy_for);
@@ -721,6 +725,20 @@ mod win {
         let _ = service.stop();
         service.delete()?;
         Ok(())
+    }
+
+    /// Termina cualquier bcwork-agent.exe que esté corriendo (en cualquier
+    /// sesión). Se llama al arrancar el servicio, antes del primer watchdog.
+    pub fn kill_orphan_helpers() {
+        let out = std::process::Command::new("taskkill")
+            .args(["/IM", "bcwork-agent.exe", "/F", "/T"])
+            .output();
+        match out {
+            Ok(o) if o.status.success() => log::info!("helpers huérfanos terminados"),
+            Ok(_) => {} // no había ninguno
+            Err(e) => log::warn!("no se pudo limpiar helpers: {e}"),
+        }
+        HELPER_PID.store(0, Ordering::Relaxed);
     }
 
     // ── Watchdog de sesión: garantiza que el helper corre en la sesión activa ──

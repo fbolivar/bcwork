@@ -21,6 +21,13 @@ static ASSIGNED: AtomicBool = AtomicBool::new(false);
 
 fn main() {
     init_helper_logging();
+    // Una sola instancia por equipo. Cada reinicio del servicio (cada
+    // actualización) lanzaba otro helper sin cerrar el anterior y los dos
+    // muestreaban a la vez: el tiempo salía doble en los informes.
+    if !single_instance::acquire() {
+        log::info!("ya hay un helper corriendo; este termina");
+        return;
+    }
     let _ = paths::ensure_base_dir();
     let _ = buffer::init(&paths::buffer_db());
 
@@ -150,3 +157,25 @@ mod commands {
 // Silencia el warning de import no usado en plataformas sin captura.
 #[allow(dead_code)]
 fn _keep(_: Arc<()>) {}
+
+/// Mutex con nombre: el segundo proceso que lo pida se entera y se va.
+mod single_instance {
+    #[cfg(target_os = "windows")]
+    pub fn acquire() -> bool {
+        use windows::core::w;
+        use windows::Win32::Foundation::{GetLastError, ERROR_ALREADY_EXISTS};
+        use windows::Win32::System::Threading::CreateMutexW;
+        unsafe {
+            // El handle se deja vivo a propósito: se libera cuando muere el proceso.
+            let h = CreateMutexW(None, true, w!(r"Global\BCWorkAgentHelper"));
+            match h {
+                Ok(_) => GetLastError() != ERROR_ALREADY_EXISTS,
+                Err(_) => true,
+            }
+        }
+    }
+    #[cfg(not(target_os = "windows"))]
+    pub fn acquire() -> bool {
+        true
+    }
+}

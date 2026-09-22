@@ -5602,6 +5602,7 @@ export type Database = {
           id: string
           idle_seconds: number | null
           ip_inet: unknown
+          last_seen_at: string | null
           location_type: string | null
           non_productive_seconds: number | null
           productive_seconds: number | null
@@ -5619,6 +5620,7 @@ export type Database = {
           id?: string
           idle_seconds?: number | null
           ip_inet?: unknown
+          last_seen_at?: string | null
           location_type?: string | null
           non_productive_seconds?: number | null
           productive_seconds?: number | null
@@ -5636,6 +5638,7 @@ export type Database = {
           id?: string
           idle_seconds?: number | null
           ip_inet?: unknown
+          last_seen_at?: string | null
           location_type?: string | null
           non_productive_seconds?: number | null
           productive_seconds?: number | null

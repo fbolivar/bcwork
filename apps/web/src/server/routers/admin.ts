@@ -1580,6 +1580,94 @@ export const adminRouter = router({
       }
     }),
 
+  /** TI > Calidad de datos: por equipo, si lo que llega es creible. */
+  getDataQuality: adminProcedure
+    .input(z.object({ date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/) }))
+    .query(async ({ ctx, input }) => {
+      const tid = ctx.user!.tid
+      const tz = await getTenantTimezone(ctx.db, tid)
+      const { from, to } = localDayRange(input.date, tz)
+      const [{ data: devices }, { data: latest }, calidad] = await Promise.all([
+        ctx.db
+          .from('agent_devices')
+          .select(
+            'id, hostname, name, user_id, service_version, agent_version, last_seen_at, tamper_status, users(full_name, email)',
+          )
+          .eq('tenant_id', tid)
+          .is('revoked_at', null),
+        ctx.db
+          .from('agent_release')
+          .select('version')
+          .order('published_at', { ascending: false })
+          .limit(1)
+          .maybeSingle(),
+        (ctx.db.rpc as any)('data_quality_devices', { p_from: from, p_to: to }) as PromiseLike<{
+          data: unknown
+          error: { message: string } | null
+        }>,
+      ])
+      if (calidad.error)
+        throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: calidad.error.message })
+      type Fila = {
+        device_id: string
+        samples: number
+        duplicate_slots: number
+        browser_samples: number
+        browser_with_domain: number
+        first_at: string | null
+        last_at: string | null
+        open_sessions: number
+        idle_seconds: number
+        active_seconds: number
+      }
+      const porDevice = new Map(((calidad.data ?? []) as Fila[]).map((f) => [f.device_id, f]))
+      const ultima = (latest as { version: string } | null)?.version ?? null
+      const ahora = Date.now()
+      const rows = (devices ?? []).map((d: any) => {
+        const q = porDevice.get(d.id)
+        const muestras = Number(q?.samples ?? 0)
+        const dup = Number(q?.duplicate_slots ?? 0)
+        const nav = Number(q?.browser_samples ?? 0)
+        const conDominio = Number(q?.browser_with_domain ?? 0)
+        const version = d.service_version || d.agent_version || null
+        const latidoMin = d.last_seen_at
+          ? Math.round((ahora - Date.parse(d.last_seen_at)) / 60_000)
+          : null
+        const problemas: string[] = []
+        if (latidoMin === null || latidoMin > 60) problemas.push('sin latido')
+        if (ultima && version && version !== ultima)
+          problemas.push(`agente ${version} (última ${ultima})`)
+        if (muestras > 0 && dup / muestras > 0.02)
+          problemas.push(`${Math.round((dup / muestras) * 100)} % muestras duplicadas`)
+        if (nav >= 60 && conDominio / nav < 0.5)
+          problemas.push('extensión del navegador no reporta')
+        if (Number(q?.open_sessions ?? 0) > 1) problemas.push('sesiones duplicadas')
+        if (Number(q?.idle_seconds ?? 0) > 12 * 3600) problemas.push('inactividad imposible')
+        if (d.tamper_status && d.tamper_status !== 'ok')
+          problemas.push(`manipulación: ${d.tamper_status}`)
+        return {
+          deviceId: d.id as string,
+          hostname: (d.hostname || d.name || '') as string,
+          person: (d.users?.full_name || d.users?.email || null) as string | null,
+          version,
+          lastSeenAt: d.last_seen_at as string | null,
+          samples: muestras,
+          hours: Math.round((muestras * 10) / 360) / 10,
+          duplicatePct: muestras > 0 ? Math.round((dup / muestras) * 1000) / 10 : 0,
+          browserDomainPct: nav > 0 ? Math.round((conDominio / nav) * 100) : null,
+          firstAt: q?.first_at ?? null,
+          lastAt: q?.last_at ?? null,
+          openSessions: Number(q?.open_sessions ?? 0),
+          idleHours: Math.round((Number(q?.idle_seconds ?? 0) / 3600) * 10) / 10,
+          problems: problemas,
+        }
+      })
+      rows.sort(
+        (a, b) => b.problems.length - a.problems.length || a.hostname.localeCompare(b.hostname),
+      )
+      return { date: input.date, latestVersion: ultima, devices: rows }
+    }),
+
   /** Informes > Resumen. Ver server/reports-overview.ts. */
   getReportsOverview: adminProcedure
     .input(

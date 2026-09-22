@@ -17,6 +17,12 @@ export async function GET(req: NextRequest) {
 
   const db = getDb()
 
+  // Sesiones sin latido en dos horas: el equipo se apago o el agente murio.
+  // Cerrarlas antes de agregar, o la inactividad sigue creciendo dias enteros.
+  const { data: cerradas, error: cerrarErr } = await (db.rpc as any)('close_stale_sessions')
+  if (cerrarErr) console.error('[cron] close_stale_sessions failed:', cerrarErr.message)
+  else if ((cerradas as number) > 0) console.log(`[cron] ${cerradas} sesiones sin latido cerradas`)
+
   let rows = 0
   for (const date of dates) {
     const { data, error } = await db.rpc('aggregate_daily_user_metrics', {

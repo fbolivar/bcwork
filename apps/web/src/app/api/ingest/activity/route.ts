@@ -33,6 +33,9 @@ const SessionStateSchema = z.object({
   idle_seconds: z.number().int().min(0),
 })
 
+// Tope de inactividad por sesion: mas de una jornada entera no es informacion.
+const MAX_IDLE_SECS = 16 * 3600
+
 const BatchSchema = z.object({
   batch_id: z.string().min(1).max(100),
   events: z.array(AgentEventSchema).max(500),
@@ -95,11 +98,37 @@ export async function POST(req: NextRequest) {
         .from('work_sessions')
         .update({
           active_seconds: session_state.active_seconds,
-          idle_seconds: session_state.idle_seconds,
+          idle_seconds: Math.min(session_state.idle_seconds, MAX_IDLE_SECS),
+          last_seen_at: now,
         })
         .eq('id', sessionId)
         .eq('tenant_id', tenantId)
     } else {
+      // Dos helpers a la vez (agentes viejos) abrian dos sesiones con el mismo
+      // inicio. Si ya hay una abierta de este equipo para ese inicio, es esa.
+      const { data: abierta } = await db
+        .from('work_sessions')
+        .select('id')
+        .eq('device_id', deviceId)
+        .is('ended_at', null)
+        .gte('started_at', new Date(Date.parse(session_state.started_at) - 60_000).toISOString())
+        .lte('started_at', new Date(Date.parse(session_state.started_at) + 60_000).toISOString())
+        .order('started_at', { ascending: true })
+        .limit(1)
+        .maybeSingle()
+      if (abierta) {
+        sessionId = abierta.id
+        await db
+          .from('work_sessions')
+          .update({
+            active_seconds: session_state.active_seconds,
+            idle_seconds: Math.min(session_state.idle_seconds, MAX_IDLE_SECS),
+            last_seen_at: now,
+          })
+          .eq('id', sessionId)
+      }
+    }
+    if (!sessionId) {
       // Use the server-side public IP (x-forwarded-for) so it's geolocatable
       const publicIp =
         req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ??
@@ -119,9 +148,10 @@ export async function POST(req: NextRequest) {
           device_id: deviceId,
           started_at: session_state.started_at,
           active_seconds: session_state.active_seconds,
-          idle_seconds: session_state.idle_seconds,
+          idle_seconds: Math.min(session_state.idle_seconds, MAX_IDLE_SECS),
           ip_inet: publicIp,
           location_type: locationType,
+          last_seen_at: now,
         })
         .select('id')
         .single()
@@ -133,7 +163,8 @@ export async function POST(req: NextRequest) {
       .update({
         ended_at: now,
         active_seconds: session_state.active_seconds,
-        idle_seconds: session_state.idle_seconds,
+        idle_seconds: Math.min(session_state.idle_seconds, MAX_IDLE_SECS),
+        last_seen_at: now,
       })
       .eq('id', sessionId)
       .eq('tenant_id', tenantId)
@@ -186,7 +217,34 @@ export async function POST(req: NextRequest) {
       return regla?.productivity ?? null
     }
 
-    const rows = events.map((e) => ({
+    // Una muestra por dispositivo e intervalo de 10 s. Un agente viejo con
+    // dos helpers manda el doble; el reenvio de un lote no confirmado, lo
+    // mismo. Se descarta lo que ya esta (en el lote o en la base).
+    const slot = (iso: string) => Math.floor(Date.parse(iso) / 10_000)
+    const tiempos = events.map((e) => Date.parse(e.started_at))
+    const { data: previas } = await db
+      .from('activity_events')
+      .select('started_at')
+      .eq('device_id', deviceId)
+      .gte('started_at', new Date(Math.min(...tiempos) - 10_000).toISOString())
+      .lte('started_at', new Date(Math.max(...tiempos) + 10_000).toISOString())
+    const vistos = new Set((previas ?? []).map((p) => slot(p.started_at)))
+    const unicos = events
+      .slice()
+      .sort((a, b) => (a.domain ? 0 : 1) - (b.domain ? 0 : 1)) // con dominio primero
+      .filter((e) => {
+        const k = slot(e.started_at)
+        if (vistos.has(k)) return false
+        vistos.add(k)
+        return true
+      })
+    if (unicos.length < events.length) {
+      console.warn(
+        `[ingest] ${events.length - unicos.length} muestras duplicadas descartadas (device ${deviceId})`,
+      )
+    }
+
+    const rows = unicos.map((e) => ({
       tenant_id: tenantId,
       user_id: userId,
       device_id: deviceId,
@@ -206,7 +264,8 @@ export async function POST(req: NextRequest) {
         null) as import('@bcwork/db').Database['public']['Tables']['activity_events']['Insert']['metadata'],
     }))
 
-    const { error: insertErr } = await db.from('activity_events').insert(rows)
+    const { error: insertErr } =
+      rows.length > 0 ? await db.from('activity_events').insert(rows) : { error: null }
     if (insertErr) {
       console.error('[ingest] activity insert failed:', insertErr.message)
       return NextResponse.json({ error: 'insert_failed' }, { status: 500 })
