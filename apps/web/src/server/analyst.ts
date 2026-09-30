@@ -114,6 +114,9 @@ export interface Hechos {
   }[]
   /** Perfil de productividad por hora del día (para la gráfica del informe). */
   profile: { hour: number; productive: number; nonProductive: number; neutral: number }[]
+  /** Aplicaciones más usadas y sitios web más consultados (toda la empresa). */
+  apps: { name: string; productivity: string; hours: number }[]
+  sites: { name: string; productivity: string; hours: number }[]
   signals: Senal[]
   persons: PersonaHechos[]
 }
@@ -289,6 +292,8 @@ export async function buildAnalystFacts(
     departments: [],
     weekly: [],
     profile: [],
+    apps: [],
+    sites: [],
     signals: [],
     persons: [],
   }
@@ -307,45 +312,47 @@ export async function buildAnalystFacts(
     .maybeSingle()
   const gapMin = cfg?.work_gap_minutes ?? 30
   const ausencias = await cargarAusencias(db, tenantId, previousFrom, to)
-  const [curBlocks, prevBlocks, apps, fuera, perfilR, { data: asignaciones }] = await Promise.all([
-    rpc.rpc('work_day_blocks', {
-      p_from: curFromTs,
-      p_to: curToTs,
-      p_user_ids: ids,
-      p_gap_minutes: gapMin,
-      p_tz: timeZone,
-    }),
-    rpc.rpc('work_day_blocks', {
-      p_from: prevFromTs,
-      p_to: prevToTs,
-      p_user_ids: ids,
-      p_gap_minutes: gapMin,
-      p_tz: timeZone,
-    }),
-    rpc.rpc('analyst_user_apps', { p_from: curFromTs, p_to: curToTs, p_user_ids: ids, p_top: 8 }),
-    rpc.rpc('analyst_user_offhours', {
-      p_from: curFromTs,
-      p_to: curToTs,
-      p_user_ids: ids,
-      p_tz: timeZone,
-    }),
-    rpc.rpc('report_time_profile', {
-      p_from: curFromTs,
-      p_to: curToTs,
-      p_user_ids: ids,
-      p_bucket_minutes: 60,
-      p_tz: timeZone,
-    }),
-    db
-      .from('user_schedules')
-      .select(
-        'user_id, effective_from, effective_to, work_schedules(start_time, days_of_week, flex_minutes)',
-      )
-      .eq('tenant_id', tenantId)
-      .in('user_id', ids)
-      .lte('effective_from', to),
-  ])
-  for (const r of [curBlocks, prevBlocks, apps, fuera, perfilR])
+  const [curBlocks, prevBlocks, apps, fuera, perfilR, usage, { data: asignaciones }] =
+    await Promise.all([
+      rpc.rpc('work_day_blocks', {
+        p_from: curFromTs,
+        p_to: curToTs,
+        p_user_ids: ids,
+        p_gap_minutes: gapMin,
+        p_tz: timeZone,
+      }),
+      rpc.rpc('work_day_blocks', {
+        p_from: prevFromTs,
+        p_to: prevToTs,
+        p_user_ids: ids,
+        p_gap_minutes: gapMin,
+        p_tz: timeZone,
+      }),
+      rpc.rpc('analyst_user_apps', { p_from: curFromTs, p_to: curToTs, p_user_ids: ids, p_top: 8 }),
+      rpc.rpc('analyst_user_offhours', {
+        p_from: curFromTs,
+        p_to: curToTs,
+        p_user_ids: ids,
+        p_tz: timeZone,
+      }),
+      rpc.rpc('report_time_profile', {
+        p_from: curFromTs,
+        p_to: curToTs,
+        p_user_ids: ids,
+        p_bucket_minutes: 60,
+        p_tz: timeZone,
+      }),
+      rpc.rpc('analyst_usage', { p_from: curFromTs, p_to: curToTs, p_user_ids: ids, p_top: 12 }),
+      db
+        .from('user_schedules')
+        .select(
+          'user_id, effective_from, effective_to, work_schedules(start_time, days_of_week, flex_minutes)',
+        )
+        .eq('tenant_id', tenantId)
+        .in('user_id', ids)
+        .lte('effective_from', to),
+    ])
+  for (const r of [curBlocks, prevBlocks, apps, fuera, perfilR, usage])
     if (r.error) throw new Error(r.error.message)
 
   const appFilas = (apps.data ?? []) as {
@@ -381,6 +388,20 @@ export async function buildAnalystFacts(
     fila.nonProductive += Number(f.non_productive)
     fila.neutral += Number(f.neutral)
   }
+
+  // Aplicaciones y sitios más usados por toda la empresa.
+  const usageRows = (usage.data ?? []) as {
+    kind: string
+    name: string
+    productivity: string
+    seconds: number
+  }[]
+  const empresaApps = usageRows
+    .filter((r) => r.kind === 'app')
+    .map((r) => ({ name: r.name, productivity: r.productivity, hours: r1(Number(r.seconds) / H) }))
+  const empresaSites = usageRows
+    .filter((r) => r.kind === 'site')
+    .map((r) => ({ name: r.name, productivity: r.productivity, hours: r1(Number(r.seconds) / H) }))
 
   // ── Horario vigente por persona y día ──
   type Horario = {
@@ -672,6 +693,8 @@ export async function buildAnalystFacts(
     departments,
     weekly,
     profile,
+    apps: empresaApps,
+    sites: empresaSites,
     signals,
     persons: persons.sort((a, b) => a.name.localeCompare(b.name, 'es')),
   }

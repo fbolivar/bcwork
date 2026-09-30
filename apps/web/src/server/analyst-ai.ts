@@ -97,7 +97,7 @@ export async function generarInforme(hechos: Hechos): Promise<Informe> {
 
   const promptEstructura = `${encabezado}
 
-Entrega el análisis estructurado. En "personas" incluye solo a quienes merecen una nota (máximo 10). Sé concreto y breve en cada campo.
+Entrega el análisis estructurado. En "personas" incluye solo a quienes merecen una nota (máximo 10). Sé concreto y breve en cada campo. Cuando sea relevante, menciona en qué aplicaciones (facts.apps) y sitios web (facts.sites) se concentra el tiempo.
 
 HECHOS:
 ${contexto(hechos)}`

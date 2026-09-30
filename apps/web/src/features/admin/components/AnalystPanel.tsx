@@ -567,6 +567,39 @@ function Resultado({ a }: { a: Analisis }) {
       y += 4
     }
 
+    // ── Aplicaciones y sitios ──
+    const usoColor = (p: string) =>
+      p === 'productive' ? GREEN : p === 'non_productive' ? ORANGE : GREYBAR
+    function listaUso(tit: string, items: { name: string; productivity: string; hours: number }[]) {
+      if (!items || items.length === 0) return
+      titulo(tit)
+      const maxH = Math.max(1, ...items.map((i) => i.hours))
+      for (const it of items.slice(0, 10)) {
+        salto(6)
+        fill(usoColor(it.productivity))
+        doc.circle(M + 1.3, y - 0.7, 1.2, 'F')
+        doc.setFont('helvetica', 'normal')
+        doc.setFontSize(8.5)
+        setc(DARK)
+        const nombre = it.name.length > 46 ? it.name.slice(0, 45) + '…' : it.name
+        doc.text(nombre, M + 5, y)
+        // barra
+        const barX = M + 95
+        const barW = W - M - 22 - barX
+        fill([241, 245, 249])
+        doc.roundedRect(barX, y - 2.6, barW, 2.6, 1, 1, 'F')
+        fill(BRAND)
+        doc.roundedRect(barX, y - 2.6, Math.max(1, (it.hours / maxH) * barW), 2.6, 1, 1, 'F')
+        setc(GRAY)
+        doc.setFontSize(8)
+        doc.text(`${it.hours} h`, W - M, y, { align: 'right' })
+        y += 5.5
+      }
+      y += 3
+    }
+    listaUso('Aplicaciones más usadas', f.apps ?? [])
+    listaUso('Sitios web más consultados', f.sites ?? [])
+
     // ── Personas a seguir ──
     const pers = r?.personas ?? []
     if (pers.length) {
@@ -876,6 +909,14 @@ function Resultado({ a }: { a: Analisis }) {
         </div>
       </section>
 
+      {/* Aplicaciones y sitios */}
+      {(f.apps?.length > 0 || f.sites?.length > 0) && (
+        <div className="grid gap-6 lg:grid-cols-2">
+          <UsoLista titulo="Aplicaciones más usadas" items={f.apps ?? []} />
+          <UsoLista titulo="Sitios web más consultados" items={f.sites ?? []} />
+        </div>
+      )}
+
       {/* Informe para gerencia */}
       <section className="rounded-2xl border border-gray-200 bg-white p-6">
         <div className="flex items-center justify-between">
@@ -1045,6 +1086,58 @@ function Pregunta({ id }: { id: string }) {
         </button>
       </form>
       {preguntar.error && <p className="mt-2 text-xs text-red-600">{preguntar.error.message}</p>}
+    </section>
+  )
+}
+
+const USO_COLOR: Record<string, string> = {
+  productive: 'bg-green-500',
+  non_productive: 'bg-orange-500',
+  neutral: 'bg-gray-300',
+}
+const USO_LABEL: Record<string, string> = {
+  productive: 'Productiva',
+  non_productive: 'Improductiva',
+  neutral: 'Neutral',
+}
+
+function UsoLista({
+  titulo,
+  items,
+}: {
+  titulo: string
+  items: { name: string; productivity: string; hours: number }[]
+}) {
+  const max = Math.max(1, ...items.map((i) => i.hours))
+  return (
+    <section className="rounded-2xl border border-gray-200 bg-white p-6">
+      <p className="text-[10px] font-semibold uppercase tracking-widest text-gray-400">{titulo}</p>
+      {items.length === 0 ? (
+        <p className="mt-3 text-sm text-gray-400">Sin datos en el periodo.</p>
+      ) : (
+        <ul className="mt-3 space-y-2.5">
+          {items.slice(0, 10).map((i) => (
+            <li key={i.name} className="flex items-center gap-3">
+              <span
+                className={`h-2 w-2 shrink-0 rounded-full ${USO_COLOR[i.productivity] ?? 'bg-gray-300'}`}
+                title={USO_LABEL[i.productivity] ?? 'Neutral'}
+              />
+              <span className="w-40 shrink-0 truncate text-sm text-gray-800" title={i.name}>
+                {i.name}
+              </span>
+              <span className="h-1.5 flex-1 overflow-hidden rounded-full bg-gray-100">
+                <span
+                  className="block h-full rounded-full bg-blue-500"
+                  style={{ width: `${Math.round((i.hours / max) * 100)}%` }}
+                />
+              </span>
+              <span className="w-16 shrink-0 text-right text-xs tabular-nums text-gray-500">
+                {i.hours} h
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
     </section>
   )
 }
