@@ -5233,6 +5233,7 @@ export type Database = {
           role: string
           status: string | null
           tenant_id: string | null
+          work_mode: string
           updated_at: string | null
         }
         Insert: {
@@ -5262,6 +5263,7 @@ export type Database = {
           role: string
           status?: string | null
           tenant_id?: string | null
+          work_mode?: string
           updated_at?: string | null
         }
         Update: {
@@ -5291,6 +5293,7 @@ export type Database = {
           role?: string
           status?: string | null
           tenant_id?: string | null
+          work_mode?: string
           updated_at?: string | null
         }
         Relationships: [

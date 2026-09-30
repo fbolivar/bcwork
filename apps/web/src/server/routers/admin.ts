@@ -101,7 +101,7 @@ export const adminRouter = router({
       let query = ctx.db
         .from('users')
         .select(
-          'id, email, full_name, role, status, department, position, mfa_enabled, last_login_at, created_at, must_change_password',
+          'id, email, full_name, role, status, department, position, work_mode, mfa_enabled, last_login_at, created_at, must_change_password',
           { count: 'exact' },
         )
         .eq('tenant_id', tenantId)
@@ -208,6 +208,46 @@ export const adminRouter = router({
       return { id: newUser.id, email: newUser.email, tempPassword }
     }),
 
+  /** Departamentos distintos con su conteo (para unificar nombres). */
+  listDepartments: adminProcedure.query(async ({ ctx }) => {
+    const { data, error } = await ctx.db
+      .from('users')
+      .select('department')
+      .eq('tenant_id', ctx.user!.tid)
+      .neq('status', 'deleted')
+    if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+    const conteo = new Map<string, number>()
+    for (const u of data ?? []) {
+      const d = (u.department ?? '').trim()
+      if (d) conteo.set(d, (conteo.get(d) ?? 0) + 1)
+    }
+    return [...conteo.entries()]
+      .map(([name, people]) => ({ name, people }))
+      .sort((a, b) => a.name.localeCompare(b.name, 'es'))
+  }),
+
+  /** Renombra/fusiona un departamento en todas las personas del tenant. */
+  renameDepartment: tenantAdminProcedure
+    .input(z.object({ from: z.string().min(1).max(100), to: z.string().min(1).max(100) }))
+    .mutation(async ({ ctx, input }) => {
+      const { error, count } = await ctx.db
+        .from('users')
+        .update({ department: input.to, updated_at: new Date().toISOString() }, { count: 'exact' })
+        .eq('tenant_id', ctx.user!.tid)
+        .eq('department', input.from)
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      await logAudit(ctx.db, {
+        tenantId: ctx.user!.tid,
+        actorUserId: ctx.user!.sub,
+        action: 'user.updated',
+        entityType: 'department',
+        ipInet: ctx.ip,
+        userAgent: ctx.userAgent,
+        after: { from: input.from, to: input.to, count },
+      })
+      return { ok: true, count: count ?? 0 }
+    }),
+
   updateUser: adminProcedure
     .input(
       z.object({
@@ -217,6 +257,7 @@ export const adminRouter = router({
         status: z.enum(['active', 'disabled']).optional(),
         department: z.string().max(100).optional(),
         position: z.string().max(100).optional(),
+        work_mode: z.enum(['desktop', 'field']).optional(),
       }),
     )
     .mutation(async ({ ctx, input }) => {

@@ -40,6 +40,7 @@ type UserRow = {
   role: string
   status: string | null
   department: string | null
+  work_mode?: string | null
   mfa_enabled: boolean | null
   must_change_password: boolean | null
   last_login_at: string | null
@@ -270,6 +271,9 @@ function EditUserModal({ user, onClose }: { user: UserRow; onClose: () => void }
   )
   const [department, setDepartment] = useState(user.department ?? '')
   const [position, setPosition] = useState('')
+  const [workMode, setWorkMode] = useState<'desktop' | 'field'>(
+    user.work_mode === 'field' ? 'field' : 'desktop',
+  )
 
   // Password fields
   const [newPassword, setNewPassword] = useState('')
@@ -320,6 +324,7 @@ function EditUserModal({ user, onClose }: { user: UserRow; onClose: () => void }
       role: user.role !== 'tenant_admin' ? role : undefined,
       department: department || undefined,
       position: position || undefined,
+      work_mode: workMode,
     })
   }
 
@@ -420,6 +425,28 @@ function EditUserModal({ user, onClose }: { user: UserRow; onClose: () => void }
                   placeholder="Ej: Desarrollador Senior, Gerente..."
                   className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
+              </div>
+
+              <div>
+                <label
+                  htmlFor="edit-wmode"
+                  className="mb-1 block text-xs font-medium text-gray-600"
+                >
+                  Modo de trabajo
+                </label>
+                <select
+                  id="edit-wmode"
+                  value={workMode}
+                  onChange={(e) => setWorkMode(e.target.value as 'desktop' | 'field')}
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="desktop">En computador (escritorio)</option>
+                  <option value="field">Campo / mixto (bodega, visitas, llamadas)</option>
+                </select>
+                <p className="mt-1 text-[11px] text-gray-400">
+                  Los cargos de campo no entran en el promedio de productividad ni reciben señales
+                  de bajo uso: tener pocas horas activas es normal en ellos.
+                </p>
               </div>
             </div>
 

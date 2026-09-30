@@ -73,6 +73,7 @@ export interface PersonaHechos {
   name: string
   department: string | null
   role: string
+  workMode: string
   current: PeriodoPersona
   previous: PeriodoPersona
   weekly: { week: string; activeHoursPerDay: number | null; productivityPct: number | null }[]
@@ -109,6 +110,7 @@ export interface Hechos {
   departments: {
     name: string
     people: number
+    comparablePeople: number
     activeHoursPerDay: number | null
     productivityPct: number | null
     deltaProductivityPp: number | null
@@ -126,7 +128,7 @@ export interface Hechos {
   sites: { name: string; productivity: string; hours: number }[]
   /** Cobertura de la medición: cuántas personas tienen período completo y son
    *  comparables (base del promedio); las parciales se leen aparte. */
-  coverage: { people: number; full: number; comparable: number; partial: number }
+  coverage: { people: number; full: number; comparable: number; partial: number; field: number }
   signals: Senal[]
   persons: PersonaHechos[]
 }
@@ -277,7 +279,7 @@ export async function buildAnalystFacts(
     db.from('tenants').select('legal_name, trade_name').eq('id', tenantId).maybeSingle(),
     db
       .from('users')
-      .select('id, full_name, email, department, role, created_at')
+      .select('id, full_name, email, department, role, created_at, work_mode')
       .eq('tenant_id', tenantId)
       .eq('status', 'active')
       .in('role', ['employee', 'manager']),
@@ -304,7 +306,13 @@ export async function buildAnalystFacts(
     profile: [],
     apps: [],
     sites: [],
-    coverage: { people: personas.length, full: 0, comparable: 0, partial: personas.length },
+    coverage: {
+      people: personas.length,
+      full: 0,
+      comparable: 0,
+      partial: personas.length,
+      field: 0,
+    },
     signals: [],
     persons: [],
   }
@@ -613,12 +621,15 @@ export async function buildAnalystFacts(
     const fullPeriod = fd != null && fd < from
     // Comparable = con datos suficientes para representar a la persona en el
     // promedio de la empresa. En 1h basta con tener actividad en la ventana.
-    const comparable = spec.subhour ? current.daysActive > 0 : current.daysActive >= 5
+    const esCampo = (u.work_mode ?? 'desktop') === 'field'
+    // Los de campo no entran en el promedio de productividad de la empresa.
+    const comparable = !esCampo && (spec.subhour ? current.daysActive > 0 : current.daysActive >= 5)
     const p: PersonaHechos = {
       userId: u.id,
       name: u.full_name || u.email,
       department: u.department,
       role: u.role,
+      workMode: u.work_mode ?? 'desktop',
       current,
       previous,
       firstDataAt: fd,
@@ -691,6 +702,7 @@ export async function buildAnalystFacts(
     return {
       name,
       people: lista.length,
+      comparablePeople: listaComp.length,
       activeHoursPerDay: c.activeHoursPerDay,
       productivityPct: c.productivityPct,
       deltaProductivityPp:
@@ -740,6 +752,7 @@ export async function buildAnalystFacts(
       full: persons.filter((x) => x.fullPeriod).length,
       comparable: comparables.length,
       partial: persons.length - comparables.length,
+      field: persons.filter((x) => x.workMode === 'field').length,
     },
     signals,
     persons: persons.sort((a, b) => a.name.localeCompare(b.name, 'es')),
@@ -789,6 +802,9 @@ function peso(s: Severidad) {
 
 function senalesPersona(p: PersonaHechos): Senal[] {
   const out: Senal[] = []
+  // Cargo de campo: su actividad en el PC no representa su trabajo; no se emiten
+  // señales de productividad/asistencia sobre esta persona.
+  if (p.workMode === 'field') return out
   const c = p.current
   const v = p.previous
   const uid = p.userId
@@ -966,8 +982,10 @@ function senalesEmpresa(
       title: `${finde} personas trabajan en fin de semana`,
       detail: `${c.weekendHours} h en total fuera de la semana laboral. Revisar carga y desconexión digital.`,
     })
+  // Solo áreas con al menos 3 personas comparables: con una o dos, el "promedio
+  // del área" es el dato de una persona y no sostiene una comparación.
   const ordenados = departments
-    .filter((d) => d.productivityPct !== null && d.people >= 2)
+    .filter((d) => d.productivityPct !== null && d.comparablePeople >= 3)
     .sort((a, b) => (b.productivityPct ?? 0) - (a.productivityPct ?? 0))
   if (ordenados.length >= 2) {
     const mejor = ordenados[0]!

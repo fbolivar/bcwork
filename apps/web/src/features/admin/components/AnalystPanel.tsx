@@ -395,10 +395,11 @@ function Resultado({ a }: { a: Analisis }) {
     doc.setFontSize(8)
     doc.text(a.model ? 'Generado por BCWork · Analista IA' : 'Hechos calculados por BCWork', M, y)
     y += 4.5
-    if (f.coverage && f.coverage.partial > 0) {
+    if (f.coverage && (f.coverage.partial > 0 || f.coverage.field > 0)) {
       setc(ORANGE)
+      const camp = f.coverage.field > 0 ? ` · ${f.coverage.field} de campo fuera del promedio` : ''
       doc.text(
-        `Cobertura: ${f.coverage.full} de ${f.coverage.people} con período completo · promedio sobre ${f.coverage.comparable} comparables · ${f.coverage.partial} parcial(es) aparte`,
+        `Cobertura: ${f.coverage.full} de ${f.coverage.people} con período completo · promedio sobre ${f.coverage.comparable} comparables · ${f.coverage.partial} parcial(es) aparte${camp}`,
         M,
         y,
       )
@@ -686,15 +687,18 @@ function Resultado({ a }: { a: Analisis }) {
   return (
     <div className="space-y-6">
       {/* Aviso de cobertura */}
-      {cov && cov.partial > 0 && (
+      {cov && (cov.partial > 0 || cov.field > 0) && (
         <div className="flex gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
           <p>
             Cobertura desigual: {cov.full} de {cov.people} personas fueron observadas durante todo
             el período. El promedio y las comparaciones se calculan solo sobre las {cov.comparable}{' '}
-            personas con datos suficientes; las {cov.partial} de agente recién instalado se muestran
-            aparte y sin conclusiones. Las tendencias individuales solo se marcan cuando hay período
-            completo.
+            personas con datos suficientes; las de agente recién instalado se muestran aparte y sin
+            conclusiones
+            {cov.field > 0
+              ? `, y ${cov.field} de campo quedan fuera del promedio de productividad`
+              : ''}
+            . Las tendencias individuales solo se marcan cuando hay período completo.
           </p>
         </div>
       )}
@@ -1009,13 +1013,22 @@ function FilaPersona({ x, ia }: { x: PersonaHechos; ia: Informe['personas'][numb
       <td className="py-2 pr-3">
         <p className="font-medium text-gray-900">
           {x.name}
-          {!x.comparable && (
+          {x.workMode === 'field' ? (
             <span
-              className="ml-1.5 rounded-full border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[9px] font-medium text-amber-700"
-              title={`Cobertura parcial: ${x.current.daysActive} de ${x.current.daysExpected} días esperados desde su instalación (${x.firstDataAt ?? 'sin datos'})`}
+              className="ml-1.5 rounded-full border border-blue-200 bg-blue-50 px-1.5 py-0.5 text-[9px] font-medium text-blue-700"
+              title="Cargo de campo: fuera del promedio de productividad; pocas horas activas es normal"
             >
-              parcial
+              campo
             </span>
+          ) : (
+            !x.comparable && (
+              <span
+                className="ml-1.5 rounded-full border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[9px] font-medium text-amber-700"
+                title={`Cobertura parcial: ${x.current.daysActive} de ${x.current.daysExpected} días esperados desde su instalación (${x.firstDataAt ?? 'sin datos'})`}
+              >
+                parcial
+              </span>
+            )
           )}
         </p>
         <p className="text-[11px] text-gray-400">{x.department ?? 'Sin departamento'}</p>
