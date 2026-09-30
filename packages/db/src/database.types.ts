@@ -4920,6 +4920,7 @@ export type Database = {
           status: string
           tags: string[] | null
           timezone: string | null
+          work_gap_minutes: number
           trade_name: string | null
           updated_at: string | null
         }
@@ -4943,6 +4944,7 @@ export type Database = {
           status?: string
           tags?: string[] | null
           timezone?: string | null
+          work_gap_minutes?: number
           trade_name?: string | null
           updated_at?: string | null
         }
@@ -4966,6 +4968,7 @@ export type Database = {
           status?: string
           tags?: string[] | null
           timezone?: string | null
+          work_gap_minutes?: number
           trade_name?: string | null
           updated_at?: string | null
         }

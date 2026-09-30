@@ -1,5 +1,6 @@
 import { localDayRange, localHourAndDow, localMidnightUtc } from '@/lib/tz'
 import type { getDb } from '@/lib/db'
+import { cargarAusencias, TIPO_AUSENCIA } from './ausencias'
 
 type Db = ReturnType<typeof getDb>
 
@@ -7,7 +8,7 @@ type Db = ReturnType<typeof getDb>
  * Informes > Resumen: KPIs, perfil de productividad por hora, rankings y
  * aplicaciones para un rango y un conjunto de equipos o personas.
  *
- * La suma la hace Postgres (report_user_days, report_time_profile,
+ * La suma la hace Postgres (work_day_blocks, report_time_profile,
  * report_app_totals): un mes de GVM son ~150 000 eventos y traerlos al
  * servidor para sumarlos no tiene sentido.
  */
@@ -25,8 +26,11 @@ interface UserDay {
   productive: number
   non_productive: number
   neutral: number
-  first_at: string
-  last_at: string
+  active_seconds: number
+  worked_seconds: number
+  idle_seconds: number
+  first_at: string | null
+  last_at: string | null
 }
 
 export interface PersonaInforme {
@@ -44,6 +48,8 @@ export interface PersonaInforme {
   lateSecs: number
   lateDays: number
   absentDays: number
+  leaveDays: number
+  leaveType: string | null
 }
 
 function minutosDeHora(hhmm: string | null): number | null {
@@ -114,47 +120,53 @@ export async function buildReportsOverview(
     }
   }
 
-  // ── Agregados en Postgres + horarios + sesiones (inactividad) + proyectos ──
+  // Umbral de pausa que corta la jornada (equipo dejado encendido) y ausencias
+  // aprobadas (incapacidad/vacaciones/permiso), que no cuentan como falta.
+  const [{ data: cfg }, ausencias] = await Promise.all([
+    db.from('tenants').select('work_gap_minutes').eq('id', tenantId).maybeSingle(),
+    cargarAusencias(db, tenantId, input.from, input.to),
+  ])
+  const gapMin = cfg?.work_gap_minutes ?? 30
+
+  // ── Agregados en Postgres + horarios + proyectos ──
   const rpc = db as unknown as {
     rpc: (
       fn: string,
       args: Record<string, unknown>,
     ) => PromiseLike<{ data: unknown; error: { message: string } | null }>
   }
-  const [dias, perfil, apps, { data: asignaciones }, { data: sesiones }, { data: proyectos }] =
-    await Promise.all([
-      rpc.rpc('report_user_days', { p_from: from, p_to: to, p_user_ids: ids, p_tz: timeZone }),
-      rpc.rpc('report_time_profile', {
-        p_from: from,
-        p_to: to,
-        p_user_ids: ids,
-        p_bucket_minutes: 30,
-        p_tz: timeZone,
-      }),
-      rpc.rpc('report_app_totals', { p_from: from, p_to: to, p_user_ids: ids }),
-      db
-        .from('user_schedules')
-        .select(
-          'user_id, effective_from, effective_to, work_schedules(start_time, days_of_week, flex_minutes)',
-        )
-        .eq('tenant_id', tenantId)
-        .in('user_id', ids)
-        .lte('effective_from', input.to),
-      db
-        .from('work_sessions')
-        .select('user_id, idle_seconds')
-        .eq('tenant_id', tenantId)
-        .in('user_id', ids)
-        .gte('started_at', from)
-        .lt('started_at', to),
-      db
-        .from('project_time_entries')
-        .select('duration_seconds')
-        .eq('tenant_id', tenantId)
-        .in('user_id', ids)
-        .gte('started_at', from)
-        .lt('started_at', to),
-    ])
+  const [dias, perfil, apps, { data: asignaciones }, { data: proyectos }] = await Promise.all([
+    rpc.rpc('work_day_blocks', {
+      p_from: from,
+      p_to: to,
+      p_user_ids: ids,
+      p_gap_minutes: gapMin,
+      p_tz: timeZone,
+    }),
+    rpc.rpc('report_time_profile', {
+      p_from: from,
+      p_to: to,
+      p_user_ids: ids,
+      p_bucket_minutes: 30,
+      p_tz: timeZone,
+    }),
+    rpc.rpc('report_app_totals', { p_from: from, p_to: to, p_user_ids: ids }),
+    db
+      .from('user_schedules')
+      .select(
+        'user_id, effective_from, effective_to, work_schedules(start_time, days_of_week, flex_minutes)',
+      )
+      .eq('tenant_id', tenantId)
+      .in('user_id', ids)
+      .lte('effective_from', input.to),
+    db
+      .from('project_time_entries')
+      .select('duration_seconds')
+      .eq('tenant_id', tenantId)
+      .in('user_id', ids)
+      .gte('started_at', from)
+      .lt('started_at', to),
+  ])
   for (const r of [dias, perfil, apps]) if (r.error) throw new Error(r.error.message)
 
   const userDays = (dias.data ?? []) as UserDay[]
@@ -195,10 +207,6 @@ export async function buildReportsOverview(
   const horarioEl = (uid: string, dia: string) =>
     (horarios.get(uid) ?? []).find((h) => h.desde <= dia && (!h.hasta || h.hasta >= dia)) ?? null
 
-  const inactivo = new Map<string, number>()
-  for (const s of sesiones ?? [])
-    inactivo.set(s.user_id, (inactivo.get(s.user_id) ?? 0) + (s.idle_seconds ?? 0))
-
   // ── Por persona ──
   const porPersona = new Map<string, PersonaInforme>()
   for (const u of elegidos) {
@@ -210,7 +218,9 @@ export async function buildReportsOverview(
       neutralSecs: 0,
       trackedSecs: 0,
       atWorkSecs: 0,
-      idleSecs: inactivo.get(u.id) ?? 0,
+      idleSecs: 0,
+      leaveDays: 0,
+      leaveType: null,
       productivityPct: null,
       unproductivePct: null,
       effectivenessPct: null,
@@ -226,14 +236,14 @@ export async function buildReportsOverview(
     p.productiveSecs += Number(d.productive)
     p.nonProductiveSecs += Number(d.non_productive)
     p.neutralSecs += Number(d.neutral)
-    // Jornada: de la primera a la ultima actividad del dia, nunca menor que lo registrado.
-    const jornada = Math.round((Date.parse(d.last_at) - Date.parse(d.first_at)) / 1000)
-    const registrado = Number(d.productive) + Number(d.non_productive) + Number(d.neutral)
-    p.atWorkSecs += Math.max(jornada, registrado)
+    // Jornada e inactividad por bloques: el tiempo con el equipo encendido sin
+    // uso (fuera de los bloques) no cuenta.
+    p.atWorkSecs += Number(d.worked_seconds)
+    p.idleSecs += Number(d.idle_seconds)
     diasCon.set(d.user_id, (diasCon.get(d.user_id) ?? new Set()).add(d.day))
     // Tarde: contra la hora de entrada del horario vigente ese dia.
     const h = horarioEl(d.user_id, d.day)
-    if (h?.inicioMin !== null && h?.inicioMin !== undefined) {
+    if (d.first_at && h?.inicioMin !== null && h?.inicioMin !== undefined) {
       const medianoche = localMidnightUtc(d.day, timeZone).getTime()
       const llegadaMin = Math.round((Date.parse(d.first_at) - medianoche) / 60_000)
       const retraso = llegadaMin - h.inicioMin - h.flex
@@ -259,7 +269,15 @@ export async function buildReportsOverview(
       if ((creado.get(p.userId) ?? '') > `${dia}T99`) continue
       const h = horarioEl(p.userId, dia)
       const esperado = h?.dias?.length ? h.dias.includes(dow) : dow >= 1 && dow <= 5
-      if (esperado && !diasCon.get(p.userId)?.has(dia)) p.absentDays += 1
+      if (!esperado) continue
+      const tipoAus = ausencias.tipoEn(p.userId, dia)
+      if (tipoAus) {
+        // Ausencia justificada: no es falta, no penaliza asistencia.
+        p.leaveDays += 1
+        p.leaveType = TIPO_AUSENCIA[tipoAus] ?? tipoAus
+      } else if (!diasCon.get(p.userId)?.has(dia)) {
+        p.absentDays += 1
+      }
     }
   }
   for (const p of porPersona.values()) {

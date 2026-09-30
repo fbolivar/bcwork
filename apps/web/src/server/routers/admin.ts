@@ -1116,7 +1116,7 @@ export const adminRouter = router({
     const { data, error } = await ctx.db
       .from('tenants')
       .select(
-        'legal_name, trade_name, nit, contact_email, contact_phone, timezone, data_retention_months, data_protection_officer, onboarding_complete, logo_url, notification_preferences',
+        'legal_name, trade_name, nit, contact_email, contact_phone, timezone, data_retention_months, data_protection_officer, onboarding_complete, logo_url, notification_preferences, work_gap_minutes',
       )
       .eq('id', ctx.user!.tid)
       .single()
@@ -1135,6 +1135,7 @@ export const adminRouter = router({
         data_retention_months: z.number().int().min(12).max(84).optional(),
         data_protection_officer: z.string().max(200).optional(),
         logo_url: z.string().url().optional(),
+        work_gap_minutes: z.number().int().min(10).max(120).optional(),
       }),
     )
     .mutation(async ({ ctx, input }) => {

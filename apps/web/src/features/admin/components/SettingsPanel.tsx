@@ -69,6 +69,7 @@ function GeneralTab() {
     timezone: '',
     data_retention_months: 12,
     data_protection_officer: '',
+    work_gap_minutes: 30,
   })
 
   useEffect(() => {
@@ -80,6 +81,7 @@ function GeneralTab() {
         timezone: data.timezone ?? '',
         data_retention_months: data.data_retention_months ?? 12,
         data_protection_officer: data.data_protection_officer ?? '',
+        work_gap_minutes: data.work_gap_minutes ?? 30,
       })
     }
   }, [data])
@@ -237,6 +239,22 @@ function GeneralTab() {
               <option value="America/Buenos_Aires">América/Buenos Aires</option>
               <option value="Europe/Madrid">Europa/Madrid</option>
             </select>
+          </Field>
+          <Field label={`Pausa que corta la jornada (min): ${form.work_gap_minutes}`}>
+            <input
+              type="range"
+              min={10}
+              max={120}
+              step={5}
+              value={form.work_gap_minutes}
+              aria-label="Minutos de pausa que cortan la jornada"
+              onChange={(e) => setForm((f) => ({ ...f, work_gap_minutes: Number(e.target.value) }))}
+              className="w-full accent-blue-500"
+            />
+            <p className="mt-1 text-xs text-gray-400">
+              Una inactividad mayor a este tiempo termina el bloque de trabajo. Así, si alguien deja
+              el equipo encendido al irse, ese tiempo no cuenta como jornada ni como inactividad.
+            </p>
           </Field>
         </div>
         <div className="space-y-3 rounded-lg border border-amber-200 bg-amber-50 p-4">

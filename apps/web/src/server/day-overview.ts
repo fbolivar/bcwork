@@ -1,5 +1,6 @@
 import { localDayRange, localHourAndDow, localMidnightUtc } from '@/lib/tz'
 import type { getDb } from '@/lib/db'
+import { cargarAusencias } from './ausencias'
 
 type Db = ReturnType<typeof getDb>
 
@@ -153,6 +154,11 @@ export async function buildDayOverview(
 
   // ── Consultas independientes, todas a la vez ──
   const desdeSpark = fechaMasDias(date, -(DIAS_SPARKLINE - 1))
+  const [{ data: cfg }, ausencias] = await Promise.all([
+    db.from('tenants').select('work_gap_minutes').eq('id', tenantId).maybeSingle(),
+    cargarAusencias(db, tenantId, desdeSpark, date),
+  ])
+  const gapMin = cfg?.work_gap_minutes ?? 30
   // Los eventos del dia se suman en Postgres (35.000+ filas por empresa):
   // una fila por persona, una por hora y una por aplicacion. RLS sigue
   // aplicando porque las funciones son SECURITY INVOKER.
@@ -162,7 +168,25 @@ export async function buildDayOverview(
       args: Record<string, unknown>,
     ) => PromiseLike<{ data: unknown; error: { message: string } | null }>
   }
-  const pPersonas = rpc.rpc('day_user_totals', { p_from: from, p_to: to, p_user_ids: ids })
+  const pPersonas = rpc.rpc('work_day_blocks', {
+    p_from: from,
+    p_to: to,
+    p_user_ids: ids,
+    p_gap_minutes: gapMin,
+    p_tz: timeZone,
+  })
+  // "Productivo ahora": clase del ultimo evento reciente. Solo importa si es hoy.
+  const pAhora = esHoy
+    ? db
+        .from('activity_events')
+        .select('user_id, started_at, productivity')
+        .eq('tenant_id', tenantId)
+        .in('user_id', ids)
+        .gte('started_at', new Date(ahora - VENTANA_AHORA_MS).toISOString())
+        .order('started_at', { ascending: false })
+    : Promise.resolve({
+        data: [] as { user_id: string; started_at: string; productivity: string | null }[],
+      })
   const pPerfil = rpc.rpc('report_time_profile', {
     p_from: from,
     p_to: to,
@@ -171,13 +195,6 @@ export async function buildDayOverview(
     p_tz: timeZone,
   })
   const pApps = rpc.rpc('report_app_totals', { p_from: from, p_to: to, p_user_ids: ids })
-  const pSesiones = db
-    .from('work_sessions')
-    .select('user_id, idle_seconds')
-    .eq('tenant_id', tenantId)
-    .in('user_id', ids)
-    .gte('started_at', from)
-    .lt('started_at', to)
   const pMetricas = db
     .from('daily_user_metrics')
     .select('metric_date, user_id, active_seconds, productive_seconds')
@@ -194,9 +211,14 @@ export async function buildDayOverview(
     .lt('started_at', to)
     .order('started_at', { ascending: true })
 
-  const [rPersonas, rPerfil, rApps, { data: sesiones }, { data: metricas }, { data: sesiones7 }] =
-    await Promise.all([pPersonas, pPerfil, pApps, pSesiones, pMetricas, pSesiones7])
+  const [rPersonas, rPerfil, rApps, { data: metricas }, { data: sesiones7 }, { data: ahoraRows }] =
+    await Promise.all([pPersonas, pPerfil, pApps, pMetricas, pSesiones7, pAhora])
   for (const r of [rPersonas, rPerfil, rApps]) if (r.error) throw new Error(r.error.message)
+  // Primera clase por usuario (rows vienen de mas reciente a mas antiguo).
+  const ahoraPorUser = new Map<string, Clase>()
+  for (const r of (ahoraRows ?? []) as { user_id: string; productivity: string | null }[]) {
+    if (!ahoraPorUser.has(r.user_id)) ahoraPorUser.set(r.user_id, clase(r.productivity))
+  }
 
   // ── Agregados ──
   const porHora = Array.from({ length: 24 }, (_, hour) => ({
@@ -220,31 +242,22 @@ export async function buildDayOverview(
 
   const porPersona = new Map<
     string,
-    {
-      prod: number
-      noProd: number
-      neutro: number
-      llegada: string
-      ultimo: string
-      ultimaClase: Clase
-    }
+    { prod: number; noProd: number; neutro: number; llegada: string | null; idle: number }
   >()
   for (const f of (rPersonas.data ?? []) as {
     user_id: string
     productive: number
     non_productive: number
     neutral: number
-    first_at: string
-    last_at: string
-    last_class: string | null
+    idle_seconds: number
+    first_at: string | null
   }[]) {
     porPersona.set(f.user_id, {
       prod: Number(f.productive),
       noProd: Number(f.non_productive),
       neutro: Number(f.neutral),
       llegada: f.first_at,
-      ultimo: f.last_at,
-      ultimaClase: clase(f.last_class),
+      idle: Number(f.idle_seconds),
     })
   }
 
@@ -266,24 +279,19 @@ export async function buildDayOverview(
     porApp.set(f.app_identifier, a)
   }
 
-  // ── Inactividad: sesiones que empezaron hoy ──
-  const inactivo = new Map<string, number>()
-  for (const s of sesiones ?? []) {
-    inactivo.set(s.user_id, (inactivo.get(s.user_id) ?? 0) + (s.idle_seconds ?? 0))
-  }
-
   // ── Llegó / tarde / ausente ──
   const medianoche = localMidnightUtc(date, timeZone).getTime()
   const personas: Persona[] = usuarios.map((u) => {
     const p = porPersona.get(u.id)
     const h = horario.get(u.id)
     let minutosTarde: number | null = null
-    if (p && h?.inicioMin !== null && h?.inicioMin !== undefined) {
+    if (p?.llegada && h?.inicioMin !== null && h?.inicioMin !== undefined) {
       const llegadaMin = Math.round((Date.parse(p.llegada) - medianoche) / 60_000)
       const retraso = llegadaMin - h.inicioMin - h.flex
       minutosTarde = retraso > 0 ? retraso : 0
     }
     const total = (p?.prod ?? 0) + (p?.noProd ?? 0) + (p?.neutro ?? 0)
+    const enAusencia = !!ausencias.tipoEn(u.id, date)
     return {
       userId: u.id,
       name: nombre.get(u.id) ?? '',
@@ -291,7 +299,9 @@ export async function buildDayOverview(
       arrived: !!p,
       arrivalAt: p?.llegada ?? null,
       lateMinutes: minutosTarde,
-      absent: !p && debeTrabajar(u.id),
+      // Con ausencia justificada (incapacidad/vacaciones/permiso) no es falta.
+      absent: !p && !enAusencia && debeTrabajar(u.id),
+      onLeave: enAusencia,
       productiveSecs: p?.prod ?? 0,
       nonProductiveSecs: p?.noProd ?? 0,
       neutralSecs: p?.neutro ?? 0,
@@ -299,9 +309,8 @@ export async function buildDayOverview(
       productivityPct: total > 0 ? Math.round(((p?.prod ?? 0) / total) * 100) : null,
       effectivenessPct:
         p && p.prod + p.noProd > 0 ? Math.round((p.prod / (p.prod + p.noProd)) * 100) : null,
-      idleSecs: inactivo.get(u.id) ?? 0,
-      nowClass:
-        esHoy && p && ahora - Date.parse(p.ultimo) <= VENTANA_AHORA_MS ? p.ultimaClase : null,
+      idleSecs: p?.idle ?? 0,
+      nowClass: esHoy ? (ahoraPorUser.get(u.id) ?? null) : null,
     }
   })
 
@@ -345,7 +354,9 @@ export async function buildDayOverview(
     const llegaron = new Set(filas.filter((m) => (m.active_seconds ?? 0) > 0).map((m) => m.user_id))
     spark.arrived.push(llegaron.size)
     const dow = localHourAndDow(localDayRange(dia, timeZone).from, timeZone).dow
-    const esperados = usuarios.filter((u) => esperado(u.id, dia, dow))
+    const esperados = usuarios.filter(
+      (u) => esperado(u.id, dia, dow) && !ausencias.tipoEn(u.id, dia),
+    )
     spark.absent.push(esperados.filter((u) => !llegaron.has(u.id)).length)
 
     // Tarde: primera sesión del día contra el horario.
@@ -420,6 +431,7 @@ export interface Persona {
   arrivalAt: string | null
   lateMinutes: number | null
   absent: boolean
+  onLeave: boolean
   productiveSecs: number
   nonProductiveSecs: number
   neutralSecs: number

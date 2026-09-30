@@ -1,5 +1,6 @@
 import { localDayRange, localHourAndDow, localMidnightUtc } from '@/lib/tz'
 import type { getDb } from '@/lib/db'
+import { cargarAusencias } from './ausencias'
 
 type Db = ReturnType<typeof getDb>
 
@@ -44,6 +45,7 @@ export interface PeriodoPersona {
   lateDays: number
   avgLateMinutes: number | null
   absentDays: number
+  leaveDays: number
   avgArrival: string | null
   avgEnd: string | null
   offHoursHours: number
@@ -110,8 +112,10 @@ interface UserDay {
   productive: number
   non_productive: number
   neutral: number
-  first_at: string
-  last_at: string
+  worked_seconds: number
+  idle_seconds: number
+  first_at: string | null
+  last_at: string | null
 }
 
 const H = 3600
@@ -228,11 +232,19 @@ export async function buildAnalystFacts(
       args: Record<string, unknown>,
     ) => PromiseLike<{ data: unknown; error: { message: string } | null }>
   }
-  const [dias, apps, fuera, { data: asignaciones }, inactivo] = await Promise.all([
-    rpc.rpc('report_user_days', {
+  const { data: cfg } = await db
+    .from('tenants')
+    .select('work_gap_minutes')
+    .eq('id', tenantId)
+    .maybeSingle()
+  const gapMin = cfg?.work_gap_minutes ?? 30
+  const ausencias = await cargarAusencias(db, tenantId, previousFrom, to)
+  const [dias, apps, fuera, { data: asignaciones }] = await Promise.all([
+    rpc.rpc('work_day_blocks', {
       p_from: utcDesde,
       p_to: utcHasta,
       p_user_ids: ids,
+      p_gap_minutes: gapMin,
       p_tz: timeZone,
     }),
     rpc.rpc('analyst_user_apps', { p_from: utcMedio, p_to: utcHasta, p_user_ids: ids, p_top: 8 }),
@@ -250,14 +262,8 @@ export async function buildAnalystFacts(
       .eq('tenant_id', tenantId)
       .in('user_id', ids)
       .lte('effective_from', to),
-    rpc.rpc('analyst_user_idle', {
-      p_from: utcDesde,
-      p_to: utcHasta,
-      p_user_ids: ids,
-      p_tz: timeZone,
-    }),
   ])
-  for (const r of [dias, apps, fuera, inactivo]) if (r.error) throw new Error(r.error.message)
+  for (const r of [dias, apps, fuera]) if (r.error) throw new Error(r.error.message)
 
   const userDays = (dias.data ?? []) as UserDay[]
   const appFilas = (apps.data ?? []) as {
@@ -319,13 +325,6 @@ export async function buildAnalystFacts(
     m.set(f.day, { early: Number(f.early), late: Number(f.late), weekend: Number(f.weekend) })
     fueraPor.set(f.user_id, m)
   }
-  const idlePor = new Map<string, Map<string, number>>()
-  for (const f of (inactivo.data ?? []) as { user_id: string; day: string; idle: number }[]) {
-    const m = idlePor.get(f.user_id) ?? new Map()
-    m.set(f.day, Number(f.idle))
-    idlePor.set(f.user_id, m)
-  }
-
   // ── Periodo de una persona ──
   function periodo(uid: string, desde: string, hasta: string): PeriodoPersona & { _raw: Raw } {
     const raw: Raw = {
@@ -335,6 +334,7 @@ export async function buildAnalystFacts(
       jornada: 0,
       idle: 0,
       esperados: 0,
+      leave: 0,
       activos: 0,
       tarde: 0,
       tardeMin: 0,
@@ -348,6 +348,11 @@ export async function buildAnalystFacts(
     const dias = diasPor.get(uid)
     const fueraD = fueraPor.get(uid)
     for (let dia = desde; dia <= hasta; dia = masDias(dia, 1)) {
+      // Dia de ausencia justificada: fuera de todo (ni esperado ni falta).
+      if (ausencias.tipoEn(uid, dia)) {
+        raw.leave++
+        continue
+      }
       const d = dias?.get(dia)
       const exp = esperado(uid, dia)
       if (exp) raw.esperados++
@@ -359,19 +364,21 @@ export async function buildAnalystFacts(
       raw.prod += Number(d.productive)
       raw.noProd += Number(d.non_productive)
       raw.neutro += Number(d.neutral)
+      // Jornada e inactividad por bloques (equipo encendido sin uso no cuenta).
+      raw.jornada += Number(d.worked_seconds)
+      raw.idle += Number(d.idle_seconds)
       const medianoche = localMidnightUtc(dia, timeZone).getTime()
-      const llegadaMin = (Date.parse(d.first_at) - medianoche) / 60_000
-      const salidaMin = (Date.parse(d.last_at) - medianoche) / 60_000
-      raw.llegadas.push(llegadaMin)
-      raw.salidas.push(salidaMin)
-      const registrado = Number(d.productive) + Number(d.non_productive) + Number(d.neutral)
-      raw.jornada += Math.max((salidaMin - llegadaMin) * 60, registrado)
-      const h = horarioEl(uid, dia)
-      if (h?.inicioMin !== null && h?.inicioMin !== undefined) {
-        const retraso = Math.round(llegadaMin) - h.inicioMin - h.flex
-        if (retraso > 0) {
-          raw.tarde++
-          raw.tardeMin += retraso
+      if (d.first_at && d.last_at) {
+        raw.llegadas.push((Date.parse(d.first_at) - medianoche) / 60_000)
+        raw.salidas.push((Date.parse(d.last_at) - medianoche) / 60_000)
+        const h = horarioEl(uid, dia)
+        if (h?.inicioMin !== null && h?.inicioMin !== undefined) {
+          const retraso =
+            Math.round((Date.parse(d.first_at) - medianoche) / 60_000) - h.inicioMin - h.flex
+          if (retraso > 0) {
+            raw.tarde++
+            raw.tardeMin += retraso
+          }
         }
       }
       const f = fueraD?.get(dia)
@@ -381,9 +388,6 @@ export async function buildAnalystFacts(
         if (f.late >= 15 * 60) raw.despues19++
       }
     }
-    const idleD = idlePor.get(uid)
-    if (idleD)
-      for (let dia = desde; dia <= hasta; dia = masDias(dia, 1)) raw.idle += idleD.get(dia) ?? 0
     const registrado = raw.prod + raw.noProd + raw.neutro
     const clasificado = raw.prod + raw.noProd
     const media = (a: number[]) => (a.length ? a.reduce((s, x) => s + x, 0) / a.length : null)
@@ -398,6 +402,7 @@ export async function buildAnalystFacts(
       lateDays: raw.tarde,
       avgLateMinutes: raw.tarde > 0 ? Math.round(raw.tardeMin / raw.tarde) : null,
       absentDays: raw.ausentes,
+      leaveDays: raw.leave,
       avgArrival: hhmm(media(raw.llegadas)),
       avgEnd: hhmm(media(raw.salidas)),
       offHoursHours: r1(raw.fuera / H),
@@ -560,6 +565,7 @@ interface Raw {
   jornada: number
   idle: number
   esperados: number
+  leave: number
   activos: number
   tarde: number
   tardeMin: number
