@@ -14,6 +14,7 @@ import {
   Minus,
   Send,
   History,
+  Users,
 } from 'lucide-react'
 import { MarkdownLite } from '@/features/shared/MarkdownLite'
 import { Sparkline } from '@/features/shared/panel-widgets'
@@ -273,6 +274,8 @@ function Resultado({ a }: { a: Analisis }) {
   const c = f.totals.current
   const p = f.totals.previous
   const [copiado, setCopiado] = useState(false)
+  // Vista para gerencia: agregados por área, sin nombres ni detalle individual.
+  const [anon, setAnon] = useState(false)
 
   const informeTexto = useMemo(() => r?.informe_gerencia ?? informeSinIa(f), [r, f])
 
@@ -282,7 +285,7 @@ function Resultado({ a }: { a: Analisis }) {
     setTimeout(() => setCopiado(false), 1500)
   }
 
-  async function descargarPdf() {
+  async function descargarPdf(modoAnon = anon) {
     const { default: jsPDF } = await import('jspdf')
     const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
     const W = 210
@@ -502,17 +505,29 @@ function Resultado({ a }: { a: Analisis }) {
     })
     y += 6
 
-    // ── Resumen ejecutivo ──
-    if (r?.resumen_ejecutivo) {
+    // ── Resumen ejecutivo (nominal: se omite en la vista agregada) ──
+    if (r?.resumen_ejecutivo && !modoAnon) {
       titulo('Resumen ejecutivo')
       parrafo(r.resumen_ejecutivo)
       y += 3
     }
 
     // ── Hallazgos ──
-    const hall = r
-      ? r.hallazgos.map((h) => ({ sev: h.severidad, t: h.titulo, d: h.detalle }))
-      : f.signals.map((s) => ({ sev: s.severity, t: s.title, d: s.detail }))
+    const hall = (
+      r
+        ? r.hallazgos.map((h) => ({
+            sev: h.severidad,
+            t: h.titulo,
+            d: h.detalle,
+            nom: h.personas.length > 0,
+          }))
+        : f.signals.map((s) => ({
+            sev: s.severity,
+            t: s.title,
+            d: s.detail,
+            nom: s.userId !== null,
+          }))
+    ).filter((h) => !modoAnon || !h.nom)
     if (hall.length) {
       titulo('Hallazgos principales')
       for (const h of hall) {
@@ -611,8 +626,8 @@ function Resultado({ a }: { a: Analisis }) {
     listaUso('Aplicaciones más usadas', f.apps ?? [])
     listaUso('Sitios web más consultados', f.sites ?? [])
 
-    // ── Personas a seguir ──
-    const pers = r?.personas ?? []
+    // ── Personas a seguir (nominal: se omite en la vista agregada) ──
+    const pers = modoAnon ? [] : (r?.personas ?? [])
     if (pers.length) {
       titulo('Personas a seguir')
       for (const x of pers) {
@@ -645,7 +660,7 @@ function Resultado({ a }: { a: Analisis }) {
     }
 
     // ── Recomendaciones ──
-    if (r?.recomendaciones?.length) {
+    if (r?.recomendaciones?.length && !modoAnon) {
       titulo('Recomendaciones priorizadas')
       r.recomendaciones.forEach((x, i) => {
         salto(13)
@@ -678,7 +693,7 @@ function Resultado({ a }: { a: Analisis }) {
     }
 
     footer()
-    doc.save(`bcwork-informe-${f.period.key}-${f.period.to}.pdf`)
+    doc.save(`bcwork-informe${modoAnon ? '-agregado' : ''}-${f.period.key}-${f.period.to}.pdf`)
   }
 
   const personasIa = new Map((r?.personas ?? []).map((x) => [x.userId, x]))
@@ -716,26 +731,47 @@ function Resultado({ a }: { a: Analisis }) {
               {a.model && ` · ${a.model}`}
             </p>
           </div>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <button
               type="button"
-              onClick={copiar}
-              className="inline-flex items-center gap-1.5 rounded-md border border-gray-300 px-3 py-1.5 text-xs text-gray-700 hover:bg-gray-50"
+              onClick={() => setAnon((v) => !v)}
+              className={`inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-xs ${
+                anon
+                  ? 'border-blue-600 bg-blue-50 text-blue-700'
+                  : 'border-gray-300 text-gray-700 hover:bg-gray-50'
+              }`}
+              title="Datos agregados por área, sin nombres ni detalle individual — para compartir con Gerencia"
             >
-              {copiado ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
-              {copiado ? 'Copiado' : 'Copiar informe'}
+              {anon ? <Check className="h-3.5 w-3.5" /> : <Users className="h-3.5 w-3.5" />}
+              Vista gerencia
             </button>
+            {!anon && (
+              <button
+                type="button"
+                onClick={copiar}
+                className="inline-flex items-center gap-1.5 rounded-md border border-gray-300 px-3 py-1.5 text-xs text-gray-700 hover:bg-gray-50"
+              >
+                {copiado ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+                {copiado ? 'Copiado' : 'Copiar informe'}
+              </button>
+            )}
             <button
               type="button"
-              onClick={descargarPdf}
+              onClick={() => descargarPdf()}
               className="inline-flex items-center gap-1.5 rounded-md border border-gray-300 px-3 py-1.5 text-xs text-gray-700 hover:bg-gray-50"
             >
               <Download className="h-3.5 w-3.5" />
-              Descargar PDF
+              {anon ? 'PDF agregado' : 'Descargar PDF'}
             </button>
           </div>
         </div>
-        {r ? (
+        {anon ? (
+          <p className="mt-4 text-sm leading-relaxed text-gray-600">
+            Vista agregada por área, sin nombres ni detalle individual, para compartir con Gerencia.
+            El informe nominal completo (personas, hallazgos individuales, recomendaciones y texto
+            redactado) está disponible en la vista normal para Gestión Humana.
+          </p>
+        ) : r ? (
           <p className="mt-4 text-sm leading-relaxed text-gray-800">{r.resumen_ejecutivo}</p>
         ) : (
           <p className="mt-4 text-sm text-gray-500">
@@ -795,32 +831,36 @@ function Resultado({ a }: { a: Analisis }) {
                   title: h.titulo,
                   detail: h.detalle,
                   personas: h.personas,
+                  nom: h.personas.length > 0,
                 }))
               : f.signals.map((s) => ({
                   severity: s.severity,
                   title: s.title,
                   detail: s.detail,
                   personas: [] as string[],
+                  nom: s.userId !== null,
                 }))
-            ).map((h, i) => (
-              <li key={i} className="flex gap-3 py-3">
-                <span
-                  className={`mt-1.5 h-2.5 w-2.5 shrink-0 rounded-full ${SEV[h.severity].punto}`}
-                />
-                <div className="min-w-0">
-                  <p className="text-sm font-medium text-gray-900">{h.title}</p>
-                  <p className="mt-0.5 text-xs leading-relaxed text-gray-500">{h.detail}</p>
-                  {h.personas.length > 0 && (
-                    <p className="mt-1 text-[11px] text-blue-600">{h.personas.join(' · ')}</p>
-                  )}
-                </div>
-                <span
-                  className={`ml-auto h-fit shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-medium ${SEV[h.severity].chip}`}
-                >
-                  {SEV[h.severity].label}
-                </span>
-              </li>
-            ))}
+            )
+              .filter((h) => !anon || !h.nom)
+              .map((h, i) => (
+                <li key={i} className="flex gap-3 py-3">
+                  <span
+                    className={`mt-1.5 h-2.5 w-2.5 shrink-0 rounded-full ${SEV[h.severity].punto}`}
+                  />
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-gray-900">{h.title}</p>
+                    <p className="mt-0.5 text-xs leading-relaxed text-gray-500">{h.detail}</p>
+                    {h.personas.length > 0 && (
+                      <p className="mt-1 text-[11px] text-blue-600">{h.personas.join(' · ')}</p>
+                    )}
+                  </div>
+                  <span
+                    className={`ml-auto h-fit shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-medium ${SEV[h.severity].chip}`}
+                  >
+                    {SEV[h.severity].label}
+                  </span>
+                </li>
+              ))}
             {(r ? r.hallazgos.length : f.signals.length) === 0 && (
               <li className="py-3 text-sm text-gray-500">Sin señales destacables en el periodo.</li>
             )}
@@ -837,33 +877,35 @@ function Resultado({ a }: { a: Analisis }) {
 
         {/* Recomendaciones + departamentos */}
         <div className="space-y-6">
-          <section className="rounded-2xl border border-gray-200 bg-white p-6">
-            <p className="text-[10px] font-semibold uppercase tracking-widest text-gray-400">
-              Decisiones recomendadas
-            </p>
-            {r ? (
-              <ol className="mt-3 space-y-3">
-                {r.recomendaciones.map((x, i) => (
-                  <li key={i} className="flex gap-3">
-                    <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-blue-50 text-xs font-semibold text-blue-700">
-                      {i + 1}
-                    </span>
-                    <div>
-                      <p className="text-sm font-medium text-gray-900">{x.accion}</p>
-                      <p className="mt-0.5 text-xs text-gray-500">{x.por_que}</p>
-                      <p className="mt-1 text-[10px] uppercase tracking-wider text-gray-400">
-                        Impacto {x.impacto}
-                      </p>
-                    </div>
-                  </li>
-                ))}
-              </ol>
-            ) : (
-              <p className="mt-3 text-sm text-gray-500">
-                Disponibles cuando la interpretación con IA esté activa.
+          {!anon && (
+            <section className="rounded-2xl border border-gray-200 bg-white p-6">
+              <p className="text-[10px] font-semibold uppercase tracking-widest text-gray-400">
+                Decisiones recomendadas
               </p>
-            )}
-          </section>
+              {r ? (
+                <ol className="mt-3 space-y-3">
+                  {r.recomendaciones.map((x, i) => (
+                    <li key={i} className="flex gap-3">
+                      <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-blue-50 text-xs font-semibold text-blue-700">
+                        {i + 1}
+                      </span>
+                      <div>
+                        <p className="text-sm font-medium text-gray-900">{x.accion}</p>
+                        <p className="mt-0.5 text-xs text-gray-500">{x.por_que}</p>
+                        <p className="mt-1 text-[10px] uppercase tracking-wider text-gray-400">
+                          Impacto {x.impacto}
+                        </p>
+                      </div>
+                    </li>
+                  ))}
+                </ol>
+              ) : (
+                <p className="mt-3 text-sm text-gray-500">
+                  Disponibles cuando la interpretación con IA esté activa.
+                </p>
+              )}
+            </section>
+          )}
 
           <section className="rounded-2xl border border-gray-200 bg-white p-6">
             <p className="text-[10px] font-semibold uppercase tracking-widest text-gray-400">
@@ -907,36 +949,38 @@ function Resultado({ a }: { a: Analisis }) {
         </div>
       </div>
 
-      {/* Personas */}
-      <section className="rounded-2xl border border-gray-200 bg-white p-6">
-        <p className="text-[10px] font-semibold uppercase tracking-widest text-gray-400">
-          Personas
-        </p>
-        <div className="mt-3 overflow-x-auto">
-          <table className="w-full min-w-[900px] text-xs">
-            <thead>
-              <tr className="text-left text-[10px] uppercase tracking-wider text-gray-400">
-                <th className="pb-2 font-semibold">Persona</th>
-                <th className="pb-2 text-right font-semibold">h/día</th>
-                <th className="pb-2 text-right font-semibold">Prod.</th>
-                <th className="pb-2 text-right font-semibold">Δ pp</th>
-                <th className="pb-2 text-center font-semibold">Tend.</th>
-                <th className="pb-2 font-semibold">Tendencia</th>
-                <th className="pb-2 text-right font-semibold">Tarde</th>
-                <th className="pb-2 text-right font-semibold">Ausente</th>
-                <th className="pb-2 text-right font-semibold">Inactivo</th>
-                <th className="pb-2 text-right font-semibold">Fuera hor.</th>
-                <th className="pb-2 font-semibold">Lectura</th>
-              </tr>
-            </thead>
-            <tbody>
-              {f.persons.map((x) => (
-                <FilaPersona key={x.userId} x={x} ia={personasIa.get(x.userId) ?? null} />
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </section>
+      {/* Personas (nominal: oculto en la vista para gerencia) */}
+      {!anon && (
+        <section className="rounded-2xl border border-gray-200 bg-white p-6">
+          <p className="text-[10px] font-semibold uppercase tracking-widest text-gray-400">
+            Personas
+          </p>
+          <div className="mt-3 overflow-x-auto">
+            <table className="w-full min-w-[900px] text-xs">
+              <thead>
+                <tr className="text-left text-[10px] uppercase tracking-wider text-gray-400">
+                  <th className="pb-2 font-semibold">Persona</th>
+                  <th className="pb-2 text-right font-semibold">h/día</th>
+                  <th className="pb-2 text-right font-semibold">Prod.</th>
+                  <th className="pb-2 text-right font-semibold">Δ pp</th>
+                  <th className="pb-2 text-center font-semibold">Tend.</th>
+                  <th className="pb-2 font-semibold">Tendencia</th>
+                  <th className="pb-2 text-right font-semibold">Tarde</th>
+                  <th className="pb-2 text-right font-semibold">Ausente</th>
+                  <th className="pb-2 text-right font-semibold">Inactivo</th>
+                  <th className="pb-2 text-right font-semibold">Fuera hor.</th>
+                  <th className="pb-2 font-semibold">Lectura</th>
+                </tr>
+              </thead>
+              <tbody>
+                {f.persons.map((x) => (
+                  <FilaPersona key={x.userId} x={x} ia={personasIa.get(x.userId) ?? null} />
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
 
       {/* Aplicaciones y sitios */}
       {(f.apps?.length > 0 || f.sites?.length > 0) && (
@@ -946,27 +990,29 @@ function Resultado({ a }: { a: Analisis }) {
         </div>
       )}
 
-      {/* Informe para gerencia */}
-      <section className="rounded-2xl border border-gray-200 bg-white p-6">
-        <div className="flex items-center justify-between">
-          <p className="text-[10px] font-semibold uppercase tracking-widest text-gray-400">
-            Informe para gerencia
-          </p>
-          <button
-            type="button"
-            onClick={descargarPdf}
-            className="inline-flex items-center gap-1.5 text-xs text-blue-600 hover:underline"
-          >
-            <Download className="h-3.5 w-3.5" />
-            PDF
-          </button>
-        </div>
-        <div className="mt-2">
-          <MarkdownLite text={informeTexto} />
-        </div>
-      </section>
+      {/* Informe para gerencia (texto nominal: oculto en la vista para gerencia) */}
+      {!anon && (
+        <section className="rounded-2xl border border-gray-200 bg-white p-6">
+          <div className="flex items-center justify-between">
+            <p className="text-[10px] font-semibold uppercase tracking-widest text-gray-400">
+              Informe para gerencia
+            </p>
+            <button
+              type="button"
+              onClick={() => descargarPdf()}
+              className="inline-flex items-center gap-1.5 text-xs text-blue-600 hover:underline"
+            >
+              <Download className="h-3.5 w-3.5" />
+              PDF
+            </button>
+          </div>
+          <div className="mt-2">
+            <MarkdownLite text={informeTexto} />
+          </div>
+        </section>
+      )}
 
-      {a.model && <Pregunta id={a.id} />}
+      {!anon && a.model && <Pregunta id={a.id} />}
     </div>
   )
 }

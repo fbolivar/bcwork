@@ -266,8 +266,23 @@ export default function PrivacidadPage() {
           </Section>
         </div>
 
+        {/* Documentos relacionados */}
+        <div className="mt-10 border-t border-gray-100 pt-6">
+          <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-400">
+            Documentos relacionados
+          </p>
+          <div className="flex flex-wrap gap-4">
+            <Link href="/legal/monitoreo" className="text-sm text-blue-600 hover:underline">
+              Política de monitoreo de la actividad laboral
+            </Link>
+            <Link href="/legal/desconexion" className="text-sm text-blue-600 hover:underline">
+              Política de desconexión laboral (Ley 2191)
+            </Link>
+          </div>
+        </div>
+
         {/* Footer de navegación */}
-        <div className="mt-10 flex items-center justify-between border-t border-gray-100 pt-6">
+        <div className="mt-6 flex items-center justify-between border-t border-gray-100 pt-6">
           <p className="text-xs text-gray-400">
             Última actualización: 1 de enero de 2025 · Versión 1.0
           </p>
