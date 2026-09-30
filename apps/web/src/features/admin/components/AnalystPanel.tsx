@@ -394,7 +394,17 @@ function Resultado({ a }: { a: Analisis }) {
     y += 5
     doc.setFontSize(8)
     doc.text(a.model ? 'Generado por BCWork · Analista IA' : 'Hechos calculados por BCWork', M, y)
-    y += 9
+    y += 4.5
+    if (f.coverage && f.coverage.partial > 0) {
+      setc(ORANGE)
+      doc.text(
+        `Cobertura: ${f.coverage.full} de ${f.coverage.people} con período completo · promedio sobre ${f.coverage.comparable} comparables · ${f.coverage.partial} parcial(es) aparte`,
+        M,
+        y,
+      )
+      y += 4.5
+    }
+    y += 5
 
     // ── Tarjetas KPI ──
     const c = f.totals.current
@@ -672,8 +682,23 @@ function Resultado({ a }: { a: Analisis }) {
 
   const personasIa = new Map((r?.personas ?? []).map((x) => [x.userId, x]))
 
+  const cov = f.coverage
   return (
     <div className="space-y-6">
+      {/* Aviso de cobertura */}
+      {cov && cov.partial > 0 && (
+        <div className="flex gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+          <p>
+            Cobertura desigual: {cov.full} de {cov.people} personas fueron observadas durante todo
+            el período. El promedio y las comparaciones se calculan solo sobre las {cov.comparable}{' '}
+            personas con datos suficientes; las {cov.partial} de agente recién instalado se muestran
+            aparte y sin conclusiones. Las tendencias individuales solo se marcan cuando hay período
+            completo.
+          </p>
+        </div>
+      )}
+
       {/* Resumen ejecutivo */}
       <section className="rounded-2xl border border-gray-200 bg-white p-6">
         <div className="flex flex-wrap items-start justify-between gap-3">
@@ -982,7 +1007,17 @@ function FilaPersona({ x, ia }: { x: PersonaHechos; ia: Informe['personas'][numb
   return (
     <tr className="border-t border-gray-100 align-top">
       <td className="py-2 pr-3">
-        <p className="font-medium text-gray-900">{x.name}</p>
+        <p className="font-medium text-gray-900">
+          {x.name}
+          {!x.comparable && (
+            <span
+              className="ml-1.5 rounded-full border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[9px] font-medium text-amber-700"
+              title={`Cobertura parcial: ${x.current.daysActive} de ${x.current.daysExpected} días esperados desde su instalación (${x.firstDataAt ?? 'sin datos'})`}
+            >
+              parcial
+            </span>
+          )}
+        </p>
         <p className="text-[11px] text-gray-400">{x.department ?? 'Sin departamento'}</p>
         {peor && (
           <span

@@ -60,6 +60,7 @@ export interface PeriodoPersona {
   avgLateMinutes: number | null
   absentDays: number
   leaveDays: number
+  coveragePct: number | null
   avgArrival: string | null
   avgEnd: string | null
   offHoursHours: number
@@ -80,6 +81,12 @@ export interface PersonaHechos {
     productivity: 'sube' | 'baja' | 'estable' | null
   }
   topApps: { name: string; productivity: string; hours: number }[]
+  /** Día del primer dato del agente (inicio de observación), local. */
+  firstDataAt: string | null
+  /** Observada desde antes de que empezara el período (comparación válida). */
+  fullPeriod: boolean
+  /** Tiene datos suficientes para entrar en el promedio de la empresa. */
+  comparable: boolean
   signals: Senal[]
 }
 
@@ -117,6 +124,9 @@ export interface Hechos {
   /** Aplicaciones más usadas y sitios web más consultados (toda la empresa). */
   apps: { name: string; productivity: string; hours: number }[]
   sites: { name: string; productivity: string; hours: number }[]
+  /** Cobertura de la medición: cuántas personas tienen período completo y son
+   *  comparables (base del promedio); las parciales se leen aparte. */
+  coverage: { people: number; full: number; comparable: number; partial: number }
   signals: Senal[]
   persons: PersonaHechos[]
 }
@@ -294,6 +304,7 @@ export async function buildAnalystFacts(
     profile: [],
     apps: [],
     sites: [],
+    coverage: { people: personas.length, full: 0, comparable: 0, partial: personas.length },
     signals: [],
     persons: [],
   }
@@ -312,7 +323,7 @@ export async function buildAnalystFacts(
     .maybeSingle()
   const gapMin = cfg?.work_gap_minutes ?? 30
   const ausencias = await cargarAusencias(db, tenantId, previousFrom, to)
-  const [curBlocks, prevBlocks, apps, fuera, perfilR, usage, { data: asignaciones }] =
+  const [curBlocks, prevBlocks, apps, fuera, perfilR, usage, firstSeen, { data: asignaciones }] =
     await Promise.all([
       rpc.rpc('work_day_blocks', {
         p_from: curFromTs,
@@ -343,6 +354,7 @@ export async function buildAnalystFacts(
         p_tz: timeZone,
       }),
       rpc.rpc('analyst_usage', { p_from: curFromTs, p_to: curToTs, p_user_ids: ids, p_top: 12 }),
+      rpc.rpc('analyst_first_seen', { p_user_ids: ids }),
       db
         .from('user_schedules')
         .select(
@@ -352,8 +364,15 @@ export async function buildAnalystFacts(
         .in('user_id', ids)
         .lte('effective_from', to),
     ])
-  for (const r of [curBlocks, prevBlocks, apps, fuera, perfilR, usage])
+  for (const r of [curBlocks, prevBlocks, apps, fuera, perfilR, usage, firstSeen])
     if (r.error) throw new Error(r.error.message)
+
+  // Primer día observado por persona (fecha local del primer evento). Antes de
+  // ese día no hay "ausencia"; ese día es la instalación (actividad del técnico).
+  const firstDataDay = new Map<string, string>()
+  for (const f of (firstSeen.data ?? []) as { user_id: string; first_at: string }[]) {
+    if (f.first_at) firstDataDay.set(f.user_id, localDate(new Date(f.first_at), timeZone))
+  }
 
   const appFilas = (apps.data ?? []) as {
     user_id: string
@@ -482,7 +501,10 @@ export async function buildAnalystFacts(
       despues19: 0,
     }
     const fueraD = fueraPor.get(uid)
+    const fd = firstDataDay.get(uid)
     for (let dia = desde; dia <= hasta; dia = masDias(dia, 1)) {
+      // Fuera de la ventana de observación o día de instalación: no cuenta.
+      if (fd && dia <= fd) continue
       if (!skipAtt && ausencias.tipoEn(uid, dia)) {
         raw.leave++
         continue
@@ -536,6 +558,8 @@ export async function buildAnalystFacts(
       avgLateMinutes: raw.tarde > 0 ? Math.round(raw.tardeMin / raw.tarde) : null,
       absentDays: raw.ausentes,
       leaveDays: raw.leave,
+      coveragePct:
+        raw.esperados > 0 ? Math.min(100, Math.round((raw.activos / raw.esperados) * 100)) : null,
       avgArrival: hhmm(media(raw.llegadas)),
       avgEnd: hhmm(media(raw.salidas)),
       offHoursHours: r1(raw.fuera / H),
@@ -585,6 +609,11 @@ export async function buildAnalystFacts(
 
     const { _raw: _c, ...current } = cur
     const { _raw: _p, ...previous } = prev
+    const fd = firstDataDay.get(u.id) ?? null
+    const fullPeriod = fd != null && fd < from
+    // Comparable = con datos suficientes para representar a la persona en el
+    // promedio de la empresa. En 1h basta con tener actividad en la ventana.
+    const comparable = spec.subhour ? current.daysActive > 0 : current.daysActive >= 5
     const p: PersonaHechos = {
       userId: u.id,
       name: u.full_name || u.email,
@@ -592,6 +621,9 @@ export async function buildAnalystFacts(
       role: u.role,
       current,
       previous,
+      firstDataAt: fd,
+      fullPeriod,
+      comparable,
       weekly,
       trend: {
         hours: tendencia(
@@ -639,15 +671,23 @@ export async function buildAnalystFacts(
       peopleActive: raws.filter((r) => r.activos > 0).length,
     }
   }
-  const totals = { current: agrega(persons, rawActual), previous: agrega(persons, rawPrevio) }
+  // El promedio de la empresa se calcula solo sobre personas comparables; las
+  // de cobertura parcial (agente recién instalado) se leen aparte.
+  const comparables = persons.filter((x) => x.comparable)
+  const baseTotales = comparables.length > 0 ? comparables : persons
+  const totals = {
+    current: agrega(baseTotales, rawActual),
+    previous: agrega(baseTotales, rawPrevio),
+  }
 
   const deptNombres = [...new Set(persons.map((p) => p.department || 'Sin departamento'))].sort(
     (a, b) => a.localeCompare(b, 'es'),
   )
   const departments = deptNombres.map((name) => {
     const lista = persons.filter((p) => (p.department || 'Sin departamento') === name)
-    const c = agrega(lista, rawActual)
-    const pv = agrega(lista, rawPrevio)
+    const listaComp = lista.filter((p) => p.comparable)
+    const c = agrega(listaComp, rawActual)
+    const pv = agrega(listaComp, rawPrevio)
     return {
       name,
       people: lista.length,
@@ -695,6 +735,12 @@ export async function buildAnalystFacts(
     profile,
     apps: empresaApps,
     sites: empresaSites,
+    coverage: {
+      people: persons.length,
+      full: persons.filter((x) => x.fullPeriod).length,
+      comparable: comparables.length,
+      partial: persons.length - comparables.length,
+    },
     signals,
     persons: persons.sort((a, b) => a.name.localeCompare(b.name, 'es')),
   }
@@ -760,7 +806,12 @@ function senalesPersona(p: PersonaHechos): Senal[] {
   }
   if (c.daysActive === 0) return out
 
-  if (c.productivityPct !== null && v.productivityPct !== null && v.daysActive >= 3) {
+  if (
+    p.fullPeriod &&
+    c.productivityPct !== null &&
+    v.productivityPct !== null &&
+    v.daysActive >= 3
+  ) {
     const d = c.productivityPct - v.productivityPct
     if (d <= -10)
       out.push({
@@ -779,7 +830,12 @@ function senalesPersona(p: PersonaHechos): Senal[] {
         detail: `Pasó de ${v.productivityPct}% a ${c.productivityPct}%.`,
       })
   }
-  if (c.activeHoursPerDay !== null && v.activeHoursPerDay !== null && v.daysActive >= 3) {
+  if (
+    p.fullPeriod &&
+    c.activeHoursPerDay !== null &&
+    v.activeHoursPerDay !== null &&
+    v.daysActive >= 3
+  ) {
     const d = (c.activeHoursPerDay - v.activeHoursPerDay) / v.activeHoursPerDay
     if (d <= -0.2)
       out.push({
@@ -790,7 +846,11 @@ function senalesPersona(p: PersonaHechos): Senal[] {
         detail: `De ${v.activeHoursPerDay} h a ${c.activeHoursPerDay} h activas por día frente al periodo anterior.`,
       })
   }
-  if (p.trend.productivity === 'baja' && !out.some((s) => s.code === 'cae_productividad'))
+  if (
+    p.fullPeriod &&
+    p.trend.productivity === 'baja' &&
+    !out.some((s) => s.code === 'cae_productividad')
+  )
     out.push({
       code: 'tendencia_baja',
       severity: 'media',
