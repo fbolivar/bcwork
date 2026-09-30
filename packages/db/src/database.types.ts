@@ -556,11 +556,12 @@ export type Database = {
           facts: Json
           id: string
           model: string | null
+          period: string | null
           period_from: string
           period_to: string
           report: Json | null
           tenant_id: string
-          weeks: number
+          weeks: number | null
         }
         Insert: {
           created_at?: string
@@ -569,11 +570,12 @@ export type Database = {
           facts: Json
           id?: string
           model?: string | null
+          period?: string | null
           period_from: string
           period_to: string
           report?: Json | null
           tenant_id: string
-          weeks: number
+          weeks?: number | null
         }
         Update: {
           created_at?: string
@@ -582,11 +584,12 @@ export type Database = {
           facts?: Json
           id?: string
           model?: string | null
+          period?: string | null
           period_from?: string
           period_to?: string
           report?: Json | null
           tenant_id?: string
-          weeks?: number
+          weeks?: number | null
         }
         Relationships: [
           {

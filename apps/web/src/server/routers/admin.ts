@@ -1472,7 +1472,7 @@ export const adminRouter = router({
   })),
 
   runAnalysis: adminProcedure
-    .input(z.object({ weeks: z.number().int().min(2).max(12).default(4) }))
+    .input(z.object({ period: z.enum(['1h', '24h', '7d', '30d', '1y']).default('7d') }))
     .mutation(async ({ ctx, input }) => {
       const tid = ctx.user!.tid
       const tz = await getTenantTimezone(ctx.db, tid)
@@ -1504,7 +1504,7 @@ export const adminRouter = router({
           created_by: ctx.user!.sub,
           period_from: facts.period.from,
           period_to: facts.period.to,
-          weeks: input.weeks,
+          period: input.period,
           facts: facts as unknown as import('@bcwork/db').Json,
           report: report as unknown as import('@bcwork/db').Json,
           model: report ? MODELO_ANALISTA : null,
@@ -1521,7 +1521,7 @@ export const adminRouter = router({
         entityId: data.id,
         ipInet: ctx.ip,
         userAgent: ctx.userAgent,
-        after: { weeks: input.weeks, model: report ? MODELO_ANALISTA : null },
+        after: { period: input.period, model: report ? MODELO_ANALISTA : null },
       })
       return { id: data.id, createdAt: data.created_at, facts, report, error }
     }),
@@ -1529,7 +1529,7 @@ export const adminRouter = router({
   listAnalyses: adminProcedure.query(async ({ ctx }) => {
     const { data, error } = await ctx.db
       .from('ai_analyses')
-      .select('id, period_from, period_to, weeks, model, error, created_at, created_by')
+      .select('id, period_from, period_to, period, weeks, model, error, created_at, created_by')
       .eq('tenant_id', ctx.user!.tid)
       .order('created_at', { ascending: false })
       .limit(24)
@@ -1542,7 +1542,9 @@ export const adminRouter = router({
     .query(async ({ ctx, input }) => {
       const { data, error } = await ctx.db
         .from('ai_analyses')
-        .select('id, period_from, period_to, weeks, model, error, created_at, facts, report')
+        .select(
+          'id, period_from, period_to, period, weeks, model, error, created_at, facts, report',
+        )
         .eq('tenant_id', ctx.user!.tid)
         .eq('id', input.id)
         .maybeSingle()

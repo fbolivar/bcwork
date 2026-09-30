@@ -19,9 +19,23 @@ type Db = ReturnType<typeof getDb>
  * diga se puede contrastar con un número.
  */
 
+export type PeriodKey = '1h' | '24h' | '7d' | '30d' | '1y'
+
 export interface AnalystInput {
-  /** Semanas completas a analizar (terminan ayer). */
-  weeks: number
+  period: PeriodKey
+}
+
+/** Cada periodo: cuántos días abarca, cómo se agrupa la serie de tendencia y
+ *  si es una ventana de menos de un día (foto instantánea, sin asistencia). */
+const PERIODOS: Record<
+  PeriodKey,
+  { days: number; bucket: 'none' | 'day' | 'month'; subhour: boolean; label: string }
+> = {
+  '1h': { days: 1, bucket: 'none', subhour: true, label: 'la última hora' },
+  '24h': { days: 1, bucket: 'none', subhour: false, label: 'las últimas 24 horas' },
+  '7d': { days: 7, bucket: 'day', subhour: false, label: 'los últimos 7 días' },
+  '30d': { days: 30, bucket: 'day', subhour: false, label: 'los últimos 30 días' },
+  '1y': { days: 365, bucket: 'month', subhour: false, label: 'el último año' },
 }
 
 export type Severidad = 'alta' | 'media' | 'baja' | 'positiva'
@@ -71,7 +85,15 @@ export interface PersonaHechos {
 
 export interface Hechos {
   company: string
-  period: { from: string; to: string; weeks: number; previousFrom: string; previousTo: string }
+  period: {
+    from: string
+    to: string
+    previousFrom: string
+    previousTo: string
+    key: PeriodKey
+    label: string
+    rangeLabel: string
+  }
   people: number
   totals: {
     current: PeriodoEmpresa
@@ -90,6 +112,8 @@ export interface Hechos {
     productivityPct: number | null
     latePct: number | null
   }[]
+  /** Perfil de productividad por hora del día (para la gráfica del informe). */
+  profile: { hour: number; productive: number; nonProductive: number; neutral: number }[]
   signals: Senal[]
   persons: PersonaHechos[]
 }
@@ -146,14 +170,6 @@ function hhmm(minutos: number | null): string | null {
   return `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`
 }
 
-/** Lunes de la semana ISO a la que pertenece `date`. */
-function lunesDe(date: string): string {
-  const d = new Date(`${date}T12:00:00Z`)
-  const dow = d.getUTCDay() || 7
-  d.setUTCDate(d.getUTCDate() - (dow - 1))
-  return d.toISOString().slice(0, 10)
-}
-
 function tendencia(serie: (number | null)[], umbral: number): 'sube' | 'baja' | 'estable' | null {
   const v = serie.filter((x): x is number => x !== null)
   if (v.length < 3) return null
@@ -174,29 +190,75 @@ function tendencia(serie: (number | null)[], umbral: number): 'sube' | 'baja' | 
   return 'estable'
 }
 
+function localDate(d: Date, tz: string): string {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: tz,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(d)
+}
+function hhmmLocal(iso: string, tz: string): string {
+  return new Intl.DateTimeFormat('es-CO', {
+    timeZone: tz,
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).format(new Date(iso))
+}
+function primeroDeMes(dia: string): string {
+  return dia.slice(0, 7) + '-01'
+}
+function finDeMes(primero: string): string {
+  const [y, m] = primero.split('-').map(Number)
+  return new Date(Date.UTC(y!, m!, 0)).toISOString().slice(0, 10)
+}
+function mesSiguiente(primero: string): string {
+  const [y, m] = primero.split('-').map(Number)
+  return new Date(Date.UTC(y!, m!, 1)).toISOString().slice(0, 10)
+}
+function etiquetaMes(primero: string): string {
+  const [y, m] = primero.split('-').map(Number)
+  return new Date(Date.UTC(y!, m! - 1, 1)).toLocaleDateString('es-CO', {
+    month: 'short',
+    year: '2-digit',
+    timeZone: 'UTC',
+  })
+}
+
 export async function buildAnalystFacts(
   db: Db,
   tenantId: string,
   timeZone: string,
   input: AnalystInput,
 ): Promise<Hechos> {
-  const weeks = input.weeks
-  // Hoy local; el periodo termina ayer para no analizar un día a medias.
+  const spec = PERIODOS[input.period]
   const ahora = new Date()
-  const hoy = new Date(
-    ahora.getTime() +
-      (localHourAndDow(ahora.toISOString(), timeZone).hour - ahora.getUTCHours()) * 3_600_000,
-  )
-    .toISOString()
-    .slice(0, 10)
-  const to = masDias(hoy, -1)
-  const from = masDias(to, -(weeks * 7 - 1))
-  const previousTo = masDias(from, -1)
-  const previousFrom = masDias(previousTo, -(weeks * 7 - 1))
+  const hoy = localDate(ahora, timeZone)
 
-  const utcDesde = localDayRange(previousFrom, timeZone).from
-  const utcMedio = localDayRange(from, timeZone).from
-  const utcHasta = localDayRange(to, timeZone).to
+  // Ventanas actual y anterior (misma longitud). En 1h son sub-diarias; en el
+  // resto, días completos que terminan ayer para no analizar un día a medias.
+  let from: string, to: string, previousFrom: string, previousTo: string
+  let curFromTs: string, curToTs: string, prevFromTs: string, prevToTs: string
+  let rangeLabel: string
+  if (spec.subhour) {
+    curToTs = ahora.toISOString()
+    curFromTs = new Date(ahora.getTime() - 3_600_000).toISOString()
+    prevToTs = curFromTs
+    prevFromTs = new Date(ahora.getTime() - 7_200_000).toISOString()
+    from = to = previousFrom = previousTo = hoy
+    rangeLabel = `${hoy} · ${hhmmLocal(curFromTs, timeZone)}–${hhmmLocal(curToTs, timeZone)}`
+  } else {
+    to = masDias(hoy, -1)
+    from = masDias(to, -(spec.days - 1))
+    previousTo = masDias(from, -1)
+    previousFrom = masDias(previousTo, -(spec.days - 1))
+    curFromTs = localDayRange(from, timeZone).from
+    curToTs = localDayRange(to, timeZone).to
+    prevFromTs = localDayRange(previousFrom, timeZone).from
+    prevToTs = localDayRange(previousTo, timeZone).to
+    rangeLabel = from === to ? from : `${from} – ${to}`
+  }
 
   const [{ data: tenant }, { data: usuarios }] = await Promise.all([
     db.from('tenants').select('legal_name, trade_name').eq('id', tenantId).maybeSingle(),
@@ -210,17 +272,23 @@ export async function buildAnalystFacts(
   const personas = usuarios ?? []
   const ids = personas.map((u) => u.id)
 
-  const vacio = (p: PeriodoEmpresa): PeriodoEmpresa => p
+  const periodInfo = {
+    from,
+    to,
+    previousFrom,
+    previousTo,
+    key: input.period,
+    label: spec.label,
+    rangeLabel,
+  }
   const base: Hechos = {
     company: tenant?.trade_name || tenant?.legal_name || '',
-    period: { from, to, weeks, previousFrom, previousTo },
+    period: periodInfo,
     people: personas.length,
-    totals: {
-      current: vacio(empresaVacia()),
-      previous: vacio(empresaVacia()),
-    },
+    totals: { current: empresaVacia(), previous: empresaVacia() },
     departments: [],
     weekly: [],
+    profile: [],
     signals: [],
     persons: [],
   }
@@ -239,19 +307,33 @@ export async function buildAnalystFacts(
     .maybeSingle()
   const gapMin = cfg?.work_gap_minutes ?? 30
   const ausencias = await cargarAusencias(db, tenantId, previousFrom, to)
-  const [dias, apps, fuera, { data: asignaciones }] = await Promise.all([
+  const [curBlocks, prevBlocks, apps, fuera, perfilR, { data: asignaciones }] = await Promise.all([
     rpc.rpc('work_day_blocks', {
-      p_from: utcDesde,
-      p_to: utcHasta,
+      p_from: curFromTs,
+      p_to: curToTs,
       p_user_ids: ids,
       p_gap_minutes: gapMin,
       p_tz: timeZone,
     }),
-    rpc.rpc('analyst_user_apps', { p_from: utcMedio, p_to: utcHasta, p_user_ids: ids, p_top: 8 }),
-    rpc.rpc('analyst_user_offhours', {
-      p_from: utcDesde,
-      p_to: utcHasta,
+    rpc.rpc('work_day_blocks', {
+      p_from: prevFromTs,
+      p_to: prevToTs,
       p_user_ids: ids,
+      p_gap_minutes: gapMin,
+      p_tz: timeZone,
+    }),
+    rpc.rpc('analyst_user_apps', { p_from: curFromTs, p_to: curToTs, p_user_ids: ids, p_top: 8 }),
+    rpc.rpc('analyst_user_offhours', {
+      p_from: curFromTs,
+      p_to: curToTs,
+      p_user_ids: ids,
+      p_tz: timeZone,
+    }),
+    rpc.rpc('report_time_profile', {
+      p_from: curFromTs,
+      p_to: curToTs,
+      p_user_ids: ids,
+      p_bucket_minutes: 60,
       p_tz: timeZone,
     }),
     db
@@ -263,9 +345,9 @@ export async function buildAnalystFacts(
       .in('user_id', ids)
       .lte('effective_from', to),
   ])
-  for (const r of [dias, apps, fuera]) if (r.error) throw new Error(r.error.message)
+  for (const r of [curBlocks, prevBlocks, apps, fuera, perfilR])
+    if (r.error) throw new Error(r.error.message)
 
-  const userDays = (dias.data ?? []) as UserDay[]
   const appFilas = (apps.data ?? []) as {
     user_id: string
     app_identifier: string
@@ -279,6 +361,26 @@ export async function buildAnalystFacts(
     late: number
     weekend: number
   }[]
+
+  // Perfil de productividad por hora del dia (bucket de 60 min => bucket = hora).
+  const profile = Array.from({ length: 24 }, (_, hour) => ({
+    hour,
+    productive: 0,
+    nonProductive: 0,
+    neutral: 0,
+  }))
+  for (const f of (perfilR.data ?? []) as {
+    bucket: number
+    productive: number
+    non_productive: number
+    neutral: number
+  }[]) {
+    const fila = profile[f.bucket]
+    if (!fila) continue
+    fila.productive += Number(f.productive)
+    fila.nonProductive += Number(f.non_productive)
+    fila.neutral += Number(f.neutral)
+  }
 
   // ── Horario vigente por persona y día ──
   type Horario = {
@@ -312,21 +414,34 @@ export async function buildAnalystFacts(
     return h?.dias?.length ? h.dias.includes(dow) : dow >= 1 && dow <= 5
   }
 
-  // ── Índices por persona ──
-  const diasPor = new Map<string, Map<string, UserDay>>()
-  for (const d of userDays) {
-    const m = diasPor.get(d.user_id) ?? new Map()
-    m.set(d.day, d)
-    diasPor.set(d.user_id, m)
+  // ── Índices por persona (ventana actual y anterior) ──
+  const indexar = (rows: UserDay[]) => {
+    const m = new Map<string, Map<string, UserDay>>()
+    for (const d of rows) {
+      const u = m.get(d.user_id) ?? new Map()
+      u.set(d.day, d)
+      m.set(d.user_id, u)
+    }
+    return m
   }
+  const diasCur = indexar((curBlocks.data ?? []) as UserDay[])
+  const diasPrev = indexar((prevBlocks.data ?? []) as UserDay[])
   const fueraPor = new Map<string, Map<string, { early: number; late: number; weekend: number }>>()
   for (const f of fueraFilas) {
     const m = fueraPor.get(f.user_id) ?? new Map()
     m.set(f.day, { early: Number(f.early), late: Number(f.late), weekend: Number(f.weekend) })
     fueraPor.set(f.user_id, m)
   }
-  // ── Periodo de una persona ──
-  function periodo(uid: string, desde: string, hasta: string): PeriodoPersona & { _raw: Raw } {
+
+  // ── Periodo de una persona dentro de [desde, hasta], leyendo `diasMap`. ──
+  // skipAtt: en ventanas sub-diarias (1h) no tiene sentido asistencia/tarde.
+  function periodo(
+    uid: string,
+    desde: string,
+    hasta: string,
+    diasMap: Map<string, UserDay> | undefined,
+    skipAtt = false,
+  ): PeriodoPersona & { _raw: Raw } {
     const raw: Raw = {
       prod: 0,
       noProd: 0,
@@ -345,16 +460,14 @@ export async function buildAnalystFacts(
       finde: 0,
       despues19: 0,
     }
-    const dias = diasPor.get(uid)
     const fueraD = fueraPor.get(uid)
     for (let dia = desde; dia <= hasta; dia = masDias(dia, 1)) {
-      // Dia de ausencia justificada: fuera de todo (ni esperado ni falta).
-      if (ausencias.tipoEn(uid, dia)) {
+      if (!skipAtt && ausencias.tipoEn(uid, dia)) {
         raw.leave++
         continue
       }
-      const d = dias?.get(dia)
-      const exp = esperado(uid, dia)
+      const d = diasMap?.get(dia)
+      const exp = !skipAtt && esperado(uid, dia)
       if (exp) raw.esperados++
       if (!d) {
         if (exp) raw.ausentes++
@@ -364,7 +477,6 @@ export async function buildAnalystFacts(
       raw.prod += Number(d.productive)
       raw.noProd += Number(d.non_productive)
       raw.neutro += Number(d.neutral)
-      // Jornada e inactividad por bloques (equipo encendido sin uso no cuenta).
       raw.jornada += Number(d.worked_seconds)
       raw.idle += Number(d.idle_seconds)
       const medianoche = localMidnightUtc(dia, timeZone).getTime()
@@ -372,7 +484,7 @@ export async function buildAnalystFacts(
         raw.llegadas.push((Date.parse(d.first_at) - medianoche) / 60_000)
         raw.salidas.push((Date.parse(d.last_at) - medianoche) / 60_000)
         const h = horarioEl(uid, dia)
-        if (h?.inicioMin !== null && h?.inicioMin !== undefined) {
+        if (!skipAtt && h?.inicioMin !== null && h?.inicioMin !== undefined) {
           const retraso =
             Math.round((Date.parse(d.first_at) - medianoche) / 60_000) - h.inicioMin - h.flex
           if (retraso > 0) {
@@ -412,28 +524,35 @@ export async function buildAnalystFacts(
     }
   }
 
+  // Buckets de la serie de tendencia según el periodo (día o mes).
+  const buckets: { from: string; to: string; label: string }[] = []
+  if (spec.bucket === 'day') {
+    for (let d = from; d <= to; d = masDias(d, 1)) buckets.push({ from: d, to: d, label: d })
+  } else if (spec.bucket === 'month') {
+    for (let m = primeroDeMes(from); m <= to; m = mesSiguiente(m)) {
+      const fin = finDeMes(m)
+      buckets.push({ from: m < from ? from : m, to: fin > to ? to : fin, label: etiquetaMes(m) })
+    }
+  }
+
   // ── Personas ──
   const persons: PersonaHechos[] = []
   const rawActual = new Map<string, Raw>()
   const rawPrevio = new Map<string, Raw>()
   for (const u of personas) {
-    const cur = periodo(u.id, from, to)
-    const prev = periodo(u.id, previousFrom, previousTo)
+    const cur = periodo(u.id, from, to, diasCur.get(u.id), spec.subhour)
+    const prev = periodo(u.id, previousFrom, previousTo, diasPrev.get(u.id), spec.subhour)
     rawActual.set(u.id, cur._raw)
     rawPrevio.set(u.id, prev._raw)
 
-    // Serie semanal (periodo actual), para tendencia.
-    const weekly: PersonaHechos['weekly'] = []
-    for (let i = 0; i < weeks; i++) {
-      const wFrom = masDias(from, i * 7)
-      const wTo = masDias(wFrom, 6)
-      const w = periodo(u.id, wFrom, wTo > to ? to : wTo)
-      weekly.push({
-        week: lunesDe(wFrom),
+    const weekly: PersonaHechos['weekly'] = buckets.map((b) => {
+      const w = periodo(u.id, b.from, b.to, diasCur.get(u.id), true)
+      return {
+        week: b.label,
         activeHoursPerDay: w.activeHoursPerDay,
         productivityPct: w.productivityPct,
-      })
-    }
+      }
+    })
 
     const topApps = appFilas
       .filter((a) => a.user_id === u.id)
@@ -520,17 +639,16 @@ export async function buildAnalystFacts(
     }
   })
 
-  // ── Serie semanal de la empresa ──
-  const weekly: Hechos['weekly'] = []
-  for (let i = 0; i < weeks; i++) {
-    const wFrom = masDias(from, i * 7)
-    const wTo = masDias(wFrom, 6)
-    const raws = persons.map((p) => periodo(p.userId, wFrom, wTo > to ? to : wTo)._raw)
+  // ── Serie de la empresa (mismos buckets) ──
+  const weekly: Hechos['weekly'] = buckets.map((b) => {
+    const raws = persons.map(
+      (p) => periodo(p.userId, b.from, b.to, diasCur.get(p.userId), true)._raw,
+    )
     const s = (f: (r: Raw) => number) => raws.reduce((acc, r) => acc + f(r), 0)
     const registrado = s((r) => r.prod + r.noProd + r.neutro)
     const activos = s((r) => r.activos)
-    weekly.push({
-      week: lunesDe(wFrom),
+    return {
+      week: b.label,
       activeHoursPerDay: activos > 0 ? r1(registrado / H / activos) : null,
       productivityPct: pct(
         s((r) => r.prod),
@@ -540,8 +658,8 @@ export async function buildAnalystFacts(
         s((r) => r.tarde),
         activos,
       ),
-    })
-  }
+    }
+  })
 
   const signals = [
     ...senalesEmpresa(totals, departments, persons),
@@ -553,6 +671,7 @@ export async function buildAnalystFacts(
     totals,
     departments,
     weekly,
+    profile,
     signals,
     persons: persons.sort((a, b) => a.name.localeCompare(b.name, 'es')),
   }
@@ -654,7 +773,7 @@ function senalesPersona(p: PersonaHechos): Senal[] {
       severity: 'media',
       userId: uid,
       title: `${n}: tendencia descendente de productividad`,
-      detail: `Semana a semana la productividad viene bajando: ${p.weekly.map((w) => (w.productivityPct === null ? '—' : `${w.productivityPct}%`)).join(' → ')}.`,
+      detail: `A lo largo del periodo la productividad viene bajando: ${p.weekly.map((w) => (w.productivityPct === null ? '—' : `${w.productivityPct}%`)).join(' → ')}.`,
     })
   if (
     c.activeHoursPerDay !== null &&

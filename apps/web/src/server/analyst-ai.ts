@@ -93,7 +93,7 @@ export async function generarInforme(hechos: Hechos): Promise<Informe> {
   const openrouter = getOpenRouter()
   if (!openrouter) throw new Error('Falta configurar OPENROUTER_API_KEY para el analista IA.')
   const model = modelo(openrouter)
-  const encabezado = `Periodo de ${hechos.period.weeks} semanas (${hechos.period.from} a ${hechos.period.to}) comparado con el anterior (${hechos.period.previousFrom} a ${hechos.period.previousTo}) de la empresa ${hechos.company}. Las "signals" ya vienen calculadas por reglas: úsalas como punto de partida, contrástalas con las cifras y añade lo que las reglas no ven (patrones entre personas, departamentos, evolución semanal).`
+  const encabezado = `Periodo: ${hechos.period.label} (${hechos.period.rangeLabel}) comparado con el anterior de la empresa ${hechos.company}. Las "signals" ya vienen calculadas por reglas: úsalas como punto de partida, contrástalas con las cifras y añade lo que las reglas no ven (patrones entre personas, departamentos, evolución semanal).`
 
   const promptEstructura = `${encabezado}
 

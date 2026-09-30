@@ -18,11 +18,19 @@ import {
 import { MarkdownLite } from '@/features/shared/MarkdownLite'
 import { Sparkline } from '@/features/shared/panel-widgets'
 import { COLOR } from './panel-identidad'
-import type { Hechos, PersonaHechos, Senal, Severidad } from '@/server/analyst'
+import type { Hechos, PersonaHechos, Senal, Severidad, PeriodKey } from '@/server/analyst'
+
+const PERIODOS: { key: PeriodKey; label: string }[] = [
+  { key: '1h', label: 'Última hora' },
+  { key: '24h', label: 'Últimas 24 horas' },
+  { key: '7d', label: 'Últimos 7 días' },
+  { key: '30d', label: 'Últimos 30 días' },
+  { key: '1y', label: 'Último año' },
+]
 import type { Informe } from '@/server/analyst-ai'
 
 /**
- * Analista IA: un análisis por periodo (2 a 12 semanas, comparado con el
+ * Analista IA: un análisis por periodo (comparado con el
  * anterior) con resumen ejecutivo, señales, lectura por persona,
  * recomendaciones e informe para gerencia. Los hechos siempre se muestran;
  * la interpretación aparece cuando hay clave de IA.
@@ -31,7 +39,6 @@ import type { Informe } from '@/server/analyst-ai'
 type Analisis = {
   id: string
   createdAt: string
-  weeks: number
   model: string | null
   error: string | null
   facts: Hechos
@@ -113,11 +120,27 @@ function Tendencia({ t }: { t: 'sube' | 'baja' | 'estable' | null }) {
   return <span className="text-xs text-gray-300">—</span>
 }
 
+/** Logo de BCWork como data URL para incrustarlo en el PDF. */
+async function cargarLogo(): Promise<string | null> {
+  try {
+    const res = await fetch('/brand/icon-192.png')
+    const blob = await res.blob()
+    return await new Promise<string | null>((resolve) => {
+      const fr = new FileReader()
+      fr.onload = () => resolve(fr.result as string)
+      fr.onerror = () => resolve(null)
+      fr.readAsDataURL(blob)
+    })
+  } catch {
+    return null
+  }
+}
+
 export function AnalystPanel() {
   const utils = trpc.useUtils()
   const { data: estado } = trpc.admin.analystStatus.useQuery()
   const { data: historial } = trpc.admin.listAnalyses.useQuery()
-  const [weeks, setWeeks] = useState(4)
+  const [period, setPeriod] = useState<PeriodKey>('7d')
   const [seleccionado, setSeleccionado] = useState<string | null>(null)
   const [actual, setActual] = useState<Analisis | null>(null)
 
@@ -137,7 +160,6 @@ export function AnalystPanel() {
       setActual({
         id: r.id,
         createdAt: r.createdAt,
-        weeks,
         model: r.report ? (estado?.model ?? null) : null,
         error: r.error,
         facts: r.facts,
@@ -163,19 +185,19 @@ export function AnalystPanel() {
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <select
-            value={weeks}
-            onChange={(e) => setWeeks(Number(e.target.value))}
+            value={period}
+            onChange={(e) => setPeriod(e.target.value as PeriodKey)}
             className="rounded-md border border-gray-300 px-3 py-2 text-sm"
           >
-            {[2, 4, 8, 12].map((w) => (
-              <option key={w} value={w}>
-                Últimas {w} semanas
+            {PERIODOS.map((p) => (
+              <option key={p.key} value={p.key}>
+                {p.label}
               </option>
             ))}
           </select>
           <button
             type="button"
-            onClick={() => correr.mutate({ weeks })}
+            onClick={() => correr.mutate({ period })}
             disabled={correr.isPending}
             className="inline-flex items-center gap-2 rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
           >
@@ -263,55 +285,356 @@ function Resultado({ a }: { a: Analisis }) {
   async function descargarPdf() {
     const { default: jsPDF } = await import('jspdf')
     const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
-    const margen = 18
-    const ancho = 210 - margen * 2
-    let y = 20
+    const W = 210
+    const Hp = 297
+    const M = 16
+    const CW = W - M * 2
+    const BRAND = [37, 99, 235]
+    const GREEN = [34, 197, 94]
+    const ORANGE = [249, 115, 22]
+    const RED = [239, 68, 68]
+    const DARK = [31, 41, 55]
+    const GRAY = [107, 114, 128]
+    const LINE = [226, 232, 240]
+    const GREYBAR = [209, 213, 219]
+    const logo = await cargarLogo()
+    let y = 0
+    let page = 1
+    const setc = (c: number[]) => doc.setTextColor(c[0]!, c[1]!, c[2]!)
+    const fill = (c: number[]) => doc.setFillColor(c[0]!, c[1]!, c[2]!)
+    const drawc = (c: number[]) => doc.setDrawColor(c[0]!, c[1]!, c[2]!)
+
+    function footer() {
+      drawc(LINE)
+      doc.setLineWidth(0.2)
+      doc.line(M, Hp - 12, W - M, Hp - 12)
+      doc.setFont('helvetica', 'normal')
+      doc.setFontSize(7)
+      setc(GRAY)
+      doc.text('BCWork · Informe confidencial — uso interno', M, Hp - 8)
+      doc.text(`Página ${page}`, W - M, Hp - 8, { align: 'right' })
+    }
+    function salto(min = 0) {
+      if (y + min > Hp - 16) {
+        footer()
+        doc.addPage()
+        page++
+        y = 18
+      }
+    }
+    function titulo(t: string) {
+      salto(16)
+      y += 3
+      fill(BRAND)
+      doc.roundedRect(M, y - 0.5, 2.5, 5.5, 1, 1, 'F')
+      doc.setFont('helvetica', 'bold')
+      doc.setFontSize(12)
+      setc(DARK)
+      doc.text(t, M + 5, y + 4)
+      y += 9
+    }
+    function parrafo(txt: string) {
+      doc.setFont('helvetica', 'normal')
+      doc.setFontSize(9.5)
+      setc([55, 65, 81])
+      for (const l of doc.splitTextToSize(txt, CW) as string[]) {
+        salto(6)
+        doc.text(l, M, y)
+        y += 5
+      }
+    }
+    function delta(cur: number | null, prev: number | null, u: string): string {
+      if (cur == null || prev == null) return ''
+      const d = Math.round((cur - prev) * 10) / 10
+      if (Math.abs(d) < 0.05) return 'igual que el anterior'
+      return `${d > 0 ? '+' : ''}${d} ${u} vs. anterior`
+    }
+
+    // ── Encabezado de marca ──
+    fill(BRAND)
+    doc.rect(0, 0, W, 38, 'F')
+    if (logo) {
+      try {
+        doc.addImage(logo, 'PNG', M, 9, 18, 18)
+      } catch {
+        /* sin logo */
+      }
+    }
+    const tx = M + (logo ? 23 : 0)
+    doc.setFont('helvetica', 'bold')
+    doc.setFontSize(20)
+    doc.setTextColor(255, 255, 255)
+    doc.text('BCWork', tx, 18)
+    doc.setFont('helvetica', 'normal')
+    doc.setFontSize(10)
+    doc.setTextColor(226, 232, 240)
+    doc.text('Informe de comportamiento del equipo', tx, 26)
+    doc.setFontSize(9)
+    doc.text(
+      new Date(a.createdAt).toLocaleDateString('es-CO', {
+        day: 'numeric',
+        month: 'long',
+        year: 'numeric',
+      }),
+      W - M,
+      18,
+      { align: 'right' },
+    )
+    y = 48
+
     doc.setFont('helvetica', 'bold')
     doc.setFontSize(16)
-    doc.text(`Informe de comportamiento del equipo — ${f.company}`, margen, y)
+    setc(DARK)
+    doc.text(f.company || 'Empresa', M, y)
     y += 7
     doc.setFont('helvetica', 'normal')
     doc.setFontSize(10)
-    doc.setTextColor(110)
-    doc.text(
-      `Periodo ${fecha(f.period.from)} – ${fecha(f.period.to)} (${f.period.weeks} semanas) · comparado con ${fecha(f.period.previousFrom)} – ${fecha(f.period.previousTo)} · Generado por BCWork el ${fechaHora(a.createdAt)}`,
-      margen,
-      y,
-      { maxWidth: ancho },
-    )
-    y += 12
-    doc.setTextColor(30)
-    for (const linea of informeTexto.replace(/\r\n/g, '\n').split('\n')) {
-      const t = linea.trim()
-      if (!t) {
-        y += 2
-        continue
+    setc(GRAY)
+    doc.text(`${f.period.label} · ${f.period.rangeLabel} · ${f.people} personas`, M, y)
+    y += 5
+    doc.setFontSize(8)
+    doc.text(a.model ? 'Generado por BCWork · Analista IA' : 'Hechos calculados por BCWork', M, y)
+    y += 9
+
+    // ── Tarjetas KPI ──
+    const c = f.totals.current
+    const pv = f.totals.previous
+    const kpis = [
+      {
+        label: 'Productividad',
+        val: c.productivityPct == null ? '—' : `${c.productivityPct}%`,
+        col: GREEN,
+        delta: delta(c.productivityPct, pv.productivityPct, 'pp'),
+      },
+      {
+        label: 'Horas activas/día',
+        val: c.activeHoursPerDay == null ? '—' : `${c.activeHoursPerDay} h`,
+        col: BRAND,
+        delta: delta(c.activeHoursPerDay, pv.activeHoursPerDay, 'h'),
+      },
+      {
+        label: 'Jornadas tarde',
+        val: c.latePct == null ? '—' : `${c.latePct}%`,
+        col: ORANGE,
+        delta: '',
+      },
+      {
+        label: 'Fuera de horario',
+        val: `${r1(c.offHoursHours + c.weekendHours)} h`,
+        col: RED,
+        delta: '',
+      },
+    ]
+    const gap = 4
+    const cw = (CW - gap * 3) / 4
+    const ch = 23
+    kpis.forEach((k, i) => {
+      const x = M + i * (cw + gap)
+      fill([248, 250, 252])
+      doc.roundedRect(x, y, cw, ch, 2, 2, 'F')
+      fill(k.col)
+      doc.rect(x, y, cw, 2, 'F')
+      doc.setFont('helvetica', 'bold')
+      doc.setFontSize(15)
+      setc(DARK)
+      doc.text(k.val, x + 3, y + 11)
+      doc.setFont('helvetica', 'normal')
+      doc.setFontSize(6.5)
+      setc(GRAY)
+      doc.text(k.label.toUpperCase(), x + 3, y + 16)
+      if (k.delta) doc.text(k.delta, x + 3, y + 20)
+    })
+    y += ch + 8
+
+    // ── Gráfica: productividad por hora ──
+    titulo('Actividad por hora del día')
+    const chartH = 26
+    const by = y
+    const prof = f.profile ?? []
+    const maxSec = Math.max(1, ...prof.map((p) => p.productive + p.nonProductive + p.neutral))
+    const bw = CW / 24
+    prof.forEach((p, h) => {
+      const x = M + h * bw
+      let off = 0
+      const seg = (v: number, col: number[]) => {
+        if (v <= 0) return
+        const sh = (v / maxSec) * chartH
+        fill(col)
+        doc.rect(x + 0.4, by + chartH - off - sh, bw - 0.8, sh, 'F')
+        off += sh
       }
-      const h = /^(#{1,4})\s+(.*)$/.exec(t)
-      const item = /^[-*]\s+(.*)$/.exec(t) ?? /^\d+[.)]\s+(.*)$/.exec(t)
-      let texto = (h ? h[2]! : item ? `• ${item[1]}` : t).replace(/\*\*/g, '')
-      if (t.startsWith('|')) {
-        if (/^\|?\s*:?-+/.test(t)) continue
-        texto = t
-          .replace(/^\||\|$/g, '')
-          .split('|')
-          .map((x) => x.trim())
-          .join('   ')
+      seg(p.productive, GREEN)
+      seg(p.neutral, GREYBAR)
+      seg(p.nonProductive, ORANGE)
+      if (h % 3 === 0) {
+        doc.setFontSize(6)
+        setc(GRAY)
+        doc.text(String(h).padStart(2, '0'), x, by + chartH + 4)
       }
-      doc.setFont('helvetica', h ? 'bold' : 'normal')
-      doc.setFontSize(h ? 12 : 10)
-      const lineas = doc.splitTextToSize(texto, item ? ancho - 4 : ancho) as string[]
-      for (const l of lineas) {
-        if (y > 280) {
-          doc.addPage()
-          y = 20
-        }
-        doc.text(l, margen + (item ? 4 : 0), y)
-        y += h ? 6 : 5
-      }
-      if (h) y += 1
+    })
+    y = by + chartH + 9
+    let lx = M
+    ;(
+      [
+        ['Productivo', GREEN],
+        ['Neutral', GREYBAR],
+        ['Improductivo', ORANGE],
+      ] as [string, number[]][]
+    ).forEach(([t, col]) => {
+      fill(col)
+      doc.rect(lx, y - 3, 3, 3, 'F')
+      doc.setFont('helvetica', 'normal')
+      doc.setFontSize(7)
+      setc(GRAY)
+      doc.text(t, lx + 4, y - 0.5)
+      lx += doc.getTextWidth(t) + 14
+    })
+    y += 6
+
+    // ── Resumen ejecutivo ──
+    if (r?.resumen_ejecutivo) {
+      titulo('Resumen ejecutivo')
+      parrafo(r.resumen_ejecutivo)
+      y += 3
     }
-    doc.save(`bcwork-analisis-${f.period.from}-${f.period.to}.pdf`)
+
+    // ── Hallazgos ──
+    const hall = r
+      ? r.hallazgos.map((h) => ({ sev: h.severidad, t: h.titulo, d: h.detalle }))
+      : f.signals.map((s) => ({ sev: s.severity, t: s.title, d: s.detail }))
+    if (hall.length) {
+      titulo('Hallazgos principales')
+      for (const h of hall) {
+        salto(13)
+        const col =
+          h.sev === 'alta' ? RED : h.sev === 'media' ? ORANGE : h.sev === 'positiva' ? GREEN : GRAY
+        fill(col)
+        doc.circle(M + 1.3, y + 1, 1.2, 'F')
+        doc.setFont('helvetica', 'bold')
+        doc.setFontSize(9.5)
+        setc(DARK)
+        for (const l of doc.splitTextToSize(h.t, CW - 7) as string[]) {
+          doc.text(l, M + 5, y + 1.5)
+          y += 4.5
+        }
+        doc.setFont('helvetica', 'normal')
+        doc.setFontSize(8)
+        setc(GRAY)
+        for (const l of doc.splitTextToSize(h.d, CW - 7) as string[]) {
+          salto(5)
+          doc.text(l, M + 5, y + 1)
+          y += 4
+        }
+        y += 3
+      }
+    }
+
+    // ── Departamentos ──
+    if (f.departments.length) {
+      titulo('Por departamento')
+      const widths = [0.4, 0.15, 0.15, 0.18, 0.12]
+      const colX = widths.map((_, i) => M + widths.slice(0, i).reduce((s, w) => s + w, 0) * CW)
+      fill([241, 245, 249])
+      doc.rect(M, y, CW, 7, 'F')
+      doc.setFont('helvetica', 'bold')
+      doc.setFontSize(7.5)
+      setc(GRAY)
+      ;['Área', 'Personas', 'h/día', 'Productividad', 'Δ pp'].forEach((h, i) =>
+        doc.text(h, colX[i]! + 1, y + 4.8),
+      )
+      y += 7
+      doc.setFont('helvetica', 'normal')
+      doc.setFontSize(8)
+      f.departments.forEach((d, ri) => {
+        salto(6)
+        if (ri % 2) {
+          fill([250, 250, 251])
+          doc.rect(M, y, CW, 6, 'F')
+        }
+        setc(DARK)
+        const cells = [
+          d.name,
+          String(d.people),
+          d.activeHoursPerDay == null ? '—' : String(d.activeHoursPerDay),
+          d.productivityPct == null ? '—' : `${d.productivityPct}%`,
+          d.deltaProductivityPp == null
+            ? '—'
+            : `${d.deltaProductivityPp > 0 ? '+' : ''}${d.deltaProductivityPp}`,
+        ]
+        cells.forEach((cell, i) => doc.text(String(cell), colX[i]! + 1, y + 4))
+        y += 6
+      })
+      y += 4
+    }
+
+    // ── Personas a seguir ──
+    const pers = r?.personas ?? []
+    if (pers.length) {
+      titulo('Personas a seguir')
+      for (const x of pers) {
+        salto(15)
+        const col = x.prioridad === 'alta' ? RED : x.prioridad === 'media' ? ORANGE : GRAY
+        const y0 = y
+        doc.setFont('helvetica', 'bold')
+        doc.setFontSize(9)
+        setc(DARK)
+        doc.text(x.nombre, M + 4, y + 1)
+        y += 5
+        doc.setFont('helvetica', 'normal')
+        doc.setFontSize(8)
+        setc(GRAY)
+        for (const l of doc.splitTextToSize(x.diagnostico, CW - 6) as string[]) {
+          salto(4)
+          doc.text(l, M + 4, y)
+          y += 4
+        }
+        setc(BRAND)
+        for (const l of doc.splitTextToSize(`Acción: ${x.recomendacion}`, CW - 6) as string[]) {
+          salto(4)
+          doc.text(l, M + 4, y)
+          y += 4
+        }
+        fill(col)
+        doc.roundedRect(M, y0 - 2.5, 1.5, y - y0 + 1, 0.5, 0.5, 'F')
+        y += 4
+      }
+    }
+
+    // ── Recomendaciones ──
+    if (r?.recomendaciones?.length) {
+      titulo('Recomendaciones priorizadas')
+      r.recomendaciones.forEach((x, i) => {
+        salto(13)
+        fill(BRAND)
+        doc.circle(M + 2.5, y, 2.5, 'F')
+        doc.setTextColor(255, 255, 255)
+        doc.setFont('helvetica', 'bold')
+        doc.setFontSize(8)
+        doc.text(String(i + 1), M + 2.5, y + 1.2, { align: 'center' })
+        doc.setFont('helvetica', 'bold')
+        doc.setFontSize(9)
+        setc(DARK)
+        for (const l of doc.splitTextToSize(x.accion, CW - 8) as string[]) {
+          doc.text(l, M + 7, y + 1)
+          y += 4.2
+        }
+        doc.setFont('helvetica', 'normal')
+        doc.setFontSize(8)
+        setc(GRAY)
+        for (const l of doc.splitTextToSize(x.por_que, CW - 8) as string[]) {
+          salto(4)
+          doc.text(l, M + 7, y + 1)
+          y += 4
+        }
+        doc.setFontSize(6.5)
+        setc(BRAND)
+        doc.text(`IMPACTO ${x.impacto.toUpperCase()}`, M + 7, y + 1)
+        y += 6
+      })
+    }
+
+    footer()
+    doc.save(`bcwork-informe-${f.period.key}-${f.period.to}.pdf`)
   }
 
   const personasIa = new Map((r?.personas ?? []).map((x) => [x.userId, x]))
@@ -326,8 +649,8 @@ function Resultado({ a }: { a: Analisis }) {
               Resumen ejecutivo
             </p>
             <p className="mt-1 text-xs text-gray-500">
-              {fecha(f.period.from)} – {fecha(f.period.to)} · {f.people} personas · comparado con{' '}
-              {fecha(f.period.previousFrom)} – {fecha(f.period.previousTo)}
+              {f.period.label} ({f.period.rangeLabel}) · {f.people} personas · comparado con el
+              periodo anterior
               {a.model && ` · ${a.model}`}
             </p>
           </div>
@@ -536,7 +859,7 @@ function Resultado({ a }: { a: Analisis }) {
                 <th className="pb-2 text-right font-semibold">Prod.</th>
                 <th className="pb-2 text-right font-semibold">Δ pp</th>
                 <th className="pb-2 text-center font-semibold">Tend.</th>
-                <th className="pb-2 font-semibold">Semanas</th>
+                <th className="pb-2 font-semibold">Tendencia</th>
                 <th className="pb-2 text-right font-semibold">Tarde</th>
                 <th className="pb-2 text-right font-semibold">Ausente</th>
                 <th className="pb-2 text-right font-semibold">Inactivo</th>
@@ -734,7 +1057,7 @@ function informeSinIa(f: Hechos): string {
     `| ${t} | ${n(a, u)} | ${n(b, u)} |`
   const lineas = [
     `## Informe de comportamiento del equipo — ${f.company}`,
-    `Periodo ${f.period.from} a ${f.period.to} (${f.period.weeks} semanas), comparado con ${f.period.previousFrom} a ${f.period.previousTo}. ${f.people} personas.`,
+    `Periodo: ${f.period.label} (${f.period.rangeLabel}), comparado con el periodo anterior. ${f.people} personas.`,
     '',
     '### Indicadores',
     '| Indicador | Periodo | Anterior |',
