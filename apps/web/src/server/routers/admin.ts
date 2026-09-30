@@ -26,6 +26,12 @@ type UserInsert = Database['public']['Tables']['users']['Insert']
 
 // Zona horaria del tenant; sin ella los cortes de día y las horas nocturnas
 // se calcularían en UTC y quedarían corridos cinco horas en Colombia.
+function masDiasISO(dias: number): string {
+  const d = new Date()
+  d.setUTCDate(d.getUTCDate() - dias)
+  return d.toISOString().slice(0, 10)
+}
+
 async function getTenantTimezone(
   db: { from: (t: 'tenants') => any },
   tenantId: string,
@@ -1044,6 +1050,38 @@ export const adminRouter = router({
       }))
       .sort((a, b) => b.total_seconds - a.total_seconds)
       .slice(0, 50)
+  }),
+
+  /** Cola de clasificación: uso real de apps y sitios (últimos 30 días) con su
+   *  clasificación actual, para ajustar en bloque lo neutral/sin clasificar. */
+  listUsageToClassify: adminProcedure.query(async ({ ctx }) => {
+    const tid = ctx.user!.tid
+    const tz = await getTenantTimezone(ctx.db, tid)
+    const from = localDayRange(masDiasISO(30), tz).from
+    const to = new Date().toISOString()
+    const { data: users } = await ctx.db
+      .from('users')
+      .select('id')
+      .eq('tenant_id', tid)
+      .eq('status', 'active')
+    const ids = (users ?? []).map((u) => u.id)
+    if (ids.length === 0) return [] as unknown[]
+    const { data, error } = await (ctx.db.rpc as any)('usage_to_classify', {
+      p_from: from,
+      p_to: to,
+      p_user_ids: ids,
+      p_top: 30,
+    })
+    if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+    return (data ?? []) as {
+      kind: 'app' | 'site'
+      identifier: string
+      seconds: number
+      productivity: string
+      rule_id: string | null
+      rule_category: string | null
+      rule_productivity: string | null
+    }[]
   }),
 
   upsertAppRule: adminProcedure
