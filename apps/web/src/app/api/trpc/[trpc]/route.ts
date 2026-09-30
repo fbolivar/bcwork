@@ -4,7 +4,7 @@ import { createContext } from '@/server/context'
 
 // El analista IA redacta un informe completo en una sola llamada: puede pasar
 // del minuto. El resto de procedimientos no se ven afectados por el tope.
-export const maxDuration = 120
+export const maxDuration = 200
 
 const handler = (req: Request) =>
   fetchRequestHandler({

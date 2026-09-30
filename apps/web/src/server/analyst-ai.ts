@@ -14,49 +14,63 @@ import type { Hechos } from './analyst'
 
 export const MODELO_ANALISTA = process.env.AI_MODEL || 'anthropic/claude-sonnet-5'
 
+// Esquema tolerante: los campos llevan valores por defecto y los enums usan
+// .catch para que un JSON casi-válido del modelo (un enum raro, un campo que
+// falta, un arreglo de más) no tumbe todo el informe. Antes fallaba ~1 de
+// cada 3 veces con "response did not match schema".
 export const InformeSchema = z.object({
   resumen_ejecutivo: z
     .string()
+    .default('')
     .describe(
       '3 a 5 frases para gerencia: qué pasó en el periodo, qué cambió y qué requiere decisión.',
     ),
   hallazgos: z
     .array(
       z.object({
-        titulo: z.string(),
-        detalle: z.string().describe('Con las cifras que lo sustentan.'),
-        severidad: z.enum(['alta', 'media', 'baja', 'positiva']),
-        personas: z.array(z.string()).describe('Nombres de las personas implicadas, si aplica.'),
+        titulo: z.string().default(''),
+        detalle: z.string().default('').describe('Con las cifras que lo sustentan.'),
+        severidad: z.enum(['alta', 'media', 'baja', 'positiva']).catch('media'),
+        personas: z
+          .array(z.string())
+          .default([])
+          .describe('Nombres de las personas implicadas, si aplica.'),
       }),
     )
-    .max(8),
+    .default([]),
   tendencias: z
     .string()
+    .default('')
     .describe('Lectura de la evolución semanal y del cambio frente al periodo anterior.'),
   personas: z
     .array(
       z.object({
-        userId: z.string(),
-        nombre: z.string(),
-        diagnostico: z.string().describe('Una o dos frases sobre su comportamiento en el periodo.'),
+        userId: z.string().default(''),
+        nombre: z.string().default(''),
+        diagnostico: z
+          .string()
+          .default('')
+          .describe('Una o dos frases sobre su comportamiento en el periodo.'),
         recomendacion: z
           .string()
+          .default('')
           .describe('Acción concreta para su líder, o "mantener" si va bien.'),
-        prioridad: z.enum(['alta', 'media', 'baja']),
+        prioridad: z.enum(['alta', 'media', 'baja']).catch('media'),
       }),
     )
+    .default([])
     .describe(
       'Solo las personas que merecen una nota: riesgos, cambios notables o desempeño destacado.',
     ),
   recomendaciones: z
     .array(
       z.object({
-        accion: z.string(),
-        por_que: z.string(),
-        impacto: z.enum(['alto', 'medio', 'bajo']),
+        accion: z.string().default(''),
+        por_que: z.string().default(''),
+        impacto: z.enum(['alto', 'medio', 'bajo']).catch('medio'),
       }),
     )
-    .max(6)
+    .default([])
     .describe('Decisiones para la administración, ordenadas por impacto.'),
 })
 
@@ -101,28 +115,26 @@ Entrega el análisis estructurado. En "personas" incluye solo a quienes merecen 
 
 HECHOS:
 ${contexto(hechos)}`
-  // El modelo a veces devuelve un JSON que no encaja en el esquema (~1 de cada
-  // 3 veces). Un reintento lo resuelve y evita que el usuario vea el error.
+  // El modelo a veces devuelve un JSON que no encaja en el esquema. El esquema
+  // ya es tolerante (defaults y enums con .catch); además se reintenta hasta
+  // tres veces bajando la temperatura antes de rendirse.
   const estructurado = async () => {
-    try {
-      return await generateObject({
-        model,
-        schema: InformeSchema,
-        system: SISTEMA,
-        prompt: promptEstructura,
-        temperature: 0.3,
-        maxOutputTokens: 6000,
-      })
-    } catch {
-      return await generateObject({
-        model,
-        schema: InformeSchema,
-        system: SISTEMA,
-        prompt: promptEstructura,
-        temperature: 0.2,
-        maxOutputTokens: 6000,
-      })
+    let ultimo: unknown
+    for (const temp of [0.3, 0.2, 0]) {
+      try {
+        return await generateObject({
+          model,
+          schema: InformeSchema,
+          system: SISTEMA,
+          prompt: promptEstructura,
+          temperature: temp,
+          maxOutputTokens: 6000,
+        })
+      } catch (e) {
+        ultimo = e
+      }
     }
+    throw ultimo
   }
 
   // Dos llamadas en paralelo: el análisis estructurado y el informe en prosa.
