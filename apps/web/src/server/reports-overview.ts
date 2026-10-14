@@ -324,16 +324,34 @@ export async function buildReportsOverview(
   })
 
   // ── Rankings ──
+  // Por TASA (%), no por tiempo absoluto: así quien más horas trabaja no
+  // encabeza "más productivo" y "más improductivo" a la vez por pura presencia.
   const top = (arr: PersonaInforme[]) => arr.slice(0, 5)
+  const idleRate = (p: PersonaInforme) =>
+    p.atWorkSecs + p.idleSecs > 0 ? p.idleSecs / (p.atWorkSecs + p.idleSecs) : 0
+  const rankeables = conDatos.filter((p) => p.trackedSecs >= 3600)
+  const porTasa = rankeables.length > 0 ? rankeables : conDatos
   const rankings = {
-    mostProductive: top([...conDatos].sort((a, b) => b.productiveSecs - a.productiveSecs)),
+    mostProductive: top(
+      porTasa
+        .slice()
+        .sort(
+          (a, b) =>
+            (b.productivityPct ?? 0) - (a.productivityPct ?? 0) ||
+            b.productiveSecs - a.productiveSecs,
+        ),
+    ),
     mostUnproductive: top(
-      [...conDatos]
+      porTasa
         .filter((p) => p.nonProductiveSecs > 0)
-        .sort((a, b) => b.nonProductiveSecs - a.nonProductiveSecs),
+        .sort(
+          (a, b) =>
+            (b.unproductivePct ?? 0) - (a.unproductivePct ?? 0) ||
+            b.nonProductiveSecs - a.nonProductiveSecs,
+        ),
     ),
     mostEffective: top(
-      [...conDatos]
+      porTasa
         .filter((p) => p.effectivenessPct !== null)
         .sort((a, b) => (b.effectivenessPct ?? 0) - (a.effectivenessPct ?? 0)),
     ),
@@ -342,7 +360,7 @@ export async function buildReportsOverview(
     absent: top(
       personas.filter((p) => p.absentDays > 0).sort((a, b) => b.absentDays - a.absentDays),
     ),
-    mostIdle: top(personas.filter((p) => p.idleSecs > 0).sort((a, b) => b.idleSecs - a.idleSecs)),
+    mostIdle: top(porTasa.filter((p) => p.idleSecs > 0).sort((a, b) => idleRate(b) - idleRate(a))),
     counts: {
       productive: conDatos.length,
       unproductive: conDatos.filter((p) => p.nonProductiveSecs > 0).length,

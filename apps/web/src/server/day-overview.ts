@@ -307,9 +307,15 @@ export async function buildDayOverview(
       neutralSecs: p?.neutro ?? 0,
       totalSecs: total,
       productivityPct: total > 0 ? Math.round(((p?.prod ?? 0) / total) * 100) : null,
+      nonProductivePct: total > 0 ? Math.round(((p?.noProd ?? 0) / total) * 100) : null,
       effectivenessPct:
         p && p.prod + p.noProd > 0 ? Math.round((p.prod / (p.prod + p.noProd)) * 100) : null,
       idleSecs: p?.idle ?? 0,
+      // Proporción de la presencia que fue inactividad (equipo encendido sin uso).
+      idlePct:
+        total + (p?.idle ?? 0) > 0
+          ? Math.round(((p?.idle ?? 0) / (total + (p?.idle ?? 0))) * 100)
+          : null,
       nowClass: esHoy ? (ahoraPorUser.get(u.id) ?? null) : null,
     }
   })
@@ -319,6 +325,11 @@ export async function buildDayOverview(
 
   const top = (arr: Persona[], n = 5) => arr.slice(0, n)
   const conActividad = personas.filter((p) => p.totalSecs > 0)
+  // Para los rankings por tasa se exige al menos 1 h de presencia; si nadie la
+  // alcanza (mañana temprano), se usa todo lo que tenga actividad.
+  const MIN_RANK = 60 * 60
+  const rankeablePorTasa = conActividad.filter((p) => p.totalSecs + p.idleSecs >= MIN_RANK)
+  const conRankeable = rankeablePorTasa.length > 0 ? rankeablePorTasa : conActividad
 
   // ── Aplicaciones ──
   const apps = { productive: [] as App[], nonProductive: [] as App[], neutral: [] as App[] }
@@ -391,19 +402,36 @@ export async function buildDayOverview(
     },
     sparklines: spark,
     rankings: {
-      mostProductive: top([...conActividad].sort((a, b) => b.productiveSecs - a.productiveSecs)),
+      // Se ordena por TASA (%), no por tiempo absoluto: si no, quien más horas
+      // está en el PC encabeza las tres listas a la vez solo por presencia. Se
+      // exige un mínimo de actividad para que el porcentaje signifique algo.
+      mostProductive: top(
+        conRankeable
+          .slice()
+          .sort(
+            (a, b) =>
+              (b.productivityPct ?? 0) - (a.productivityPct ?? 0) ||
+              b.productiveSecs - a.productiveSecs,
+          ),
+      ),
       mostUnproductive: top(
-        [...conActividad]
+        conRankeable
           .filter((p) => p.nonProductiveSecs > 0)
-          .sort((a, b) => b.nonProductiveSecs - a.nonProductiveSecs),
+          .sort(
+            (a, b) =>
+              (b.nonProductivePct ?? 0) - (a.nonProductivePct ?? 0) ||
+              b.nonProductiveSecs - a.nonProductiveSecs,
+          ),
       ),
       mostEffective: top(
-        [...conActividad]
+        conRankeable
           .filter((p) => p.effectivenessPct !== null)
           .sort((a, b) => (b.effectivenessPct ?? 0) - (a.effectivenessPct ?? 0)),
       ),
       mostIdle: top(
-        [...personas].filter((p) => p.idleSecs > 0).sort((a, b) => b.idleSecs - a.idleSecs),
+        conRankeable
+          .filter((p) => p.idleSecs > 0)
+          .sort((a, b) => (b.idlePct ?? 0) - (a.idlePct ?? 0) || b.idleSecs - a.idleSecs),
       ),
       late: top(
         personas
@@ -437,8 +465,10 @@ export interface Persona {
   neutralSecs: number
   totalSecs: number
   productivityPct: number | null
+  nonProductivePct: number | null
   effectivenessPct: number | null
   idleSecs: number
+  idlePct: number | null
   nowClass: Clase | null
 }
 

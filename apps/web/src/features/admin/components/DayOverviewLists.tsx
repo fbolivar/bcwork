@@ -121,7 +121,9 @@ export function DayRankings({
       <Ranking
         titulo="Mayor tiempo inactivo"
         personas={r.mostIdle}
-        detalle={(p) => `${horasCortas(p.idleSecs)} con el equipo encendido sin interacción`}
+        detalle={(p) =>
+          `${p.idlePct ?? 0} % de su presencia, ${horasCortas(p.idleSecs)} sin interacción`
+        }
         vacio="Sin inactividad registrada"
       />
       <Ranking
