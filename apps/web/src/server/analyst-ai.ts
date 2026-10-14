@@ -85,6 +85,7 @@ Reglas:
 - Sé prudente con las conclusiones sobre personas: los datos muestran comportamiento del computador, no desempeño ni intención. Recomienda conversar y verificar antes de sancionar. Una persona sin datos puede tener el agente caído.
 - Ten presente la ley colombiana: jornada máxima (Ley 2101), desconexión digital (Ley 2191) y habeas data (Ley 1581). Marca sobrecarga y trabajo fuera de horario como riesgo para la empresa, no solo para la persona.
 - Prioriza: primero lo que requiere decisión, después lo que va bien. No repitas la misma señal en varios apartados.
+- Puntualidad y asistencia: la empresa tiene turnos variables que no estan discriminados por persona, asi que NO concluyas sobre llegadas tarde, cumplimiento de horario ni ausencias. Si mencionas horarios, hazlo solo como dato informativo y aclara que requiere confirmar el turno real. Lo conclusivo es la productividad, el uso de aplicaciones y sitios, las horas activas, la inactividad y la actividad fuera de la banda 7:00-18:00.
 - El informe para gerencia debe poder enviarse tal cual: tono profesional, sin emojis, sin referencias a "el modelo" ni a "la IA".`
 
 /**

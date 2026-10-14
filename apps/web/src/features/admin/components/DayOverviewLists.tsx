@@ -127,16 +127,16 @@ export function DayRankings({
         vacio="Sin inactividad registrada"
       />
       <Ranking
-        titulo="Tarde"
+        titulo="Últimas llegadas"
         personas={r.late}
-        detalle={(p) => `llegó ${horaLocal(p.arrivalAt)}, ${p.lateMinutes} min tarde`}
-        vacio="Nadie ha llegado tarde"
+        detalle={(p) => `primera actividad a las ${horaLocal(p.arrivalAt)} (informativo)`}
+        vacio="Sin datos de llegada"
       />
       <Ranking
-        titulo="Ausente"
+        titulo="Sin actividad hoy"
         personas={r.absent}
-        detalle={() => 'sin actividad y con horario para hoy'}
-        vacio="Nadie ausente"
+        detalle={() => 'ningún evento en un día laboral — verificar turno/permiso'}
+        vacio="Todos con actividad"
       />
     </div>
   )

@@ -885,22 +885,6 @@ function senalesPersona(p: PersonaHechos): Senal[] {
       title: `${n}: riesgo de sobrecarga`,
       detail: `${c.activeHoursPerDay} h activas por día, ${c.daysAfter19} días trabajando después de las 19:00 y ${c.weekendHours} h en fin de semana. Revisar carga y desconexión (Ley 2191).`,
     })
-  if (c.daysActive >= 5 && c.lateDays / c.daysActive >= 0.4)
-    out.push({
-      code: 'impuntualidad',
-      severity: c.lateDays / c.daysActive >= 0.7 ? 'alta' : 'media',
-      userId: uid,
-      title: `${n}: llega tarde ${c.lateDays} de ${c.daysActive} días`,
-      detail: `Retraso promedio de ${c.avgLateMinutes} min sobre su hora de entrada; llegada media a las ${c.avgArrival}.`,
-    })
-  if (c.absentDays >= 2)
-    out.push({
-      code: 'ausentismo',
-      severity: c.absentDays >= 4 ? 'alta' : 'media',
-      userId: uid,
-      title: `${n}: ${c.absentDays} días sin actividad con jornada esperada`,
-      detail: `Sobre ${c.daysExpected} días esperados. Contrastar con ausencias aprobadas antes de concluir.`,
-    })
   if (c.nonProductivePct !== null && c.nonProductivePct >= 25 && c.daysActive >= 3) {
     const top = p.topApps.filter((a) => a.productivity === 'non_productive').slice(0, 3)
     out.push({
@@ -921,19 +905,13 @@ function senalesPersona(p: PersonaHechos): Senal[] {
       title: `${n}: ${c.idlePct}% de la jornada sin interacción`,
       detail: `Equipo encendido sin teclado ni ratón. Puede ser trabajo fuera del computador (reuniones, llamadas, campo) o un equipo que se deja encendido.`,
     })
-  if (
-    c.productivityPct !== null &&
-    c.productivityPct >= 70 &&
-    c.daysActive >= 5 &&
-    c.lateDays === 0 &&
-    c.absentDays === 0
-  )
+  if (c.productivityPct !== null && c.productivityPct >= 70 && c.daysActive >= 5)
     out.push({
       code: 'destacado',
       severity: 'positiva',
       userId: uid,
       title: `${n}: desempeño consistente`,
-      detail: `${c.productivityPct}% productivo, sin retrasos ni ausencias en ${c.daysActive} días.`,
+      detail: `${c.productivityPct}% del tiempo productivo durante ${c.daysActive} días.`,
     })
   return out
 }
@@ -965,14 +943,6 @@ function senalesEmpresa(
         detail: `De ${v.productivityPct}% a ${c.productivityPct}%.`,
       })
   }
-  if (c.latePct !== null && c.latePct >= 30)
-    out.push({
-      code: 'empresa_impuntualidad',
-      severity: c.latePct >= 50 ? 'alta' : 'media',
-      userId: null,
-      title: `${c.latePct}% de las jornadas empiezan tarde`,
-      detail: 'Si es generalizado, el problema suele ser el horario configurado, no las personas.',
-    })
   const finde = persons.filter((p) => p.current.weekendHours >= 4).length
   if (finde >= Math.max(2, Math.ceil(persons.length * 0.25)))
     out.push({

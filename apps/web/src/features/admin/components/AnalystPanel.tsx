@@ -797,10 +797,9 @@ function Resultado({ a }: { a: Analisis }) {
           fill={COLOR.sparkOk}
         />
         <Indicador
-          titulo="Jornadas con retraso"
-          valor={n(c.latePct, '%')}
-          delta={<Delta actual={c.latePct} previo={p.latePct} unidad=" pp" invertir />}
-          spark={f.weekly.map((w) => w.latePct)}
+          titulo="Inactividad"
+          valor={n(c.idlePct, '%')}
+          delta={<Delta actual={c.idlePct} previo={p.idlePct} unidad=" pp" invertir />}
           fill={COLOR.sparkMal}
         />
         <Indicador
