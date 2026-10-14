@@ -132,6 +132,7 @@ const GROUPS: NavGroup[] = [
       { href: '/admin/settings', label: 'Empresa y módulos', icon: Settings },
       { href: '/admin/devices', label: 'Dispositivos', icon: Monitor },
       { href: '/admin/data-quality', label: 'Calidad de datos', icon: ShieldCheck },
+      { href: '/admin/coherencia', label: 'Coherencia', icon: ClipboardCheck },
       { href: '/admin/agent-updates', label: 'Agente', icon: RefreshCw },
       { href: '/admin/app-inventory', label: 'Inventario de software', icon: Package },
       { href: '/admin/ips', label: 'IPs corporativas', icon: Network },

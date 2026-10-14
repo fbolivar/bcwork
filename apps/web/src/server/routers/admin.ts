@@ -15,6 +15,7 @@ import {
 import { runReport, REPORT_TYPES, ReportInputError } from '../reports'
 import { buildDayOverview } from '../day-overview'
 import { buildReportsOverview } from '../reports-overview'
+import { buildCoherencia } from '../coherencia'
 import { buildAnalystFacts, type Hechos } from '../analyst'
 import { generarInforme, responderPregunta, MODELO_ANALISTA, type Informe } from '../analyst-ai'
 import { toCron, proximaEjecucion } from '../report-schedule'
@@ -1535,6 +1536,21 @@ export const adminRouter = router({
         throw new TRPCError({
           code: 'INTERNAL_SERVER_ERROR',
           message: e instanceof Error ? e.message : 'Error calculando el panel del dia',
+        })
+      }
+    }),
+
+  getCoherencia: adminProcedure
+    .input(z.object({ days: z.number().int().min(1).max(31).default(7) }))
+    .query(async ({ ctx, input }) => {
+      const tid = ctx.user!.tid
+      const tz = await getTenantTimezone(ctx.db, tid)
+      try {
+        return await buildCoherencia(ctx.db, tid, tz, input)
+      } catch (e) {
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: e instanceof Error ? e.message : 'Error verificando la coherencia',
         })
       }
     }),
